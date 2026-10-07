@@ -1,0 +1,296 @@
+// Inventory screens (survival inventory, crafting table, furnace, creative)
+// and the in-game HUD (hotbar, hearts, hunger, air).
+
+import { itemName, ITEMS, toolOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
+import { HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem } from './inventory.js';
+import { sound } from './sound.js';
+
+const $ = (id) => document.getElementById(id);
+
+function el(tag, className, parent) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// Draws a stack into a slot element.
+export function paintSlot(slotEl, stack, iconURL) {
+  slotEl.innerHTML = '';
+  slotEl.title = stack ? itemName(stack.id) : '';
+  if (!stack) return;
+  const img = el('img', 'icon', slotEl);
+  img.src = iconURL(stack.id);
+  img.draggable = false;
+  if (stack.count > 1) el('span', 'count', slotEl).textContent = stack.count;
+  const tool = toolOf(stack.id);
+  if (tool && stack.dur !== undefined && stack.dur < tool.durability) {
+    const bar = el('div', 'dur', slotEl);
+    const f = stack.dur / tool.durability;
+    const fill = el('div', '', bar);
+    fill.style.width = `${Math.max(0, f) * 100}%`;
+    fill.style.background = `hsl(${f * 120}, 90%, 45%)`;
+  }
+}
+
+export class InventoryScreen {
+  // game: {inv (36 slots), iconURL, mode, onInventoryChange(), dropStack(stack), furnaceClick(slot, button, cursor)}
+  constructor(game) {
+    this.game = game;
+    this.root = $('screen');
+    this.cursor = null;
+    this.kind = null;
+    this.grid = [];
+    this.furnace = null;
+    this.cursorEl = $('cursor-stack');
+    document.addEventListener('mousemove', (e) => {
+      this.cursorEl.style.left = e.clientX + 'px';
+      this.cursorEl.style.top = e.clientY + 'px';
+    });
+  }
+
+  get isOpen() {
+    return this.kind !== null;
+  }
+
+  // kind: 'inventory' | 'crafting' | 'furnace' | 'creative'
+  open(kind, data = {}) {
+    this.kind = kind;
+    this.gridSize = kind === 'crafting' ? 3 : 2;
+    this.grid = new Array(this.gridSize * this.gridSize).fill(null);
+    this.furnace = kind === 'furnace' ? { at: data.at, slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 } : null;
+    this.creativeTab = this.creativeTab || 'blocks';
+    this.root.classList.remove('hidden');
+    this.render();
+  }
+
+  close() {
+    if (!this.kind) return;
+    // give back anything left in the crafting grid or on the cursor
+    for (const s of this.grid) if (s) this.returnStack(s);
+    this.grid = [];
+    if (this.cursor) this.returnStack(this.cursor);
+    this.cursor = null;
+    this.kind = null;
+    this.root.classList.add('hidden');
+    this.root.innerHTML = '';
+    this.paintCursor();
+    this.game.onInventoryChange();
+  }
+
+  returnStack(s) {
+    const left = addItem(this.game.inv, s.id, s.count, s.dur);
+    if (left > 0) this.game.dropStack({ ...s, count: left });
+  }
+
+  setFurnaceState(state) {
+    if (!this.furnace) return;
+    Object.assign(this.furnace, state);
+    this.render();
+  }
+
+  setCursor(stack) {
+    this.cursor = stack;
+    this.paintCursor();
+  }
+
+  paintCursor() {
+    paintSlot(this.cursorEl, this.cursor, this.game.iconURL);
+    this.cursorEl.classList.toggle('hidden', !this.cursor);
+  }
+
+  slot(parent, stack, onClick, extraClass = '') {
+    const s = el('div', 'slot ' + extraClass, parent);
+    paintSlot(s, stack, this.game.iconURL);
+    s.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      onClick(e.button, e.shiftKey);
+      sound.click();
+      this.render();
+      this.game.onInventoryChange();
+    });
+    return s;
+  }
+
+  // inventory grid + hotbar, shared by every screen
+  playerSlots(panel) {
+    const inv = this.game.inv;
+    const click = (i) => (button, shift) => {
+      if (shift && this.kind !== 'creative') {
+        // move between hotbar and backpack (or into the furnace)
+        const stack = inv[i];
+        if (!stack) return;
+        inv[i] = null;
+        const targets = i < HOTBAR_SIZE ? range(HOTBAR_SIZE, 36) : range(0, HOTBAR_SIZE);
+        const left = quickMove(stack, inv, targets);
+        if (left) inv[i] = left;
+        return;
+      }
+      if (shift && this.kind === 'creative') { inv[i] = null; return; }
+      this.cursor = clickSlot(inv, i, this.cursor, button === 2 ? 2 : 0);
+    };
+    if (this.kind !== 'creative') {
+      const main = el('div', 'grid9', panel);
+      for (let i = HOTBAR_SIZE; i < 36; i++) this.slot(main, inv[i], click(i));
+    }
+    const bar = el('div', 'grid9 hotbar-row', panel);
+    for (let i = 0; i < HOTBAR_SIZE; i++) this.slot(bar, inv[i], click(i));
+  }
+
+  craftingArea(panel) {
+    const size = this.gridSize;
+    const row = el('div', 'craft-row', panel);
+    const gridEl = el('div', size === 3 ? 'grid3' : 'grid2', row);
+    for (let i = 0; i < this.grid.length; i++) {
+      this.slot(gridEl, this.grid[i], (button) => {
+        this.cursor = clickSlot(this.grid, i, this.cursor, button === 2 ? 2 : 0);
+      });
+    }
+    el('div', 'arrow', row).textContent = '➜';
+    const result = findRecipe(this.grid, size);
+    this.slot(row, result, (button, shift) => {
+      if (!result) return;
+      if (shift) {
+        // craft as many as possible straight into the inventory
+        for (let n = 0; n < 64; n++) {
+          const r = findRecipe(this.grid, size);
+          if (!r || addItem(this.game.inv, r.id, r.count, r.dur) > 0) break;
+          consumeGrid(this.grid);
+        }
+        return;
+      }
+      if (!this.cursor) this.cursor = result;
+      else if (this.cursor.id === result.id && result.dur === undefined && this.cursor.count + result.count <= maxStack(result.id)) {
+        this.cursor = { ...this.cursor, count: this.cursor.count + result.count };
+      } else return;
+      consumeGrid(this.grid);
+    }, 'result');
+  }
+
+  furnaceArea(panel) {
+    const f = this.furnace;
+    const row = el('div', 'furnace-row', panel);
+    const col = el('div', 'furnace-col', row);
+    const click = (slot) => (button) => {
+      this.game.furnaceClick(f.at, slot, button === 2 ? 2 : 0, this.cursor);
+      this.cursor = null; // the host sends back what we end up holding
+    };
+    this.slot(col, f.slots[0], click(0));
+    const flame = el('div', 'flame', col);
+    flame.style.setProperty('--fill', f.burnMax ? f.burn / f.burnMax : 0);
+    this.slot(col, f.slots[1], click(1));
+    const arrow = el('div', 'progress', row);
+    arrow.style.setProperty('--fill', f.progress || 0);
+    this.slot(row, f.slots[2], click(2), 'result');
+  }
+
+  creativeArea(panel) {
+    const tabs = el('div', 'tabs', panel);
+    for (const [tab, label] of [['blocks', 'Blocks'], ['items', 'Items']]) {
+      const b = el('button', 'tab' + (this.creativeTab === tab ? ' active' : ''), tabs);
+      b.textContent = label;
+      b.addEventListener('click', () => { this.creativeTab = tab; this.render(); });
+    }
+    const list = el('div', 'creative-grid', panel);
+    const ids = this.creativeTab === 'blocks' ? CREATIVE_BLOCKS : CREATIVE_ITEMS;
+    for (const id of ids) {
+      this.slot(list, { id, count: 1 }, (button, shift) => {
+        if (this.cursor) { this.cursor = null; return; } // clicking the palette deletes what you hold
+        const stack = makeStack(id, button === 2 || toolOf(id) ? 1 : maxStack(id));
+        if (shift) addItem(this.game.inv, stack.id, stack.count, stack.dur);
+        else this.cursor = stack;
+      });
+    }
+    const trash = el('div', 'trash-row', panel);
+    el('span', '', trash).textContent = 'Drop items here to delete them →';
+    this.slot(trash, null, () => { this.cursor = null; }, 'trash');
+  }
+
+  render() {
+    if (!this.kind) return;
+    this.root.innerHTML = '';
+    const panel = el('div', 'inv-panel', this.root);
+    const title = el('h3', '', panel);
+    title.textContent = { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', creative: 'Creative Inventory' }[this.kind];
+    if (this.kind === 'inventory' || this.kind === 'crafting') this.craftingArea(panel);
+    if (this.kind === 'furnace') this.furnaceArea(panel);
+    if (this.kind === 'creative') this.creativeArea(panel);
+    el('h3', 'small', panel).textContent = 'Inventory';
+    this.playerSlots(panel);
+    el('p', 'hint', panel).textContent = this.kind === 'creative'
+      ? 'Left click: full stack · Right click: one · Shift-click: straight to hotbar · E to close'
+      : 'Left click: pick up/put down · Right click: split/place one · Shift-click: quick move · E to close';
+    // clicking outside the panel drops what you hold
+    this.root.onmousedown = (e) => {
+      if (e.target === this.root && this.cursor) {
+        if (e.button === 2 && this.cursor.count > 1) {
+          this.game.dropStack({ ...this.cursor, count: 1 });
+          this.cursor = { ...this.cursor, count: this.cursor.count - 1 };
+        } else {
+          this.game.dropStack(this.cursor);
+          this.cursor = null;
+        }
+        this.render();
+      }
+    };
+    this.paintCursor();
+  }
+}
+
+function range(a, b) {
+  const out = [];
+  for (let i = a; i < b; i++) out.push(i);
+  return out;
+}
+
+// ---------- HUD ----------
+export class HUD {
+  constructor(iconURL) {
+    this.iconURL = iconURL;
+    this.hotbarEl = $('hotbar');
+    this.slots = [];
+    for (let i = 0; i < HOTBAR_SIZE; i++) this.slots.push(el('div', 'slot', this.hotbarEl));
+    this.lastName = '';
+  }
+
+  render(inv, selected, stats, mode) {
+    for (let i = 0; i < HOTBAR_SIZE; i++) {
+      const key = JSON.stringify(inv[i]) + (i === selected);
+      if (this.slots[i].dataset.key !== key) {
+        this.slots[i].dataset.key = key;
+        paintSlot(this.slots[i], inv[i], this.iconURL);
+        this.slots[i].classList.toggle('selected', i === selected);
+      }
+    }
+    const name = inv[selected] ? itemName(inv[selected].id) : '';
+    if (name !== this.lastName) {
+      this.lastName = name;
+      const n = $('itemname');
+      n.textContent = name;
+      n.classList.remove('fade');
+      void n.offsetWidth;
+      if (name) n.classList.add('fade');
+    }
+    const survival = mode === 'survival';
+    $('stats').classList.toggle('hidden', !survival);
+    if (survival) {
+      $('hearts').innerHTML = icons(stats.health, '♥', 'heart', stats.hurtFlash);
+      $('food').innerHTML = icons(stats.food, '🍗', 'drumstick', false);
+      $('air').innerHTML = stats.air < 300 ? icons(Math.ceil(stats.air / 15), '●', 'bubble', false) : '';
+    }
+  }
+}
+
+function icons(value, glyph, cls, flash) {
+  let s = '';
+  for (let i = 0; i < 10; i++) {
+    const v = value - i * 2;
+    const state = v >= 2 ? 'full' : v === 1 ? 'half' : 'empty';
+    s += `<span class="${cls} ${state}${flash ? ' flash' : ''}">${glyph}</span>`;
+  }
+  return s;
+}
+
+export function foodName(id) {
+  return ITEMS[id]?.food ? itemName(id) : null;
+}

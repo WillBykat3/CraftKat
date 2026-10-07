@@ -4,94 +4,150 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BlockCraft</title>
-  <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="A Minecraft-style survival and building game you can play with friends in the browser.">
+  <link rel="stylesheet" href="style.css">
   <script type="importmap">
-    { "imports": { "three": "/vendor/three.module.js" } }
+    { "imports": { "three": "./vendor/three.module.js" } }
   </script>
 </head>
 <body>
   <div id="game"></div>
 
-  <!-- join screen -->
-  <div id="menu" class="overlay">
-    <div class="panel">
-      <h1>BlockCraft</h1>
-      <p class="subtitle">Build together with your friends</p>
-      <form id="join-form" autocomplete="off">
-        <label>Your name
-          <input id="name" maxlength="16" placeholder="Steve" required pattern="[A-Za-z0-9_\- ]+"
-                 title="Letters, numbers, spaces, - and _">
-        </label>
-        <label>Server password <small>(leave empty if there isn't one)</small>
-          <input id="password" type="password" maxlength="64">
-        </label>
-        <label>View distance
-          <select id="distance">
-            <option value="3">Short (slow computers)</option>
-            <option value="5">Medium</option>
-            <option value="6" selected>Normal</option>
-            <option value="9">Far (fast computers)</option>
-          </select>
-        </label>
-        <button id="play" type="submit">Play</button>
-        <p id="status"></p>
-      </form>
-      <details>
-        <summary>Controls</summary>
-        <table class="controls">
-          <tr><td>W A S D</td><td>Move</td></tr>
-          <tr><td>Mouse</td><td>Look around</td></tr>
-          <tr><td>Space</td><td>Jump (double-tap to fly)</td></tr>
-          <tr><td>Shift</td><td>Sprint / fly down</td></tr>
-          <tr><td>F</td><td>Toggle flying</td></tr>
-          <tr><td>Left click</td><td>Break block</td></tr>
-          <tr><td>Right click</td><td>Place block</td></tr>
-          <tr><td>Middle click</td><td>Pick block</td></tr>
-          <tr><td>1–9 / wheel</td><td>Choose block</td></tr>
-          <tr><td>E</td><td>All blocks</td></tr>
-          <tr><td>T or Enter</td><td>Chat</td></tr>
-          <tr><td>R</td><td>Back to spawn</td></tr>
-          <tr><td>Esc</td><td>Release mouse</td></tr>
-        </table>
-      </details>
+  <!-- ===== menus ===== -->
+  <div id="menus">
+    <div id="title-screen" class="menu">
+      <h1 class="logo">BlockCraft</h1>
+      <p class="splash">Play with friends — no download!</p>
+      <label class="field">Your name
+        <input id="name" maxlength="16" placeholder="Steve" autocomplete="nickname">
+      </label>
+      <button id="btn-worlds" class="big">Play</button>
+      <button id="btn-join-code" class="big secondary">Join a friend's world</button>
+      <button id="btn-options" class="big secondary">Options</button>
+      <p id="title-message" class="message"></p>
+      <p class="footnote">Independent fan project — not affiliated with Mojang or Microsoft.</p>
+    </div>
+
+    <div id="worlds-screen" class="menu hidden">
+      <h2>Your worlds</h2>
+      <p class="hint">Worlds are saved in this browser. Open a world, then invite friends from the pause menu (Esc).</p>
+      <div id="world-list"></div>
+      <div class="row">
+        <button id="btn-new-world">Create new world</button>
+        <button id="btn-import" class="secondary">Import world</button>
+        <input id="import-file" type="file" accept=".json,application/json" class="hidden">
+      </div>
+      <button class="secondary back">Back</button>
+    </div>
+
+    <div id="new-world-screen" class="menu hidden">
+      <h2>Create new world</h2>
+      <label class="field">World name <input id="world-name" maxlength="32" value="New World"></label>
+      <label class="field">Game mode
+        <select id="world-mode">
+          <option value="survival">Survival — gather, craft, survive the night</option>
+          <option value="creative">Creative — unlimited blocks, flying</option>
+        </select>
+      </label>
+      <label class="field">Seed <small>(optional)</small> <input id="world-seed" maxlength="20" placeholder="random"></label>
+      <label class="check"><input id="world-cheats" type="checkbox"> Let friends use commands like /gamemode</label>
+      <div class="row">
+        <button id="btn-create">Create world</button>
+        <button class="secondary back">Cancel</button>
+      </div>
+    </div>
+
+    <div id="join-screen" class="menu hidden">
+      <h2>Join a friend's world</h2>
+      <label class="field">Your name <input id="join-name" maxlength="16" placeholder="Steve" autocomplete="nickname"></label>
+      <label class="field">Invite link or code <input id="join-code" placeholder="paste the link your friend sent"></label>
+      <label class="field">Password <small>(if your friend set one)</small> <input id="join-password" type="password" maxlength="64"></label>
+      <div class="row">
+        <button id="btn-join">Join</button>
+        <button class="secondary back">Back</button>
+      </div>
+      <p id="join-status" class="message"></p>
+    </div>
+
+    <div id="options-screen" class="menu hidden">
+      <h2>Options</h2>
+      <label class="field">View distance: <span id="opt-distance-value"></span> chunks
+        <input id="opt-distance" type="range" min="2" max="12" step="1">
+      </label>
+      <label class="field">Field of view: <span id="opt-fov-value"></span>°
+        <input id="opt-fov" type="range" min="50" max="110" step="1">
+      </label>
+      <label class="field">Brightness: <span id="opt-bright-value"></span>
+        <input id="opt-bright" type="range" min="0" max="100" step="5">
+      </label>
+      <label class="field">Mouse sensitivity: <span id="opt-sens-value"></span>
+        <input id="opt-sens" type="range" min="0.2" max="3" step="0.1">
+      </label>
+      <label class="field">Volume: <span id="opt-volume-value"></span>%
+        <input id="opt-volume" type="range" min="0" max="100" step="5">
+      </label>
+      <button class="back">Done</button>
     </div>
   </div>
 
-  <!-- in-game HUD -->
+  <!-- ===== in-game ===== -->
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
-    <div id="info"></div>
-    <div id="blockname"></div>
+    <pre id="debug" class="hidden"></pre>
+    <div id="itemname"></div>
+    <div id="stats">
+      <div id="hearts"></div>
+      <div id="food"></div>
+      <div id="air"></div>
+    </div>
     <div id="hotbar"></div>
     <div id="chat">
       <div id="chat-log"></div>
       <input id="chat-input" maxlength="200" placeholder="Say something… (/help for commands)">
     </div>
+    <div id="friends-badge" class="hidden"></div>
   </div>
+  <div id="water-overlay" class="hidden"></div>
+  <div id="damage-flash"></div>
+  <div id="screen" class="overlay hidden"></div>
+  <div id="cursor-stack" class="slot hidden"></div>
 
   <div id="pause" class="overlay hidden">
-    <div class="panel small">
-      <h2>Paused</h2>
-      <p>Click to play</p>
+    <div class="menu">
+      <h2>Game menu</h2>
+      <button id="btn-resume" class="big">Back to game</button>
+      <button id="btn-invite" class="big secondary">Invite friends</button>
+      <button id="btn-pause-options" class="big secondary">Options</button>
+      <button id="btn-quit" class="big secondary">Save and quit to title</button>
+      <div id="invite-panel" class="hidden">
+        <div id="invite-setup">
+          <label class="field">Password <small>(optional — friends will need it)</small>
+            <input id="invite-password" type="password" maxlength="64">
+          </label>
+          <button id="btn-open">Open to friends</button>
+        </div>
+        <div id="invite-ready" class="hidden">
+          <p>Send this link to your friends:</p>
+          <div class="row"><input id="invite-link" readonly><button id="btn-copy">Copy</button></div>
+          <p id="invite-status" class="hint"></p>
+          <p class="hint">Keep this tab open while friends play. Your world stays in your browser.</p>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div id="inventory" class="overlay hidden">
-    <div class="panel">
-      <h2>Blocks</h2>
-      <p>Click a block to put it in your selected hotbar slot. Press E to close.</p>
-      <div id="inventory-grid"></div>
+  <div id="death" class="overlay hidden">
+    <div class="menu">
+      <h1 class="dead-title">You died!</h1>
+      <p id="death-cause"></p>
+      <button id="btn-respawn" class="big">Respawn</button>
+      <button id="btn-death-quit" class="big secondary">Title screen</button>
     </div>
   </div>
 
-  <div id="disconnected" class="overlay hidden">
-    <div class="panel small">
-      <h2>Disconnected</h2>
-      <p>Lost connection to the server.</p>
-      <button onclick="location.reload()">Rejoin</button>
-    </div>
-  </div>
+  <div id="loading" class="overlay hidden"><div class="menu"><h2 id="loading-text">Loading…</h2></div></div>
 
-  <script type="module" src="/js/main.js"></script>
+  <noscript>BlockCraft needs JavaScript to run.</noscript>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

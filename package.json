@@ -1,19 +1,27 @@
 {
   "name": "blockcraft",
   "version": "1.0.0",
-  "description": "A Minecraft-style multiplayer voxel game that runs in the browser",
+  "description": "A Minecraft-style survival and building game you can play with friends in the browser",
   "type": "module",
   "private": true,
-  "main": "server.js",
+  "main": "public/index.html",
   "scripts": {
-    "start": "node server.js",
+    "build": "node scripts/build.mjs --dist",
+    "vendor": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && node scripts/serve.mjs",
+    "dev:relay": "node scripts/build.mjs && node scripts/serve.mjs --relay",
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "three": "^0.186.1",
-    "ws": "^8.22.0"
+    "@trystero-p2p/core": "0.26.0",
+    "@trystero-p2p/nostr": "0.26.0",
+    "@trystero-p2p/ws-relay": "0.26.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

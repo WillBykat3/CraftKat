@@ -1,734 +1,432 @@
-import * as THREE from 'three';
-import { CHUNK, HEIGHT, BLOCK, BLOCKS, PLACEABLE, DEFAULT_HOTBAR, isSolid } from './blocks.js';
-import { World, chunkKey } from './world.js';
-import { createAtlas } from './textures.js';
-import { buildChunkMesh } from './mesher.js';
-import { RemotePlayers } from './players.js';
+// Menus and the glue between the host, the network and the game.
+
+import { Renderer } from './renderer.js';
+import { createTextures } from './textures.js';
+import { Game } from './game.js';
+import { GameHost, newWorldSave } from './host.js';
+import { HostNetwork, joinFriend, randomRoomId } from './net.js';
+import { listWorlds, loadWorld, saveWorld, deleteWorld, requestPersistence } from './storage.js';
+import { setVolume, sound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.hash.slice(1));
+const query = new URLSearchParams(location.search);
+const RELAY = query.get('relay') || params.get('relay') || ''; // only for testing with a local relay
 
 // ---------- settings ----------
-let renderDist = 6;             // in chunks, chosen on the join screen
-const CHUNK_BUILDS_PER_FRAME = 2;
-const REACH = 6;
-const GRAVITY = 28;
-const JUMP_SPEED = 8.2;
-const WALK_SPEED = 4.3;
-const SPRINT_SPEED = 5.8;
-const FLY_SPEED = 11;
-const HALF_W = 0.3;             // player is 0.6 wide
-const PLAYER_H = 1.8;
-const EYE_H = 1.62;
-const EPS = 1e-4;
-const PHYSICS_STEP = 1 / 60;    // fixed timestep keeps movement identical at any frame rate
-const SKY = 0x8ec9f5;
-
-// ---------- renderer & scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-$('game').appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 0, 1);
-
-function setRenderDistance(chunks) {
-  renderDist = chunks;
-  scene.fog.near = chunks * CHUNK * 0.55;
-  scene.fog.far = chunks * CHUNK * 0.95;
+const settings = { renderDistance: 6, fov: 70, sensitivity: 1, volume: 50, brightness: 50 };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('blockcraft-settings') || '{}')); } catch { /* ignore */ }
+function saveSettings() {
+  try { localStorage.setItem('blockcraft-settings', JSON.stringify(settings)); } catch { /* ignore */ }
 }
-setRenderDistance(renderDist);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
-camera.rotation.order = 'YXZ';
+const textures = createTextures();
+const renderer = new Renderer($('game'), textures);
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+let game = null;
+let host = null;
+let hostNet = null;
+let ticker = null;
+let autosave = null;
+let currentSave = null;
+
+// ---------- screens ----------
+const MENU_SCREENS = ['title-screen', 'worlds-screen', 'new-world-screen', 'join-screen', 'options-screen'];
+function show(id) {
+  $('menus').classList.remove('hidden');
+  for (const s of MENU_SCREENS) $(s).classList.toggle('hidden', s !== id);
+}
+document.querySelectorAll('.back').forEach((b) => b.addEventListener('click', () => {
+  const inOptions = !!b.closest('#options-screen');
+  if (inOptions && game) closeOptionsInGame();
+  else if (b.closest('#new-world-screen')) show('worlds-screen');
+  else show('title-screen');
+}));
+
+// ---------- player name (shared by the title and join screens) ----------
+function cleanName(text) {
+  return text.replace(/[^A-Za-z0-9_\- ]/g, '').trim().slice(0, 16);
+}
+function playerName() {
+  return cleanName($('name').value) || cleanName($('join-name').value) || 'Steve';
+}
+function rememberName(value) {
+  const n = cleanName(value);
+  $('name').value = n;
+  $('join-name').value = n;
+  try { localStorage.setItem('blockcraft-name', n); } catch { /* ignore */ }
+}
+try { rememberName(localStorage.getItem('blockcraft-name') || ''); } catch { /* ignore */ }
+$('name').addEventListener('change', () => rememberName($('name').value));
+$('join-name').addEventListener('change', () => rememberName($('join-name').value));
+
+// ---------- world list ----------
+$('btn-worlds').addEventListener('click', async () => {
+  sound.unlock();
+  rememberName($('name').value);
+  show('worlds-screen');
+  await renderWorldList();
 });
 
-const atlas = createAtlas();
-const blockMaterial = new THREE.MeshBasicMaterial({
-  map: atlas.texture,
-  vertexColors: true,
-  alphaTest: 0.5,
-});
-
-const highlight = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)),
-  new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6 }),
-);
-highlight.visible = false;
-scene.add(highlight);
-
-const remotePlayers = new RemotePlayers(scene);
-
-// ---------- game state ----------
-let world = null;
-let myId = null;
-let socket = null;
-let playing = false;   // joined the server
-let chatOpen = false;
-let inventoryOpen = false;
-
-const player = {
-  pos: new THREE.Vector3(),
-  vel: new THREE.Vector3(),
-  yaw: 0,
-  pitch: 0,
-  onGround: false,
-  flying: false,
-};
-let spawnPoint = [0.5, 40, 0.5];
-
-const hotbar = [...DEFAULT_HOTBAR];
-let selectedSlot = 0;
-
-// ---------- chunk meshes ----------
-const meshes = new Map(); // chunkKey -> Mesh | null (null = nothing to draw)
-
-function disposeMesh(key) {
-  const mesh = meshes.get(key);
-  if (mesh) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-  }
-  meshes.delete(key);
+function button(text, onClick, cls = '') {
+  const b = document.createElement('button');
+  b.textContent = text;
+  b.className = cls;
+  b.addEventListener('click', onClick);
+  return b;
 }
 
-function buildChunk(cx, cz) {
-  const key = chunkKey(cx, cz);
-  disposeMesh(key);
-  const data = buildChunkMesh(world, cx, cz, atlas.uv);
-  if (!data) {
-    meshes.set(key, null);
-    return;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
-  geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
-  geo.setAttribute('color', new THREE.BufferAttribute(data.colors, 3));
-  geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
-  geo.computeBoundingSphere();
-  const mesh = new THREE.Mesh(geo, blockMaterial);
-  mesh.position.set(cx * CHUNK, 0, cz * CHUNK);
-  scene.add(mesh);
-  meshes.set(key, mesh);
-}
-
-function updateChunks(buildAll = false) {
-  const pcx = Math.floor(player.pos.x / CHUNK);
-  const pcz = Math.floor(player.pos.z / CHUNK);
-
-  const missing = [];
-  for (let dz = -renderDist; dz <= renderDist; dz++) {
-    for (let dx = -renderDist; dx <= renderDist; dx++) {
-      const d2 = dx * dx + dz * dz;
-      if (d2 > renderDist * renderDist) continue;
-      if (!meshes.has(chunkKey(pcx + dx, pcz + dz))) missing.push([pcx + dx, pcz + dz, d2]);
-    }
-  }
-  missing.sort((a, b) => a[2] - b[2]);
-  const n = buildAll ? missing.length : Math.min(CHUNK_BUILDS_PER_FRAME, missing.length);
-  for (let i = 0; i < n; i++) buildChunk(missing[i][0], missing[i][1]);
-
-  for (const key of [...meshes.keys()]) {
-    const [cx, cz] = key.split(',').map(Number);
-    if ((cx - pcx) ** 2 + (cz - pcz) ** 2 > (renderDist + 1) ** 2) disposeMesh(key);
-  }
-  world.unloadFar(pcx, pcz, renderDist + 3);
-}
-
-// Applies a block change and rebuilds every loaded chunk whose mesh it affects
-// (including diagonal neighbours, because of ambient occlusion).
-function applyBlock(x, y, z, id) {
-  if (!world.setBlock(x, y, z, id)) return;
-  const rebuild = new Set();
-  for (let dz = -1; dz <= 1; dz++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      rebuild.add(chunkKey(Math.floor((x + dx) / CHUNK), Math.floor((z + dz) / CHUNK)));
-    }
-  }
-  for (const key of rebuild) {
-    if (!meshes.has(key)) continue;
-    const [cx, cz] = key.split(',').map(Number);
-    buildChunk(cx, cz);
-  }
-}
-
-// ---------- physics ----------
-function collides() {
-  const { x, y, z } = player.pos;
-  const x0 = Math.floor(x - HALF_W), x1 = Math.floor(x + HALF_W);
-  const y0 = Math.floor(y), y1 = Math.floor(y + PLAYER_H);
-  const z0 = Math.floor(z - HALF_W), z1 = Math.floor(z + HALF_W);
-  for (let by = y0; by <= y1; by++) {
-    for (let bz = z0; bz <= z1; bz++) {
-      for (let bx = x0; bx <= x1; bx++) {
-        if (isSolid(world.getBlock(bx, by, bz))) return true;
-      }
-    }
-  }
-  return false;
-}
-
-// Moves along one axis (by less than one block) and snaps back against any block hit.
-function moveAxis(axis, amount) {
-  if (amount === 0) return false;
-  player.pos[axis] += amount;
-  if (!collides()) return false;
-  const below = axis === 'y' ? 0 : HALF_W;
-  const above = axis === 'y' ? PLAYER_H : HALF_W;
-  if (amount > 0) player.pos[axis] = Math.floor(player.pos[axis] + above) - above - EPS;
-  else player.pos[axis] = Math.floor(player.pos[axis] - below) + 1 + below + EPS;
-  return true;
-}
-
-function physics(dt) {
-  const forward = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
-  const strafe = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
-  const sin = Math.sin(player.yaw);
-  const cos = Math.cos(player.yaw);
-  let wx = -sin * forward + cos * strafe;
-  let wz = -cos * forward - sin * strafe;
-  const len = Math.hypot(wx, wz);
-  if (len > 0) { wx /= len; wz /= len; }
-
-  let speed = WALK_SPEED;
-  if (player.flying) speed = FLY_SPEED;
-  else if (keys.ShiftLeft || keys.ShiftRight) speed = SPRINT_SPEED;
-
-  const control = player.onGround || player.flying ? 18 : 4;
-  const k = Math.min(1, dt * control);
-  player.vel.x += (wx * speed - player.vel.x) * k;
-  player.vel.z += (wz * speed - player.vel.z) * k;
-
-  if (player.flying) {
-    const up = (keys.Space ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight ? 1 : 0);
-    player.vel.y += (up * FLY_SPEED * 0.8 - player.vel.y) * Math.min(1, dt * 12);
-  } else {
-    player.vel.y = Math.max(-50, player.vel.y - GRAVITY * dt);
-    if ((keys.Space || jumpQueued) && player.onGround) player.vel.y = JUMP_SPEED;
-  }
-
-  // if something got placed inside us, pop up
-  if (collides()) {
-    player.pos.y = Math.floor(player.pos.y) + 1 + EPS;
-    player.vel.y = 0;
-  }
-
-  const dx = player.vel.x * dt;
-  const dy = player.vel.y * dt;
-  const dz = player.vel.z * dt;
-  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) / 0.4));
-  player.onGround = false;
-  for (let i = 0; i < steps; i++) {
-    if (moveAxis('x', dx / steps)) player.vel.x = 0;
-    if (moveAxis('z', dz / steps)) player.vel.z = 0;
-    if (moveAxis('y', dy / steps)) {
-      if (dy < 0) { player.onGround = true; if (player.flying) player.flying = false; }
-      player.vel.y = 0;
-    }
-  }
-
-  if (player.pos.y < -30) respawn();
-}
-
-// A random open spot near the world origin, so players don't spawn inside each other.
-function findSpawn() {
-  for (let tries = 0; tries < 30; tries++) {
-    const x = Math.floor(Math.random() * 9) - 4;
-    const z = Math.floor(Math.random() * 9) - 4;
-    const y = world.heightAt(x, z) + 1;
-    if (world.getBlock(x, y, z) === BLOCK.AIR && world.getBlock(x, y + 1, z) === BLOCK.AIR) {
-      return [x + 0.5, y + EPS, z + 0.5];
-    }
-  }
-  return [0.5, world.heightAt(0, 0) + 1 + EPS, 0.5];
-}
-
-function respawn() {
-  player.pos.set(spawnPoint[0], spawnPoint[1], spawnPoint[2]);
-  player.vel.set(0, 0, 0);
-  // make sure we're not stuck inside terrain
-  while (collides() && player.pos.y < HEIGHT + 2) player.pos.y += 1;
-}
-
-// ---------- block targeting ----------
-// Steps through the voxel grid along the view direction (Amanatides & Woo).
-// Uses the player state directly, so it is exact even between rendered frames.
-function raycast() {
-  const origin = { x: player.pos.x, y: player.pos.y + EYE_H, z: player.pos.z };
-  const cp = Math.cos(player.pitch);
-  const dir = { x: -Math.sin(player.yaw) * cp, y: Math.sin(player.pitch), z: -Math.cos(player.yaw) * cp };
-  let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
-  const stepX = Math.sign(dir.x), stepY = Math.sign(dir.y), stepZ = Math.sign(dir.z);
-  const tDeltaX = stepX ? Math.abs(1 / dir.x) : Infinity;
-  const tDeltaY = stepY ? Math.abs(1 / dir.y) : Infinity;
-  const tDeltaZ = stepZ ? Math.abs(1 / dir.z) : Infinity;
-  let tMaxX = stepX > 0 ? (x + 1 - origin.x) * tDeltaX : stepX < 0 ? (origin.x - x) * tDeltaX : Infinity;
-  let tMaxY = stepY > 0 ? (y + 1 - origin.y) * tDeltaY : stepY < 0 ? (origin.y - y) * tDeltaY : Infinity;
-  let tMaxZ = stepZ > 0 ? (z + 1 - origin.z) * tDeltaZ : stepZ < 0 ? (origin.z - z) * tDeltaZ : Infinity;
-  const normal = [0, 0, 0];
-
-  for (let t = 0; t <= REACH;) {
-    const id = world.getBlock(x, y, z);
-    if (id !== BLOCK.AIR && y >= 0) return { x, y, z, id, normal: [...normal] };
-    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-      x += stepX; t = tMaxX; tMaxX += tDeltaX; normal[0] = -stepX; normal[1] = 0; normal[2] = 0;
-    } else if (tMaxY < tMaxZ) {
-      y += stepY; t = tMaxY; tMaxY += tDeltaY; normal[0] = 0; normal[1] = -stepY; normal[2] = 0;
-    } else {
-      z += stepZ; t = tMaxZ; tMaxZ += tDeltaZ; normal[0] = 0; normal[1] = 0; normal[2] = -stepZ;
-    }
-  }
-  return null;
-}
-
-function overlapsPlayer(bx, by, bz) {
-  const p = player.pos;
-  return bx < p.x + HALF_W && bx + 1 > p.x - HALF_W &&
-    by < p.y + PLAYER_H && by + 1 > p.y &&
-    bz < p.z + HALF_W && bz + 1 > p.z - HALF_W;
-}
-
-function changeBlock(x, y, z, id) {
-  applyBlock(x, y, z, id);
-  send({ t: 'set', x, y, z, id });
-}
-
-function breakBlock() {
-  const hit = raycast();
-  if (!hit || hit.id === BLOCK.BEDROCK) return;
-  changeBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
-}
-
-function placeBlock() {
-  const hit = raycast();
-  if (!hit) return;
-  const x = hit.x + hit.normal[0];
-  const y = hit.y + hit.normal[1];
-  const z = hit.z + hit.normal[2];
-  if (y < 1 || y >= HEIGHT) return;
-  if (world.getBlock(x, y, z) !== BLOCK.AIR) return;
-  if (overlapsPlayer(x, y, z)) return;
-  changeBlock(x, y, z, hotbar[selectedSlot]);
-}
-
-function pickBlock() {
-  const hit = raycast();
-  if (!hit || !PLACEABLE.includes(hit.id)) return;
-  const existing = hotbar.indexOf(hit.id);
-  if (existing >= 0) selectedSlot = existing;
-  else hotbar[selectedSlot] = hit.id;
-  renderHotbar();
-}
-
-// ---------- input ----------
-const keys = {};
-let mouseHeld = -1;
-let mouseRepeat = 0;
-let lastSpaceTap = 0;
-let jumpQueued = false; // remembers a Space tap that was shorter than one frame
-
-function locked() {
-  return document.pointerLockElement === renderer.domElement;
-}
-
-function lockPointer() {
+async function renderWorldList() {
+  const list = $('world-list');
+  list.innerHTML = '';
+  const note = (text, cls = 'hint') => {
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = text;
+    list.appendChild(p);
+  };
+  let worlds;
   try {
-    const result = renderer.domElement.requestPointerLock();
-    if (result && result.catch) result.catch(() => {});
-  } catch { /* browser refused; the pause screen asks for a click */ }
+    worlds = await listWorlds();
+  } catch (err) {
+    note('Could not open saved worlds: ' + err.message, 'message');
+    return;
+  }
+  if (!worlds.length) note('No worlds yet. Create one!');
+  for (const w of worlds) {
+    const row = document.createElement('div');
+    row.className = 'world-row';
+    const info = document.createElement('div');
+    info.className = 'world-info';
+    const name = document.createElement('strong');
+    name.textContent = w.name;
+    const meta = document.createElement('small');
+    meta.textContent = `${w.mode === 'creative' ? 'Creative' : 'Survival'} · ${new Date(w.lastPlayed).toLocaleString()}`;
+    info.append(name, document.createElement('br'), meta);
+    row.append(
+      info,
+      button('Play', () => playWorld(w.id)),
+      button('Export', () => exportWorld(w.id), 'secondary small'),
+      button('Delete', async () => {
+        if (!confirm(`Delete "${w.name}" forever?`)) return;
+        await deleteWorld(w.id);
+        renderWorldList();
+      }, 'secondary small danger'),
+    );
+    list.appendChild(row);
+  }
 }
 
-document.addEventListener('pointerlockchange', () => {
-  if (!playing) return;
-  $('pause').classList.toggle('hidden', locked() || chatOpen || inventoryOpen);
-  if (!locked()) {
-    for (const k in keys) keys[k] = false;
-    mouseHeld = -1;
-  }
-});
-
-document.addEventListener('pointerlockerror', () => {
-  if (playing && !chatOpen && !inventoryOpen) $('pause').classList.remove('hidden');
-});
-
-$('pause').addEventListener('click', lockPointer);
-renderer.domElement.addEventListener('click', () => { if (playing && !locked()) lockPointer(); });
-
-document.addEventListener('mousemove', (e) => {
-  if (!locked()) return;
-  // some browsers occasionally report a huge bogus jump right after locking; ignore it
-  if (Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;
-  player.yaw -= e.movementX * 0.0022;
-  player.pitch -= e.movementY * 0.0022;
-  player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.pitch));
-});
-
-function mouseAction(button) {
-  if (button === 0) breakBlock();
-  else if (button === 2) placeBlock();
+function newId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-document.addEventListener('mousedown', (e) => {
-  if (!locked()) return;
-  if (e.button === 1) { pickBlock(); e.preventDefault(); return; }
-  mouseAction(e.button);
-  mouseHeld = e.button;
-  mouseRepeat = 0.3;
+$('btn-new-world').addEventListener('click', () => show('new-world-screen'));
+$('btn-create').addEventListener('click', async () => {
+  const seedText = $('world-seed').value.trim();
+  let seed;
+  if (!seedText) seed = crypto.getRandomValues(new Int32Array(1))[0];
+  else if (/^-?\d+$/.test(seedText)) seed = Number(seedText) | 0;
+  else seed = [...seedText].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 0); // text seeds work too
+  const save = newWorldSave({
+    name: $('world-name').value.trim() || 'New World',
+    seed,
+    mode: $('world-mode').value,
+    cheats: $('world-cheats').checked,
+  });
+  save.id = newId();
+  try {
+    await saveWorld(save);
+  } catch (err) {
+    alert('Could not create the world: ' + err.message);
+    return;
+  }
+  requestPersistence();
+  playWorld(save.id);
 });
-document.addEventListener('mouseup', (e) => { if (e.button === mouseHeld) mouseHeld = -1; });
-document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-document.addEventListener('wheel', (e) => {
-  if (!locked()) return;
-  selectedSlot = (selectedSlot + (e.deltaY > 0 ? 1 : -1) + hotbar.length) % hotbar.length;
-  renderHotbar();
-}, { passive: true });
+async function exportWorld(id) {
+  const save = await loadWorld(id);
+  const blob = new Blob([JSON.stringify(save)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${save.name.replace(/[^\w\- ]/g, '') || 'world'}.blockcraft.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
-document.addEventListener('keydown', (e) => {
-  if (!playing) return;
-  if (chatOpen) return; // the chat input handles its own keys
-  if (e.code === 'KeyE') {
-    toggleInventory();
-    e.preventDefault();
+$('btn-import').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const save = JSON.parse(await file.text());
+    if (!Number.isInteger(save.seed) || !Array.isArray(save.edits)) throw new Error('this is not a BlockCraft world file');
+    save.id = newId();
+    delete save.roomId;
+    save.players ||= {};
+    save.furnaces ||= {};
+    save.spawn ||= [0.5, 64, 0.5];
+    await saveWorld(save);
+    renderWorldList();
+  } catch (err) {
+    alert('Could not import: ' + err.message);
+  }
+});
+
+// ---------- hosting ----------
+async function playWorld(id) {
+  loading('Loading world…');
+  let save;
+  try {
+    save = await loadWorld(id);
+  } catch (err) {
+    loading(null);
+    alert('Could not load the world: ' + err.message);
     return;
   }
-  if (inventoryOpen) {
-    if (e.code === 'Escape') toggleInventory();
-    return;
-  }
-  if (!locked()) return;
-  if (e.code === 'KeyT' || e.code === 'Enter' || e.code === 'Slash') {
-    openChat(e.code === 'Slash' ? '/' : '');
-    e.preventDefault();
-    return;
-  }
-  if (e.code.startsWith('Digit')) {
-    const n = Number(e.code.slice(5));
-    if (n >= 1 && n <= hotbar.length) { selectedSlot = n - 1; renderHotbar(); }
-  }
-  if (e.code === 'KeyF') player.flying = !player.flying;
-  if (e.code === 'Space' && !e.repeat) {
+  if (!save) { loading(null); return; }
+  currentSave = save;
+  host = new GameHost(save, (peer, msg) => hostNet.deliver(peer, msg), {
+    onLog: (text) => console.log('[world]', text),
+  });
+  hostNet = new HostNetwork(host);
+  const conn = hostNet.connectLocal();
+  startGame(conn, true);
+  conn.send({ t: 'hello', name: playerName(), isHost: true });
+
+  // The host simulation keeps running when this tab is in the background:
+  // browsers slow down timers in hidden tabs, but not messages from a worker.
+  let last = performance.now();
+  ticker = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50);'], { type: 'text/javascript' })));
+  ticker.onmessage = () => {
+    if (!host) return;
     const now = performance.now();
-    if (now - lastSpaceTap < 300) player.flying = !player.flying; // double-tap space to fly
-    lastSpaceTap = now;
-    jumpQueued = true;
-  }
-  if (e.code === 'KeyR') respawn();
-  keys[e.code] = true;
-  if (e.code === 'Space') e.preventDefault();
-});
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-// ---------- hotbar & inventory UI ----------
-function blockIcon(id, size = 36) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
-  const tile = atlas.tileIndex(BLOCKS[id].tex[1]);
-  const s = atlas.tileSize;
-  ctx.drawImage(atlas.canvas, tile * s, 0, s, s, 0, 0, size, size);
-  return canvas;
-}
-
-function renderHotbar() {
-  const bar = $('hotbar');
-  bar.innerHTML = '';
-  hotbar.forEach((id, i) => {
-    const slot = document.createElement('div');
-    slot.className = 'slot' + (i === selectedSlot ? ' selected' : '');
-    slot.title = BLOCKS[id].name;
-    slot.appendChild(blockIcon(id));
-    const num = document.createElement('span');
-    num.textContent = String(i + 1);
-    slot.appendChild(num);
-    bar.appendChild(slot);
-  });
-  $('blockname').textContent = BLOCKS[hotbar[selectedSlot]].name;
-  $('blockname').classList.remove('fade');
-  void $('blockname').offsetWidth; // restart the fade animation
-  $('blockname').classList.add('fade');
-}
-
-function buildInventory() {
-  const grid = $('inventory-grid');
-  grid.innerHTML = '';
-  for (const id of PLACEABLE) {
-    const btn = document.createElement('button');
-    btn.className = 'slot';
-    btn.title = BLOCKS[id].name;
-    btn.appendChild(blockIcon(id, 40));
-    btn.addEventListener('click', () => {
-      hotbar[selectedSlot] = id;
-      renderHotbar();
-    });
-    grid.appendChild(btn);
-  }
-}
-
-function toggleInventory() {
-  inventoryOpen = !inventoryOpen;
-  $('inventory').classList.toggle('hidden', !inventoryOpen);
-  if (inventoryOpen) {
-    document.exitPointerLock();
-    $('pause').classList.add('hidden');
-  } else {
-    lockPointer();
-  }
-}
-
-// ---------- chat ----------
-function addChat(text, cls = '') {
-  const log = $('chat-log');
-  const line = document.createElement('div');
-  line.className = 'line ' + cls;
-  line.textContent = text; // never innerHTML: messages come from other players
-  log.appendChild(line);
-  while (log.children.length > 60) log.removeChild(log.firstChild);
-  log.scrollTop = log.scrollHeight;
-  setTimeout(() => line.classList.add('old'), 10000);
-}
-
-function openChat(prefill) {
-  chatOpen = true;
-  $('chat').classList.add('open');
-  const input = $('chat-input');
-  input.value = prefill;
-  document.exitPointerLock();
-  $('pause').classList.add('hidden');
-  setTimeout(() => input.focus(), 0);
-}
-
-function closeChat(sendIt) {
-  const input = $('chat-input');
-  const text = input.value.trim();
-  if (sendIt && text) {
-    if (text === '/help') {
-      addChat('Commands: /list (who is online), /spawn (go to spawn), /help', 'sys');
-    } else if (text === '/spawn') {
-      respawn();
-    } else {
-      send({ t: 'chat', msg: text });
+    let dt = Math.min((now - last) / 1000, 1);
+    last = now;
+    while (dt > 0) {
+      const step = Math.min(dt, 0.1);
+      host.tick(step);
+      dt -= step;
     }
-  }
-  input.value = '';
-  input.blur();
-  chatOpen = false;
-  $('chat').classList.remove('open');
-  lockPointer();
+    host.trimMemory();
+  };
+  autosave = setInterval(() => persist(), 30000);
 }
 
-$('chat-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { closeChat(true); e.preventDefault(); }
-  else if (e.key === 'Escape') { closeChat(false); e.preventDefault(); }
-  e.stopPropagation();
-});
-
-// ---------- networking ----------
-function send(msg) {
-  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
-}
-
-function connect(name, password) {
-  const status = $('status');
-  status.textContent = 'Connecting…';
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${proto}://${location.host}/ws`);
-
-  socket.addEventListener('open', () => {
-    send({ t: 'hello', name, password });
-  });
-
-  socket.addEventListener('message', (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
-    handleMessage(msg);
-  });
-
-  socket.addEventListener('close', () => {
-    if (playing) {
-      playing = false;
-      document.exitPointerLock();
-      $('pause').classList.add('hidden');
-      $('disconnected').classList.remove('hidden');
-    } else if (!status.dataset.error) {
-      status.textContent = 'Could not connect to the server.';
-    }
-    $('play').disabled = false;
-  });
-}
-
-function handleMessage(msg) {
-  switch (msg.t) {
-    case 'error':
-      $('status').textContent = msg.msg;
-      $('status').dataset.error = '1';
-      $('play').disabled = false;
-      break;
-
-    case 'welcome': {
-      myId = msg.id;
-      world = new World(msg.seed);
-      world.importEdits(msg.edits);
-      spawnPoint = findSpawn();
-      if (msg.lastPos) {
-        player.pos.set(msg.lastPos[0], msg.lastPos[1], msg.lastPos[2]);
-        player.vel.set(0, 0, 0);
-        while (collides() && player.pos.y < HEIGHT + 2) player.pos.y += 1;
-      } else {
-        respawn();
-      }
-      for (const p of msg.players) remotePlayers.add(p.id, p.name, p.p, p.r);
-      for (const key of [...meshes.keys()]) disposeMesh(key); // drop the menu preview
-      updateChunks(true);
-      playing = true;
-      $('menu').classList.add('hidden');
-      $('hud').classList.remove('hidden');
-      buildInventory();
-      renderHotbar();
-      addChat(`Welcome, ${msg.name}! Press T to chat, E for blocks, F to fly.`, 'sys');
-      $('pause').classList.remove('hidden'); // hidden again once the pointer locks
-      lockPointer();
-      break;
-    }
-
-    case 'join':
-      remotePlayers.add(msg.id, msg.name, msg.p, msg.r);
-      break;
-
-    case 'leave':
-      remotePlayers.remove(msg.id);
-      break;
-
-    case 'state':
-      for (const [id, x, y, z, yaw, pitch] of msg.players) {
-        if (id !== myId) remotePlayers.setTarget(id, [x, y, z], [yaw, pitch]);
-      }
-      break;
-
-    case 'set':
-      if (world) applyBlock(msg.x, msg.y, msg.z, msg.id);
-      break;
-
-    case 'chat':
-      addChat(`<${msg.from}> ${msg.msg}`);
-      break;
-
-    case 'sys':
-      addChat(msg.msg, 'sys');
-      break;
-  }
-}
-
-$('join-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const name = $('name').value.trim();
-  setRenderDistance(Number($('distance').value) || 6);
+async function persist() {
+  if (!host) return;
   try {
-    localStorage.setItem('blockcraft-name', name);
-    localStorage.setItem('blockcraft-distance', $('distance').value);
-  } catch { /* storage unavailable */ }
-  delete $('status').dataset.error;
-  $('play').disabled = true;
-  connect(name, $('password').value);
+    await saveWorld(host.serialize());
+  } catch (err) {
+    console.error('save failed', err);
+    game?.addChat('Could not save the world: ' + err.message, 'sys');
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persist(); });
+window.addEventListener('pagehide', () => { persist(); });
+window.addEventListener('beforeunload', (e) => {
+  if (host && hostNet?.peers.size) { e.preventDefault(); e.returnValue = ''; } // friends would be disconnected
 });
 
-try {
-  $('name').value = localStorage.getItem('blockcraft-name') || '';
-  const savedDistance = localStorage.getItem('blockcraft-distance');
-  if (savedDistance && [...$('distance').options].some((o) => o.value === savedDistance)) $('distance').value = savedDistance;
-} catch { /* storage unavailable */ }
+$('btn-invite').addEventListener('click', () => $('invite-panel').classList.toggle('hidden'));
+$('btn-open').addEventListener('click', () => {
+  if (!hostNet) return;
+  if (!currentSave.roomId) currentSave.roomId = randomRoomId();
+  const password = $('invite-password').value;
+  const updateCount = (n) => {
+    $('invite-status').textContent = n === 0 ? 'Waiting for friends to join…' : `${n} friend${n === 1 ? '' : 's'} connected`;
+    $('friends-badge').textContent = `👥 ${n + 1} playing`;
+    $('friends-badge').classList.toggle('hidden', n === 0);
+  };
+  try {
+    hostNet.open({ roomId: currentSave.roomId, password, relay: RELAY, onPeerCount: updateCount });
+  } catch (err) {
+    $('invite-status').textContent = 'Could not open the world: ' + err.message;
+    return;
+  }
+  persist();
+  const link = `${location.origin}${location.pathname}#join=${currentSave.roomId}${RELAY ? '&relay=' + encodeURIComponent(RELAY) : ''}`;
+  $('invite-link').value = link;
+  updateCount(0);
+  $('invite-setup').classList.add('hidden');
+  $('invite-ready').classList.remove('hidden');
+  game?.addChat(password ? 'Your world is open to friends (password protected).' : 'Your world is open to friends. Anyone with the link can join.', 'sys');
+});
+$('btn-copy').addEventListener('click', async () => {
+  const input = $('invite-link');
+  try {
+    await navigator.clipboard.writeText(input.value);
+  } catch {
+    input.select();
+    document.execCommand('copy');
+  }
+  $('btn-copy').textContent = 'Copied!';
+  setTimeout(() => { $('btn-copy').textContent = 'Copy'; }, 1500);
+});
+
+// ---------- joining ----------
+$('btn-join-code').addEventListener('click', () => {
+  sound.unlock();
+  rememberName($('name').value);
+  show('join-screen');
+});
+
+function parseRoom(text) {
+  const t = text.trim();
+  const m = t.match(/join=([a-z0-9]+)/i);
+  if (m) return m[1];
+  return /^[a-z0-9]{6,32}$/i.test(t) ? t : null;
+}
+
+$('btn-join').addEventListener('click', async () => {
+  sound.unlock();
+  rememberName($('join-name').value || $('name').value);
+  const roomId = parseRoom($('join-code').value);
+  if (!roomId) { $('join-status').textContent = 'That does not look like an invite link.'; return; }
+  $('btn-join').disabled = true;
+  $('join-status').textContent = 'Looking for the world… (this can take up to 30 seconds)';
+  try {
+    const conn = await joinFriend({ roomId, password: $('join-password').value, relay: RELAY });
+    $('join-status').textContent = '';
+    startGame(conn, false);
+    conn.send({ t: 'hello', name: playerName() });
+  } catch (err) {
+    $('join-status').textContent = err.message;
+  } finally {
+    $('btn-join').disabled = false;
+  }
+});
+
+// ---------- the game itself ----------
+function startGame(conn, isHost) {
+  titleActive = false;
+  renderer.fov = settings.fov;
+  renderer.setRenderDistance(settings.renderDistance);
+  renderer.clearChunks();
+  game = new Game({ renderer, textures, conn, isHost, settings, onQuit: (reason) => quitToTitle(reason) });
+  game.onPause = () => $('btn-invite').classList.toggle('hidden', !isHost);
+  $('menus').classList.add('hidden');
+  $('hud').classList.remove('hidden');
+  $('invite-panel').classList.add('hidden');
+  const open = !!hostNet?.isOpen();
+  $('invite-setup').classList.toggle('hidden', open);
+  $('invite-ready').classList.toggle('hidden', !open);
+  $('btn-invite').classList.toggle('hidden', !isHost);
+  loading(null);
+  // pointer lock needs a click, so the pause menu doubles as a "click to play" screen
+  $('pause').classList.remove('hidden');
+}
+
+$('btn-resume').addEventListener('click', () => {
+  $('pause').classList.add('hidden');
+  game?.lock();
+});
+$('btn-quit').addEventListener('click', () => quitToTitle());
+$('btn-respawn').addEventListener('click', () => game?.respawn());
+$('btn-death-quit').addEventListener('click', () => quitToTitle());
+
+async function quitToTitle(reason) {
+  const g = game;
+  game = null;
+  if (g) g.quit();
+  if (host) {
+    loading('Saving world…');
+    host.disconnect('local');
+    await persist();
+    hostNet?.close();
+    clearInterval(autosave);
+    ticker?.terminate();
+    ticker = null;
+    host = null;
+    hostNet = null;
+    currentSave = null;
+  }
+  for (const id of ['hud', 'pause', 'death', 'screen', 'water-overlay', 'friends-badge']) $(id).classList.add('hidden');
+  loading(null);
+  show('title-screen');
+  $('title-message').textContent = typeof reason === 'string' ? reason : '';
+  startTitleBackground();
+}
+
+function loading(text) {
+  $('loading').classList.toggle('hidden', !text);
+  if (text) $('loading-text').textContent = text;
+}
+
+// ---------- options ----------
+function bindRange(id, key, format, apply = () => {}) {
+  const input = $(id);
+  input.value = settings[key];
+  $(id + '-value').textContent = format(input.value);
+  input.addEventListener('input', () => {
+    settings[key] = Number(input.value);
+    $(id + '-value').textContent = format(input.value);
+    apply(settings[key]);
+    saveSettings();
+  });
+}
+bindRange('opt-distance', 'renderDistance', (v) => v, (v) => { if (game) renderer.setRenderDistance(v); });
+bindRange('opt-fov', 'fov', (v) => v, (v) => { renderer.fov = v; });
+bindRange('opt-sens', 'sensitivity', (v) => Number(v).toFixed(1));
+const brightLabel = (v) => (v <= 10 ? 'Moody' : v >= 90 ? 'Bright' : `${v}%`);
+bindRange('opt-bright', 'brightness', brightLabel, (v) => renderer.setBrightness(v / 100));
+renderer.setBrightness(settings.brightness / 100);
+bindRange('opt-volume', 'volume', (v) => v, (v) => setVolume(v / 100));
+setVolume(settings.volume / 100);
+
+$('btn-options').addEventListener('click', () => show('options-screen'));
+$('btn-pause-options').addEventListener('click', () => {
+  $('pause').classList.add('hidden');
+  show('options-screen');
+});
+function closeOptionsInGame() {
+  $('menus').classList.add('hidden');
+  $('pause').classList.remove('hidden');
+}
+
+// ---------- title screen background: a slowly turning view of a world ----------
+let titleActive = false;
+let titleAngle = 0;
+function startTitleBackground() {
+  titleActive = true;
+  renderer.setRenderDistance(4);
+  renderer.startWorld(20240607, []);
+}
 
 // ---------- main loop ----------
-let lastTime = performance.now();
-let physicsTime = 0;
-let lastSent = 0;
-let lastSentState = '';
-let fpsFrames = 0;
-let fpsTime = 0;
-let fps = 0;
-
+let lastFrame = performance.now();
+let frames = 0, fpsTime = 0;
 function frame(now) {
   requestAnimationFrame(frame);
-  const elapsed = Math.max(0, (now - lastTime) / 1000);
-  const dt = Math.min(0.25, elapsed); // after a long stall (e.g. hidden tab) don't simulate the whole gap
-  lastTime = now;
-
-  if (playing && world) {
-    // keys are released whenever the pointer is unlocked, so this is safe while paused
-    physicsTime += dt;
-    let stepped = false;
-    while (physicsTime >= PHYSICS_STEP) {
-      physics(PHYSICS_STEP);
-      physicsTime -= PHYSICS_STEP;
-      stepped = true;
-    }
-    if (stepped) jumpQueued = false; // high refresh rate screens can have frames with no step
-
-    camera.position.set(player.pos.x, player.pos.y + EYE_H, player.pos.z);
-    camera.rotation.set(player.pitch, player.yaw, 0);
-
-    updateChunks();
-
-    if (mouseHeld >= 0 && locked()) {
-      mouseRepeat -= dt;
-      if (mouseRepeat <= 0) { mouseAction(mouseHeld); mouseRepeat = 0.22; }
-    }
-
-    const hit = raycast();
-    highlight.visible = !!hit;
-    if (hit) highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
-
-    remotePlayers.update(dt);
-
-    if (now - lastSent > 100) {
-      lastSent = now;
-      const p = [+player.pos.x.toFixed(2), +player.pos.y.toFixed(2), +player.pos.z.toFixed(2)];
-      const r = [+player.yaw.toFixed(3), +player.pitch.toFixed(3)];
-      const state = JSON.stringify([p, r]);
-      if (state !== lastSentState) {
-        lastSentState = state;
-        send({ t: 'pos', p, r });
-      }
-    }
-
-    fpsFrames++;
-    fpsTime += elapsed;
-    if (fpsTime >= 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
-    $('info').textContent =
-      `XYZ ${player.pos.x.toFixed(1)} ${player.pos.y.toFixed(1)} ${player.pos.z.toFixed(1)}` +
-      `  |  ${fps} fps  |  ${remotePlayers.count + 1} online${player.flying ? '  |  flying' : ''}`;
+  const dt = Math.max(0, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (game && game.playing) {
+    game.update(dt);
+    game.render();
+    frames++;
+    fpsTime += dt;
+    if (fpsTime > 0.5) { game.fps = Math.round(frames / fpsTime); frames = 0; fpsTime = 0; }
+  } else if (titleActive) {
+    titleAngle += dt * 0.03;
+    const cam = renderer.camera;
+    cam.position.set(Math.sin(titleAngle) * 16, 62, Math.cos(titleAngle) * 16);
+    cam.rotation.set(-0.3, titleAngle, 0);
+    renderer.updateChunks(0, 0);
+    renderer.updateEnvironment(4000, false, false);
+    renderer.render();
+  } else {
+    renderer.render();
   }
-
-  renderer.render(scene, camera);
 }
 
-// menu background: a slowly orbiting view of a demo world
-{
-  const preview = new World(12345);
-  world = preview;
-  for (let cz = -2; cz <= 2; cz++) for (let cx = -2; cx <= 2; cx++) buildChunk(cx, cz);
-  world = null;
-  const groundY = preview.heightAt(8, 8);
-  let angle = 0;
-  const orbit = () => {
-    if (playing) return;
-    requestAnimationFrame(orbit);
-    angle += 0.0015;
-    camera.position.set(8 + Math.sin(angle) * 30, groundY + 18, 8 + Math.cos(angle) * 30);
-    camera.lookAt(8, groundY, 8);
-  };
-  orbit();
-}
+startTitleBackground();
 requestAnimationFrame(frame);
-
-// Open the page with ?debug to poke at the game from the browser console.
-if (new URLSearchParams(location.search).has('debug')) {
-  window.blockcraft = { player, camera, scene, renderer, get world() { return world; }, raycast, breakBlock, placeBlock };
+if (params.get('join')) {
+  show('join-screen');
+  $('join-code').value = location.href;
+} else {
+  show('title-screen');
 }
+if (query.has('debug')) window.blockcraft = { get game() { return game; }, get host() { return host; }, renderer };
