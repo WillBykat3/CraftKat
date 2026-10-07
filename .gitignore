@@ -1,0 +1,5 @@
+node_modules/
+world-data.json
+world-data.json.tmp
+*.log
+.DS_Store

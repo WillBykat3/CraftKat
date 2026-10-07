@@ -1,0 +1,19 @@
+{
+  "name": "blockcraft",
+  "version": "1.0.0",
+  "description": "A Minecraft-style multiplayer voxel game that runs in the browser",
+  "type": "module",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  }
+}

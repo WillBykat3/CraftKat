@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlockCraft</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- join screen -->
+  <div id="menu" class="overlay">
+    <div class="panel">
+      <h1>BlockCraft</h1>
+      <p class="subtitle">Build together with your friends</p>
+      <form id="join-form" autocomplete="off">
+        <label>Your name
+          <input id="name" maxlength="16" placeholder="Steve" required pattern="[A-Za-z0-9_\- ]+"
+                 title="Letters, numbers, spaces, - and _">
+        </label>
+        <label>Server password <small>(leave empty if there isn't one)</small>
+          <input id="password" type="password" maxlength="64">
+        </label>
+        <label>View distance
+          <select id="distance">
+            <option value="3">Short (slow computers)</option>
+            <option value="5">Medium</option>
+            <option value="6" selected>Normal</option>
+            <option value="9">Far (fast computers)</option>
+          </select>
+        </label>
+        <button id="play" type="submit">Play</button>
+        <p id="status"></p>
+      </form>
+      <details>
+        <summary>Controls</summary>
+        <table class="controls">
+          <tr><td>W A S D</td><td>Move</td></tr>
+          <tr><td>Mouse</td><td>Look around</td></tr>
+          <tr><td>Space</td><td>Jump (double-tap to fly)</td></tr>
+          <tr><td>Shift</td><td>Sprint / fly down</td></tr>
+          <tr><td>F</td><td>Toggle flying</td></tr>
+          <tr><td>Left click</td><td>Break block</td></tr>
+          <tr><td>Right click</td><td>Place block</td></tr>
+          <tr><td>Middle click</td><td>Pick block</td></tr>
+          <tr><td>1–9 / wheel</td><td>Choose block</td></tr>
+          <tr><td>E</td><td>All blocks</td></tr>
+          <tr><td>T or Enter</td><td>Chat</td></tr>
+          <tr><td>R</td><td>Back to spawn</td></tr>
+          <tr><td>Esc</td><td>Release mouse</td></tr>
+        </table>
+      </details>
+    </div>
+  </div>
+
+  <!-- in-game HUD -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"></div>
+    <div id="info"></div>
+    <div id="blockname"></div>
+    <div id="hotbar"></div>
+    <div id="chat">
+      <div id="chat-log"></div>
+      <input id="chat-input" maxlength="200" placeholder="Say something… (/help for commands)">
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="panel small">
+      <h2>Paused</h2>
+      <p>Click to play</p>
+    </div>
+  </div>
+
+  <div id="inventory" class="overlay hidden">
+    <div class="panel">
+      <h2>Blocks</h2>
+      <p>Click a block to put it in your selected hotbar slot. Press E to close.</p>
+      <div id="inventory-grid"></div>
+    </div>
+  </div>
+
+  <div id="disconnected" class="overlay hidden">
+    <div class="panel small">
+      <h2>Disconnected</h2>
+      <p>Lost connection to the server.</p>
+      <button onclick="location.reload()">Rejoin</button>
+    </div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
