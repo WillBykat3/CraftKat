@@ -88,3 +88,39 @@ test('tools speed up mining and are needed for some drops', () => {
   assert.deepEqual(getDrops(BLOCK.LOG, 0), [[BLOCK.LOG, 1]]);
   assert.deepEqual(makeStack(ITEM.IRON_SWORD), { id: ITEM.IRON_SWORD, count: 1, dur: 250 });
 });
+
+import { RECIPES, recipeFits, craftableTimes, fillGrid } from '../public/js/inventory.js';
+
+test('recipe book: fits, counts and fills the grid from the inventory', () => {
+  const find = (id) => RECIPES.find((r) => r.result[0] === id);
+  const table = find(BLOCK.CRAFTING_TABLE);
+  const pickaxe = find(ITEM.STONE_PICKAXE);
+  assert.ok(recipeFits(table, 2));
+  assert.ok(!recipeFits(pickaxe, 2));
+  assert.ok(recipeFits(pickaxe, 3));
+
+  const inv = new Array(36).fill(null);
+  inv[0] = { id: BLOCK.PLANKS, count: 6 };
+  inv[5] = { id: BLOCK.BIRCH_PLANKS, count: 3 };
+  assert.equal(craftableTimes(table, inv), 2); // 9 planks of either kind -> two tables
+  const grid = new Array(4).fill(null);
+  assert.ok(fillGrid(table, inv, grid, 2, 1));
+  assert.ok(grid.every((s) => s && s.count === 1));
+  assert.equal(countItem(inv, BLOCK.PLANKS) + countItem(inv, BLOCK.BIRCH_PLANKS), 5);
+  assert.equal(findRecipe(grid, 2).id, BLOCK.CRAFTING_TABLE);
+
+  // not enough ingredients: nothing moves
+  const inv2 = [{ id: BLOCK.COBBLE, count: 2 }, { id: ITEM.STICK, count: 2 }];
+  const grid2 = new Array(9).fill(null);
+  assert.equal(craftableTimes(pickaxe, inv2), 0);
+  assert.equal(fillGrid(pickaxe, inv2, grid2, 3), false);
+  assert.ok(grid2.every((s) => s === null));
+  assert.equal(inv2[0].count, 2);
+
+  // filling a 3x3 recipe in the crafting table grid
+  const inv3 = [{ id: BLOCK.COBBLE, count: 6 }, { id: ITEM.STICK, count: 4 }];
+  const grid3 = new Array(9).fill(null);
+  assert.ok(fillGrid(pickaxe, inv3, grid3, 3, 2));
+  assert.equal(findRecipe(grid3, 3).id, ITEM.STONE_PICKAXE);
+  assert.equal(inv3[0], null);
+});

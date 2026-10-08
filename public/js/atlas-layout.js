@@ -10,7 +10,9 @@ export const TILE_NAMES = [
   'coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'water', 'birch_log_top', 'birch_log_side', 'birch_leaves',
   'birch_planks', 'table_top', 'table_side', 'table_front', 'furnace_top', 'furnace_side', 'furnace_front', 'torch',
   'dandelion', 'poppy', 'tall_grass', 'sandstone_top', 'sandstone_side', 'wool', 'stone_bricks', 'obsidian',
-  'clay',
+  'clay', 'deepslate', 'deepslate_top', 'cobbled_deepslate', 'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore',
+  'deepslate_diamond_ore', 'copper_ore', 'deepslate_copper_ore', 'granite', 'diorite', 'andesite', 'cherry_log_top', 'cherry_log_side',
+  'cherry_leaves', 'cherry_planks', 'chest_top', 'chest_side', 'chest_front', 'bed_top', 'bed_side', 'copper_block',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

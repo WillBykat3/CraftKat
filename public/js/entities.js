@@ -111,6 +111,111 @@ const MOB_BUILDERS = {
     },
   }),
   zombie: () => humanoid(0x5d9b4a, 0x2f8f9b, 0x3a3f9b, true),
+  sheep: () => {
+    const m = quadruped(0xe6c3b0, 0xe6c3b0, [0.5, 0.45, 0.85, 0.5], {
+      legColor: 0xe6c3b0,
+      decorate: (head) => { const face = box(0.36, 0.3, 0.04, 0xd8b3a0); face.position.set(0, -0.05, -0.44); head.add(face); },
+    });
+    // the fleece is a separate, bigger box so shearing can hide it
+    m.wool = box(0.72, 0.62, 1.0, 0xf2f2f2);
+    m.wool.position.y = 0.5 + 0.22;
+    const headWool = box(0.54, 0.3, 0.46, 0xf2f2f2);
+    headWool.position.set(0, 0.17, -0.2);
+    m.head.add(headWool);
+    m.headWool = headWool;
+    m.group.add(m.wool);
+    return m;
+  },
+  chicken: () => {
+    const g = new THREE.Group();
+    const body = box(0.38, 0.38, 0.5, 0xf4f4f4);
+    body.position.y = 0.45;
+    const legs = [limb(0.06, 0.26, 0.06, 0xe0a020, -0.08, 0.26, 0), limb(0.06, 0.26, 0.06, 0xe0a020, 0.08, 0.26, 0)];
+    for (const wx of [-0.22, 0.22]) { const w = box(0.06, 0.24, 0.36, 0xe8e8e8); w.position.set(wx, 0.47, 0); g.add(w); }
+    const head = new THREE.Group();
+    head.position.set(0, 0.7, -0.25);
+    const skull = box(0.25, 0.3, 0.2, 0xf4f4f4);
+    head.add(skull);
+    const beak = box(0.2, 0.08, 0.12, 0xe8a020); beak.position.set(0, 0.02, -0.15); head.add(beak);
+    const wattle = box(0.08, 0.1, 0.06, 0xd02020); wattle.position.set(0, -0.08, -0.12); head.add(wattle);
+    eyes(head, 0.06, -0.105, 0x111111);
+    g.add(body, ...legs, head);
+    return { group: g, head, legs, arms: [] };
+  },
+  creeper: () => {
+    const g = new THREE.Group();
+    const green = 0x4fa83a;
+    const legs = [];
+    for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const l = limb(0.24, 0.36, 0.24, green, lx * 0.12, 0.36, lz * 0.16);
+      legs.push(l);
+      g.add(l);
+    }
+    const body = box(0.5, 0.8, 0.28, green);
+    body.position.y = 0.76;
+    const head = new THREE.Group();
+    head.position.y = 1.16;
+    const skull = box(0.5, 0.5, 0.5, green);
+    skull.position.y = 0.25;
+    head.add(skull);
+    for (const [fx, fy, w, h] of [[-0.12, 0.33, 0.12, 0.12], [0.12, 0.33, 0.12, 0.12], [0, 0.2, 0.12, 0.14], [-0.08, 0.1, 0.06, 0.12], [0.08, 0.1, 0.06, 0.12]]) {
+      const f = box(w, h, 0.02, 0x112211);
+      f.position.set(fx, fy, -0.26);
+      head.add(f);
+    }
+    g.add(body, head);
+    return { group: g, head, legs, arms: [] };
+  },
+  spider: () => {
+    const g = new THREE.Group();
+    const dark = 0x2e2620;
+    const abdomen = box(0.8, 0.6, 0.9, dark); abdomen.position.set(0, 0.55, 0.45);
+    const thorax = box(0.5, 0.45, 0.5, 0x3a312a); thorax.position.set(0, 0.5, -0.15);
+    const head = new THREE.Group();
+    head.position.set(0, 0.52, -0.5);
+    const skull = box(0.5, 0.45, 0.4, dark);
+    head.add(skull);
+    eyes(head, 0.06, -0.21, 0xe02020);
+    const legs = [];
+    for (let i = 0; i < 4; i++) {
+      for (const side of [-1, 1]) {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * 0.22, 0.5, -0.32 + i * 0.16);
+        const leg = box(0.9, 0.08, 0.08, 0x2a221c);
+        leg.position.x = side * 0.45;
+        pivot.add(leg);
+        pivot.rotation.z = side * 0.45;
+        pivot.rotation.y = (i - 1.5) * 0.35 * side;
+        g.add(pivot);
+        legs.push(pivot);
+      }
+    }
+    g.add(abdomen, thorax, head);
+    return { group: g, head, legs: [], spiderLegs: legs, arms: [] };
+  },
+  skeleton: () => {
+    const g = new THREE.Group();
+    const bone = 0xc8c8c0;
+    const legL = limb(0.12, 0.75, 0.12, bone, -0.12, 0.75, 0);
+    const legR = limb(0.12, 0.75, 0.12, bone, 0.12, 0.75, 0);
+    const body = box(0.45, 0.75, 0.2, bone); body.position.y = 1.125;
+    const armL = limb(0.12, 0.75, 0.12, bone, -0.3, 1.45, 0);
+    const armR = limb(0.12, 0.75, 0.12, bone, 0.3, 1.45, 0);
+    armL.rotation.x = armR.rotation.x = Math.PI / 2;
+    const bow = box(0.04, 0.6, 0.04, 0x6b4a24); bow.position.set(0.3, 1.45, -0.75); g.add(bow);
+    const head = new THREE.Group();
+    head.position.y = 1.5;
+    const skull = box(0.5, 0.5, 0.5, bone); skull.position.y = 0.25; head.add(skull);
+    eyes(head, 0.28, -0.26, 0x222222);
+    g.add(legL, legR, body, armL, armR, head);
+    return { group: g, head, legs: [legL, legR], arms: [] };
+  },
+};
+
+// hitboxes for aiming at mobs: [half width, height]
+const HITBOX = {
+  pig: [0.5, 0.95], cow: [0.5, 1.4], sheep: [0.5, 1.3], chicken: [0.3, 0.75],
+  zombie: [0.35, 1.95], skeleton: [0.35, 1.95], creeper: [0.35, 1.7], spider: [0.75, 0.95],
 };
 
 function itemMesh(id, textures) {
@@ -185,7 +290,7 @@ export class EntityViews {
   // list: [[id, typeOrItemId, x, y, z, yaw], ...] = everything near us right now
   syncEntities(list) {
     const seen = new Set();
-    for (const [id, kind, x, y, z, yaw] of list) {
+    for (const [id, kind, x, y, z, yaw, flags = 0] of list) {
       seen.add(id);
       let v = this.entities.get(id);
       if (!v) {
@@ -197,6 +302,7 @@ export class EntityViews {
       }
       v.target.set(x, y, z);
       v.tYaw = yaw;
+      v.flags = flags;
     }
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.removeEntity(id);
   }
@@ -207,6 +313,13 @@ export class EntityViews {
       const mesh = itemMesh(kind, this.textures);
       group.add(mesh);
       return { item: kind, group, mesh, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
+    }
+    if (kind === 'arrow') {
+      const group = new THREE.Group();
+      const shaft = box(0.04, 0.04, 0.5, 0x8a6a40);
+      const tip = box(0.07, 0.07, 0.08, 0x9a9a9a); tip.position.z = -0.27;
+      group.add(shaft, tip);
+      return { arrow: true, group, target: new THREE.Vector3(), yaw: 0, tYaw: 0 };
     }
     const build = MOB_BUILDERS[kind] || MOB_BUILDERS.pig;
     const model = build();
@@ -232,8 +345,7 @@ export class EntityViews {
     for (const [id, v] of this.entities) {
       if (!v.mob) continue;
       const p = v.group.position;
-      const hw = v.mob === 'zombie' ? 0.35 : 0.5;
-      const h = v.mob === 'zombie' ? 1.95 : v.mob === 'cow' ? 1.4 : 0.95;
+      const [hw, h] = HITBOX[v.mob] || [0.5, 1];
       const t = rayBox(origin, dir, p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw);
       if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { id, dist: t };
     }
@@ -272,12 +384,28 @@ export class EntityViews {
         this.setMaterialTint(g, li, li, li);
         continue;
       }
+      if (v.arrow) {
+        g.rotation.y = v.tYaw;
+        const la = this.lightAt(g.position.x, g.position.y, g.position.z);
+        this.setMaterialTint(g, la, la, la);
+        continue;
+      }
       v.yaw += angleDiff(v.tYaw, v.yaw) * k;
       g.rotation.y = v.yaw;
-      animateLimbs(v, Math.hypot(g.position.x - bx, g.position.z - bz), dt);
+      const moved = Math.hypot(g.position.x - bx, g.position.z - bz);
+      animateLimbs(v, moved, dt);
+      if (v.model.spiderLegs) {
+        v.model.spiderLegs.forEach((leg, i) => { leg.rotation.x = Math.sin(v.walk * 1.5 + i) * 0.35 * Math.min(1, moved / Math.max(dt, 1e-3) / 2); });
+      }
+      if (v.model.wool) {
+        const sheared = (v.flags & 1) !== 0;
+        v.model.wool.visible = !sheared;
+        v.model.headWool.visible = !sheared;
+      }
       v.hurt = Math.max(0, v.hurt - dt);
       const lm = this.lightAt(g.position.x, g.position.y + 1, g.position.z);
       if (v.hurt > 0) this.setMaterialTint(g, Math.max(lm, 0.3), lm * 0.2, lm * 0.2);
+      else if (v.flags & 2 && Math.sin(performance.now() / 60) > 0) this.setMaterialTint(g, 2, 2, 2); // creeper about to blow
       else this.setMaterialTint(g, lm, lm, lm);
     }
   }

@@ -89,6 +89,10 @@ export const sound = {
   hurt() { tone({ freq: 300, endFreq: 140, duration: 0.18, gain: 0.35, type: 'square' }); },
   eat() { burst({ freq: 900, q: 2, duration: 0.09, gain: 0.3 }); },
   splash() { burst({ freq: 900, q: 0.4, duration: 0.4, gain: 0.35, type: 'lowpass' }); },
+  boom() {
+    burst({ freq: 120, q: 0.5, duration: 1.2, gain: 0.9, type: 'lowpass' });
+    burst({ freq: 400, q: 0.5, duration: 0.6, gain: 0.5, type: 'lowpass' });
+  },
   click() { tone({ freq: 900, duration: 0.04, gain: 0.08, type: 'triangle' }); },
   mobHurt(kind) {
     if (kind === 'zombie') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });

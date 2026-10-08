@@ -18,7 +18,8 @@
     <div id="title-screen" class="menu">
       <h1 class="logo">BlockCraft</h1>
       <p class="splash">Play with friends — no download!</p>
-      <label class="field">Your name
+      <p id="signed-in" class="signed-in"><span id="signed-in-name"></span> <button id="btn-logout" class="link-button">Log out</button></p>
+      <label id="dev-name-field" class="field hidden">Your name (local testing)
         <input id="name" maxlength="16" placeholder="Steve" autocomplete="nickname">
       </label>
       <button id="btn-worlds" class="big">Play</button>
@@ -26,6 +27,23 @@
       <button id="btn-options" class="big secondary">Options</button>
       <p id="title-message" class="message"></p>
       <p class="footnote">Independent fan project — not affiliated with Mojang or Microsoft.</p>
+    </div>
+
+    <div id="login-screen" class="menu hidden">
+      <h1 class="logo">BlockCraft</h1>
+      <form id="login-form">
+        <label class="field">Username <input id="login-name" autocomplete="username" required></label>
+        <label class="field">Password <input id="login-password" type="password" autocomplete="current-password" required></label>
+        <button id="btn-login" type="submit" class="big">Log in</button>
+      </form>
+      <p id="login-message" class="message"></p>
+      <p class="hint">No account? Ask the owner of this game to make one for you.</p>
+    </div>
+
+    <div id="setup-screen" class="menu hidden">
+      <h1 class="logo">BlockCraft</h1>
+      <h2>Almost ready</h2>
+      <p class="hint">The owner still needs to finish setting up logins (see SETUP-LOGIN.md in the repository).</p>
     </div>
 
     <div id="worlds-screen" class="menu hidden">
@@ -59,7 +77,6 @@
 
     <div id="join-screen" class="menu hidden">
       <h2>Join a friend's world</h2>
-      <label class="field">Your name <input id="join-name" maxlength="16" placeholder="Steve" autocomplete="nickname"></label>
       <label class="field">Invite link or code <input id="join-code" placeholder="paste the link your friend sent"></label>
       <label class="field">Password <small>(if your friend set one)</small> <input id="join-password" type="password" maxlength="64"></label>
       <div class="row">
@@ -133,6 +150,14 @@
           <p class="hint">Keep this tab open while friends play. Your world stays in your browser.</p>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="sleep" class="overlay hidden">
+    <div class="menu">
+      <h2>Sleeping…</h2>
+      <p class="hint">Night is skipped when everyone in the world is in bed.</p>
+      <button id="btn-leave-bed" class="big">Leave bed</button>
     </div>
   </div>
 

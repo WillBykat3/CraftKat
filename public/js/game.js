@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -135,14 +135,31 @@ export class Game {
       }
       case 'mobdeath': return;
       case 'furnace': return this.screen.setFurnaceState(msg);
-      case 'cursor': return this.screen.setCursor(msg.stack);
+      case 'chest': return this.screen.setChestState(msg);
+      case 'chest_gone': if (this.screen.kind === 'chest') this.closeScreen(); return;
+      case 'sleeping': return this.startSleeping(msg.at);
+      case 'wake': return this.stopSleeping();
+      case 'boom': {
+        const d = Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z);
+        if (d < 48) { sound.boom(); this.shake = Math.max(this.shake || 0, Math.max(0, 1 - d / 24)); }
+        return;
+      }
+      case 'cursor':
+        if (this.screen.isOpen) return this.screen.setCursor(msg.stack);
+        // the screen was closed before the host answered: put the item back in the inventory
+        if (msg.stack) {
+          const left = addItem(this.inv, msg.stack.id, msg.stack.count, msg.stack.dur);
+          if (left > 0) this.dropStack({ ...msg.stack, count: left });
+          this.invDirty = true;
+        }
+        return;
     }
   }
 
   welcome(msg) {
     this.myId = msg.id;
     this.name = msg.name;
-    this.world = new World(msg.seed);
+    this.world = new World(msg.seed, msg.gen || 1);
     this.world.importEdits(msg.edits);
     this.spawn = msg.spawn;
     this.time = msg.time;
@@ -158,7 +175,7 @@ export class Game {
     if (this.stats.health <= 0) this.stats.health = 20;
     this.unstick();
     for (const p of msg.players) this.entities.addPlayer(p.id, p.name, p.p, p.r);
-    this.r.startWorld(msg.seed, msg.edits);
+    this.r.startWorld(msg.seed, msg.edits, msg.gen || 1);
     this.r.setRenderDistance(this.settings.renderDistance);
     this.playing = true;
     this.addChat(`Welcome to ${msg.worldName}, ${msg.name}!`, 'sys');
@@ -205,6 +222,18 @@ export class Game {
     this.send({ t: 'furnace_click', x: at[0], y: at[1], z: at[2], slot, button, cursor });
   }
 
+  chestClick(at, slot, button, cursor) {
+    this.send({ t: 'chest_click', x: at[0], y: at[1], z: at[2], slot, button, cursor });
+  }
+
+  chestPut(at, stack) {
+    this.send({ t: 'chest_put', x: at[0], y: at[1], z: at[2], stack });
+  }
+
+  chestTake(at, slot) {
+    this.send({ t: 'chest_take', x: at[0], y: at[1], z: at[2], slot });
+  }
+
   // ---------- input ----------
   locked() {
     return document.pointerLockElement === this.r.renderer.domElement;
@@ -230,12 +259,12 @@ export class Game {
       if (!this.locked()) {
         for (const k in this.keys) this.keys[k] = false;
         this.mouse.left = this.mouse.right = false;
-        if (!this.chatOpen && !this.screen.isOpen && !this.dead) this.showPause(true);
+        if (!this.chatOpen && !this.screen.isOpen && !this.dead && !this.player.sleeping) this.showPause(true);
       } else {
         this.showPause(false);
       }
     });
-    on(canvas, 'click', () => { if (this.playing && !this.locked() && !this.screen.isOpen && !this.dead) this.lock(); });
+    on(canvas, 'click', () => { if (this.playing && !this.locked() && !this.screen.isOpen && !this.dead && !this.player.sleeping) this.lock(); });
 
     on(document, 'mousemove', (e) => {
       if (!this.locked()) return;
@@ -328,6 +357,10 @@ export class Game {
       const [x, y, z] = this.screen.furnace.at;
       this.send({ t: 'furnace_close', x, y, z });
     }
+    if (this.screen.kind === 'chest') {
+      const [x, y, z] = this.screen.chest.at;
+      this.send({ t: 'chest_close', x, y, z });
+    }
     this.screen.close();
     this.lock();
   }
@@ -392,8 +425,8 @@ export class Game {
     };
   }
 
-  // Voxel walk along the view ray (skips air, water and nothing else).
-  raycast(maxDist = REACH) {
+  // Voxel walk along the view ray (skips air, and water unless asked for).
+  raycast(maxDist = REACH, hitWater = false) {
     const { origin: o, dir: d } = this.viewRay();
     let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
     const sx = Math.sign(d.x), sy = Math.sign(d.y), sz = Math.sign(d.z);
@@ -405,7 +438,7 @@ export class Game {
     let t = 0;
     while (t <= maxDist) {
       const id = this.world.getBlock(x, y, z);
-      if (id !== BLOCK.AIR && id !== BLOCK.WATER && y >= 0 && y < HEIGHT) return { x, y, z, id, normal: [...normal], dist: t };
+      if (id !== BLOCK.AIR && (hitWater || id !== BLOCK.WATER) && y >= 0 && y < HEIGHT) return { x, y, z, id, normal: [...normal], dist: t };
       if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; normal[0] = -sx; normal[1] = 0; normal[2] = 0; }
       else if (ty < tz) { y += sy; t = ty; ty += tdy; normal[0] = 0; normal[1] = -sy; normal[2] = 0; }
       else { z += sz; t = tz; tz += tdz; normal[0] = 0; normal[1] = 0; normal[2] = -sz; }
@@ -471,15 +504,37 @@ export class Game {
   }
 
   rightClick() {
+    if (this.player.sleeping) return;
     const hit = this.raycast();
     const held = this.held();
+    const mob = this.targetMob(hit);
+    if (mob && held?.id === ITEM.SHEARS) {
+      this.send({ t: 'interact', e: mob.id, tool: held.id });
+      this.useTool(1);
+      this.swing = 1;
+      return;
+    }
     if (hit && !this.player.sneaking) {
+      const at = [hit.x, hit.y, hit.z];
       if (hit.id === BLOCK.CRAFTING_TABLE) { this.openScreen('crafting'); return; }
       if (hit.id === BLOCK.FURNACE) {
-        this.openScreen('furnace', { at: [hit.x, hit.y, hit.z] });
+        this.openScreen('furnace', { at });
         this.send({ t: 'furnace_open', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
+      if (hit.id === BLOCK.CHEST) {
+        this.openScreen('chest', { at });
+        this.send({ t: 'chest_open', x: hit.x, y: hit.y, z: hit.z });
+        return;
+      }
+      if (hit.id === BLOCK.BED) {
+        this.send({ t: 'sleep', x: hit.x, y: hit.y, z: hit.z });
+        return;
+      }
+    }
+    if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET)) {
+      this.useBucket(held);
+      return;
     }
     if (held && ITEMS[held.id]?.food) {
       if (this.mode === 'survival' && this.stats.food < 20) this.eating = 0.001;
@@ -515,6 +570,59 @@ export class Game {
       takeOne(this.inv, this.selected);
       this.invDirty = true;
     }
+  }
+
+  // Empty bucket scoops up water; a water bucket pours it out.
+  useBucket(held) {
+    const survival = this.mode === 'survival';
+    if (held.id === ITEM.BUCKET) {
+      const hit = this.raycast(REACH, true);
+      if (!hit || hit.id !== BLOCK.WATER) return;
+      this.send({ t: 'bucket', x: hit.x, y: hit.y, z: hit.z, fill: true });
+      this.applyBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
+      if (survival) {
+        if (held.count > 1) { held.count--; const left = addItem(this.inv, ITEM.WATER_BUCKET, 1); if (left) this.dropStack({ id: ITEM.WATER_BUCKET, count: 1 }); }
+        else this.inv[this.selected] = { id: ITEM.WATER_BUCKET, count: 1 };
+      }
+    } else {
+      const hit = this.raycast();
+      if (!hit) return;
+      const replace = BLOCKS[hit.id].replaceable && hit.id !== BLOCK.WATER;
+      const x = replace ? hit.x : hit.x + hit.normal[0];
+      const y = replace ? hit.y : hit.y + hit.normal[1];
+      const z = replace ? hit.z : hit.z + hit.normal[2];
+      const current = this.world.getBlock(x, y, z);
+      if (!BLOCKS[current].replaceable || current === BLOCK.WATER || y < 1) return;
+      this.send({ t: 'bucket', x, y, z, fill: false });
+      this.applyBlock(x, y, z, BLOCK.WATER);
+      if (survival) this.inv[this.selected] = { id: ITEM.BUCKET, count: 1 };
+    }
+    sound.splash();
+    this.swing = 1;
+    this.useCooldown = 0.3;
+    this.invDirty = true;
+  }
+
+  // ---------- beds ----------
+  startSleeping(at) {
+    const p = this.player;
+    p.sleeping = true;
+    p.x = at[0] + 0.5; p.y = at[1] + 9 / 16; p.z = at[2] + 0.5;
+    p.vx = p.vy = p.vz = 0;
+    $('sleep').classList.remove('hidden');
+    document.exitPointerLock();
+  }
+
+  stopSleeping(tellHost = false) {
+    if (!this.player.sleeping) return;
+    this.player.sleeping = false;
+    $('sleep').classList.add('hidden');
+    if (tellHost) this.send({ t: 'wake' });
+    this.unstick();
+    this.lock();
+    // waking up at morning isn't a click, so the browser may refuse to grab the mouse:
+    // show the menu as a "click to play" screen (it hides itself once the mouse is captured)
+    if (!this.locked()) this.showPause(true);
   }
 
   pickBlock() {
@@ -628,6 +736,7 @@ export class Game {
   // ---------- physics ----------
   physics(dt) {
     const p = this.player;
+    if (p.sleeping) return;
     const k = this.keys;
     const creative = this.mode === 'creative';
     if (!creative) p.flying = false;
@@ -671,6 +780,14 @@ export class Game {
     const before = { x: p.x, z: p.z };
     const wasOnGround = p.onGround;
     const res = moveBody(this.world, p, dt);
+
+    // Swimming into a wall pushes you up, so you can climb out onto a bank (like Minecraft).
+    // Checked against any part of the body touching water, not just the feet, because at the
+    // surface your feet bob in and out of the water.
+    if (res.hitWall && !p.flying && (forward || strafe || k.Space)) {
+      const touchingWater = [0.1, 0.5, 1.0].some((dy) => this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z)) === BLOCK.WATER);
+      if (touchingWater) p.vy = Math.max(p.vy, JUMP_SPEED);
+    }
 
     // sneaking: don't walk off edges
     if (p.sneaking && wasOnGround && !res.onGround && p.vy <= 0) {
@@ -806,8 +923,13 @@ export class Game {
     this.useCooldown -= dt;
 
     const cam = this.r.camera;
-    cam.position.set(p.x, p.y + this.eyeHeight(), p.z);
+    cam.position.set(p.x, p.y + (p.sleeping ? 0.3 : this.eyeHeight()), p.z);
     cam.rotation.set(p.pitch, p.yaw, 0);
+    if (this.shake > 0) { // explosion camera shake
+      cam.position.x += (Math.random() - 0.5) * this.shake * 0.4;
+      cam.position.y += (Math.random() - 0.5) * this.shake * 0.4;
+      this.shake = Math.max(0, this.shake - dt * 1.5);
+    }
     this.r.updateChunks(p.x, p.z);
 
     // targeting, breaking and repeated placing

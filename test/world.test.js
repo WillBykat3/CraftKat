@@ -155,3 +155,22 @@ test('blockIndex layout matches chunk size', () => {
   assert.equal(new World(1).getChunk(0, 0).length, CHUNK * CHUNK * HEIGHT);
   assert.equal(blockIndex(CHUNK - 1, HEIGHT - 1, CHUNK - 1), CHUNK * CHUNK * HEIGHT - 1);
 });
+
+test('generator version 1 terrain never changes (old worlds keep their shape)', () => {
+  const w = new World(2024, 1);
+  let h = 0;
+  for (let cx = -4; cx <= 4; cx++) for (let cz = -4; cz <= 4; cz++) for (const b of w.getChunk(cx, cz)) h = (Math.imul(h, 31) + b) | 0;
+  assert.equal(h, 384292837);
+});
+
+test('generator version 2 adds deepslate, copper, stone variants and cherry trees', () => {
+  const w = new World(2024, 2);
+  const counts = new Map();
+  for (let cx = -10; cx <= 10; cx++) for (let cz = -10; cz <= 10; cz++) for (const id of w.getChunk(cx, cz)) counts.set(id, (counts.get(id) || 0) + 1);
+  for (const id of [BLOCK.DEEPSLATE, BLOCK.DEEPSLATE_DIAMOND_ORE, BLOCK.COPPER_ORE, BLOCK.GRANITE, BLOCK.DIORITE, BLOCK.ANDESITE, BLOCK.CHERRY_LOG, BLOCK.CHERRY_LEAVES]) {
+    assert.ok((counts.get(id) || 0) > 0, BLOCKS[id].name);
+  }
+  // no deepslate in version 1
+  const old = new World(2024, 1);
+  assert.ok(!old.getChunk(0, 0).includes(BLOCK.DEEPSLATE));
+});

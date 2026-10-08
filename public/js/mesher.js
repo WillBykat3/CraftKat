@@ -97,10 +97,11 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
           continue;
         }
 
+        const h = def.height || 1; // partial blocks (beds) are shorter
         for (const face of FACES) {
           const [dx, dy, dz] = face.dir;
           const nid = get(x + dx, y + dy, z + dz);
-          if (OPAQUE[nid]) continue;
+          if (OPAQUE[nid] && !(dy === 1 && h < 1)) continue;
           if (nid === id && def.cullSame) continue;
 
           const axisN = dx !== 0 ? 0 : dy !== 0 ? 1 : 2;
@@ -137,7 +138,9 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
           const base = solid.positions.length / 3;
           for (let i = 0; i < 4; i++) {
             const c = face.corners[i];
-            solid.vertex(x + c[0], y + c[1], z + c[2], c[3] ? u1 : u0, c[4] ? v1 : v0,
+            // side faces of short blocks show only the bottom part of the texture
+            const v = c[4] ? (dy === 0 ? v0 + (v1 - v0) * h : v1) : v0;
+            solid.vertex(x + c[0], y + (c[1] ? h : 0), z + c[2], c[3] ? u1 : u0, v,
               face.shade * AO_LEVELS[ao[i]], vs[i], vb[i]);
           }
           // split the quad along the diagonal that hides interpolation artefacts

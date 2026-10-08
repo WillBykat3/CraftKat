@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>BlockCraft Accounts</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>BlockCraft Accounts</h1>
+      <div id="who" class="hidden"><span id="who-name"></span> <button id="btn-logout" class="link">Log out</button></div>
+    </header>
+
+    <section id="setup-missing" class="card hidden">
+      <h2>Logins aren't set up yet</h2>
+      <p>Fill in <code>public/js/config.js</code> and follow <code>SETUP-LOGIN.md</code> in the repository.</p>
+    </section>
+
+    <section id="login" class="card hidden">
+      <h2>Owner login</h2>
+      <p class="muted">Only the owner can manage accounts.</p>
+      <form id="login-form">
+        <label>Email <input id="login-email" type="email" autocomplete="username" required></label>
+        <label>Password <input id="login-password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" id="btn-login">Log in</button>
+        <p id="login-error" class="error"></p>
+      </form>
+    </section>
+
+    <section id="denied" class="card hidden">
+      <h2>Not allowed</h2>
+      <p id="denied-text">This page is only for the owner.</p>
+    </section>
+
+    <section id="panel" class="hidden">
+      <div class="card">
+        <h2>Create an account</h2>
+        <form id="create-form" class="row">
+          <label>Username <input id="new-username" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" title="3–16 letters, numbers or _" required autocomplete="off"></label>
+          <label>Password <input id="new-password" type="text" minlength="8" required autocomplete="new-password"></label>
+          <button type="button" id="btn-generate" class="secondary">Generate</button>
+          <button type="submit">Create</button>
+        </form>
+        <p id="create-result" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <div class="row space">
+          <h2>Accounts <span id="count" class="muted"></span></h2>
+          <button id="btn-refresh" class="secondary">Refresh</button>
+        </div>
+        <p id="list-error" class="error"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Username</th><th>Created</th><th>Last login</th><th></th></tr></thead>
+            <tbody id="accounts"></tbody>
+          </table>
+        </div>
+        <p class="muted small">Friends log in to the game with their username and password. Nobody can make an account without you.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="edit-dialog">
+    <form method="dialog" id="edit-form">
+      <h2>Edit <span id="edit-title"></span></h2>
+      <label>Username <input id="edit-username" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" title="3–16 letters, numbers or _"></label>
+      <label>New password <small>(leave empty to keep it)</small> <input id="edit-password" type="text" minlength="8" autocomplete="new-password"></label>
+      <p id="edit-error" class="error"></p>
+      <div class="row">
+        <button value="cancel" class="secondary" formnovalidate>Cancel</button>
+        <button id="btn-save" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

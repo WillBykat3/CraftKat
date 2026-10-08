@@ -2,7 +2,10 @@
 // and the in-game HUD (hotbar, hearts, hunger, air).
 
 import { itemName, ITEMS, toolOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
-import { HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem } from './inventory.js';
+import {
+  HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem,
+  RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult,
+} from './inventory.js';
 import { sound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,12 +56,13 @@ export class InventoryScreen {
     return this.kind !== null;
   }
 
-  // kind: 'inventory' | 'crafting' | 'furnace' | 'creative'
+  // kind: 'inventory' | 'crafting' | 'furnace' | 'chest' | 'creative'
   open(kind, data = {}) {
     this.kind = kind;
     this.gridSize = kind === 'crafting' ? 3 : 2;
     this.grid = new Array(this.gridSize * this.gridSize).fill(null);
     this.furnace = kind === 'furnace' ? { at: data.at, slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 } : null;
+    this.chest = kind === 'chest' ? { at: data.at, slots: new Array(27).fill(null), loaded: false } : null;
     this.creativeTab = this.creativeTab || 'blocks';
     this.root.classList.remove('hidden');
     this.render();
@@ -89,6 +93,15 @@ export class InventoryScreen {
     this.render();
   }
 
+  setChestState(state) {
+    if (!this.chest) return;
+    const [x, y, z] = this.chest.at;
+    if (state.x !== x || state.y !== y || state.z !== z) return;
+    this.chest.slots = state.slots;
+    this.chest.loaded = true;
+    this.render();
+  }
+
   setCursor(stack) {
     this.cursor = stack;
     this.paintCursor();
@@ -116,8 +129,16 @@ export class InventoryScreen {
   playerSlots(panel) {
     const inv = this.game.inv;
     const click = (i) => (button, shift) => {
+      if (shift && this.kind === 'chest') {
+        // straight into the chest (the host sends back anything that doesn't fit)
+        const stack = inv[i];
+        if (!stack) return;
+        inv[i] = null;
+        this.game.chestPut(this.chest.at, stack);
+        return;
+      }
       if (shift && this.kind !== 'creative') {
-        // move between hotbar and backpack (or into the furnace)
+        // move between hotbar and backpack
         const stack = inv[i];
         if (!stack) return;
         inv[i] = null;
@@ -137,8 +158,66 @@ export class InventoryScreen {
     for (let i = 0; i < HOTBAR_SIZE; i++) this.slot(bar, inv[i], click(i));
   }
 
+  // Minecraft's recipe book: every recipe that fits this grid, craftable ones first.
+  recipeBook(parent) {
+    const book = el('div', 'recipe-book', parent);
+    el('h3', '', book).textContent = 'Recipe Book';
+    const search = el('input', 'book-search', book);
+    search.placeholder = 'Search…';
+    search.value = this.bookSearch || '';
+    const onlyLabel = el('label', 'book-only', book);
+    const only = el('input', '', onlyLabel);
+    only.type = 'checkbox';
+    only.checked = !!this.bookOnlyCraftable;
+    onlyLabel.append(' Only show what I can make');
+    const list = el('div', 'book-list', book);
+    const stacks = [...this.game.inv, ...this.grid];
+    const entries = RECIPES.filter((r) => recipeFits(r, this.gridSize))
+      .map((r) => ({ r, result: recipeResult(r), times: craftableTimes(r, stacks) }))
+      .filter((e) => !this.bookOnlyCraftable || e.times > 0)
+      .filter((e) => !this.bookSearch || itemName(e.result.id).toLowerCase().includes(this.bookSearch.toLowerCase()));
+    entries.sort((a, b) => (b.times > 0) - (a.times > 0));
+    const seen = new Set();
+    for (const e of entries) {
+      const key = e.result.id + ':' + (e.times > 0);
+      if (seen.has(key)) continue; // e.g. the two plank recipes for one item
+      seen.add(key);
+      const s = el('div', 'slot book-entry' + (e.times > 0 ? ' can' : ''), list);
+      paintSlot(s, e.result, this.game.iconURL);
+      s.title = `${itemName(e.result.id)}${e.times > 0 ? '' : ' (missing ingredients)'}\n${describe(e.r)}`;
+      s.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        this.useRecipe(e.r, ev.shiftKey);
+      });
+    }
+    if (!entries.length) el('p', 'hint', list).textContent = 'Nothing to show.';
+    search.addEventListener('input', () => {
+      this.bookSearch = search.value;
+      this.render();
+      const again = this.root.querySelector('.book-search');
+      again.focus();
+      again.setSelectionRange(again.value.length, again.value.length);
+    });
+    search.addEventListener('keydown', (ev) => ev.stopPropagation()); // typing E shouldn't close the screen
+    only.addEventListener('change', () => { this.bookOnlyCraftable = only.checked; this.render(); });
+  }
+
+  // Put a recipe's ingredients in the grid (shift: as many as possible).
+  useRecipe(r, max) {
+    for (let i = 0; i < this.grid.length; i++) {
+      if (this.grid[i]) { this.returnStack(this.grid[i]); this.grid[i] = null; }
+    }
+    const times = max ? craftableTimes(r, this.game.inv) : 1;
+    if (times > 0 && fillGrid(r, this.game.inv, this.grid, this.gridSize, times)) sound.click();
+    this.render();
+    this.game.onInventoryChange();
+  }
+
   craftingArea(panel) {
     const size = this.gridSize;
+    const toggle = el('button', 'book-toggle' + (this.bookOpen ? ' active' : ''), panel);
+    toggle.textContent = '📖 Recipe Book';
+    toggle.addEventListener('click', () => { this.bookOpen = !this.bookOpen; this.render(); });
     const row = el('div', 'craft-row', panel);
     const gridEl = el('div', size === 3 ? 'grid3' : 'grid2', row);
     for (let i = 0; i < this.grid.length; i++) {
@@ -165,6 +244,18 @@ export class InventoryScreen {
       } else return;
       consumeGrid(this.grid);
     }, 'result');
+  }
+
+  chestArea(panel) {
+    const grid = el('div', 'grid9', panel);
+    this.chest.slots.forEach((stack, i) => {
+      this.slot(grid, stack, (button, shift) => {
+        if (!this.chest.loaded) return;
+        if (shift) { this.game.chestTake(this.chest.at, i); return; }
+        this.game.chestClick(this.chest.at, i, button === 2 ? 2 : 0, this.cursor);
+        this.cursor = null; // the host sends back what we end up holding
+      });
+    });
   }
 
   furnaceArea(panel) {
@@ -209,11 +300,14 @@ export class InventoryScreen {
   render() {
     if (!this.kind) return;
     this.root.innerHTML = '';
-    const panel = el('div', 'inv-panel', this.root);
+    const wrap = el('div', 'inv-wrap', this.root);
+    if (this.bookOpen && (this.kind === 'inventory' || this.kind === 'crafting')) this.recipeBook(wrap);
+    const panel = el('div', 'inv-panel', wrap);
     const title = el('h3', '', panel);
-    title.textContent = { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', creative: 'Creative Inventory' }[this.kind];
+    title.textContent = { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory' }[this.kind];
     if (this.kind === 'inventory' || this.kind === 'crafting') this.craftingArea(panel);
     if (this.kind === 'furnace') this.furnaceArea(panel);
+    if (this.kind === 'chest') this.chestArea(panel);
     if (this.kind === 'creative') this.creativeArea(panel);
     el('h3', 'small', panel).textContent = 'Inventory';
     this.playerSlots(panel);
@@ -235,6 +329,16 @@ export class InventoryScreen {
     };
     this.paintCursor();
   }
+}
+
+function describe(r) {
+  const names = new Map();
+  for (const [k, ids] of Object.entries(r.keys)) names.set(k, ids.map(itemName).join(' or '));
+  const parts = [...new Set(r.pattern.join('').replace(/[. ]/g, ''))].map((k) => {
+    const n = r.pattern.join('').split(k).length - 1;
+    return `${n}× ${names.get(k)}`;
+  });
+  return 'Needs: ' + parts.join(', ');
 }
 
 function range(a, b) {

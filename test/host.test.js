@@ -235,3 +235,151 @@ test('zombies leave dead players alone until they respawn', () => {
   for (let i = 0; i < 40; i++) { z.x = p.x + 1; z.y = p.y; z.z = p.z; host.tick(0.05); }
   assert.ok(all('a', 'hurt').length > 0, 'attacks again after respawning');
 });
+
+test('chests store items, support shift-moves and spill when broken', () => {
+  const { host, join, last, all } = setup();
+  join('a', 'A');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  const at = { x: x + 1, y: y + 1, z };
+  host.message('a', { t: 'set', ...at, id: BLOCK.CHEST });
+  host.message('a', { t: 'chest_open', ...at });
+  host.message('a', { t: 'chest_click', ...at, slot: 4, button: 0, cursor: { id: BLOCK.DIRT, count: 10 } });
+  assert.equal(last('a', 'cursor').stack, null);
+  assert.deepEqual(last('a', 'chest').slots[4], { id: BLOCK.DIRT, count: 10 });
+  host.message('a', { t: 'chest_put', ...at, stack: { id: BLOCK.DIRT, count: 60 } });
+  const slots = last('a', 'chest').slots;
+  assert.equal(slots[4].count, 64);
+  assert.equal(slots[0].count, 6);
+  host.message('a', { t: 'chest_take', ...at, slot: 0 });
+  assert.deepEqual(last('a', 'give'), { t: 'give', id: BLOCK.DIRT, count: 6 });
+  // the chest is saved and restored
+  const restored = new GameHost(JSON.parse(JSON.stringify(host.serialize())), () => {});
+  assert.equal(restored.chests.get(`${at.x},${at.y},${at.z}`).slots[4].count, 64);
+  // breaking it drops everything inside, and viewers are told
+  host.entities.clear();
+  host.message('a', { t: 'dig', ...at, tool: ITEM.WOODEN_AXE });
+  const drops = [...host.entities.values()].map((e) => [e.item, e.count]);
+  assert.deepEqual(drops.sort(), [[BLOCK.CHEST, 1], [BLOCK.DIRT, 64]].sort());
+  assert.equal(all('a', 'chest_gone').length, 1);
+});
+
+test('buckets pick up and pour water', () => {
+  const { host, join } = setup();
+  join('a', 'A');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  host.world.setBlock(x + 2, y, z, BLOCK.WATER);
+  host.message('a', { t: 'bucket', x: x + 2, y, z, fill: true });
+  assert.equal(host.world.getBlock(x + 2, y, z), BLOCK.AIR);
+  host.message('a', { t: 'bucket', x: x + 2, y: y + 1, z, fill: false });
+  assert.equal(host.world.getBlock(x + 2, y + 1, z), BLOCK.WATER);
+  // can't "fill" from something that isn't water
+  host.world.setBlock(x - 2, y, z, BLOCK.STONE);
+  host.message('a', { t: 'bucket', x: x - 2, y, z, fill: true });
+  assert.equal(host.world.getBlock(x - 2, y, z), BLOCK.STONE);
+});
+
+test('sleeping skips the night once everyone is in bed, and beds become respawn points', () => {
+  const { host, join, last } = setup();
+  join('a', 'A'); join('b', 'B');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  standAtSpawn(host, 'b');
+  host.world.setBlock(x + 1, y, z, BLOCK.BED);
+  host.world.setBlock(x - 1, y, z, BLOCK.BED);
+  host.time = 3000; // daytime: only sets the respawn point
+  host.message('a', { t: 'sleep', x: x + 1, y, z });
+  assert.match(last('a', 'sys').msg, /only sleep at night/);
+  host.time = 15000;
+  host.message('a', { t: 'sleep', x: x + 1, y, z });
+  assert.ok(last('a', 'sleeping'));
+  for (let i = 0; i < 80; i++) host.tick(0.05);
+  assert.ok(host.time > 15000, 'one sleeper is not enough');
+  host.message('b', { t: 'sleep', x: x - 1, y, z });
+  for (let i = 0; i < 80; i++) host.tick(0.05);
+  assert.ok(host.time < 1000, 'morning: ' + host.time);
+  assert.ok(last('a', 'wake'));
+  // respawn at the bed; after it's broken, back to world spawn
+  host.message('a', { t: 'respawn' });
+  assert.deepEqual(last('a', 'teleport').p, [x + 1.5, y + 1, z + 0.5]);
+  host.world.setBlock(x + 1, y, z, BLOCK.AIR);
+  host.message('a', { t: 'respawn' });
+  assert.deepEqual(last('a', 'teleport').p, host.save.spawn);
+});
+
+test('creepers blow up blocks and hurt nearby players', () => {
+  const { host, join, all } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  const p = host.players.get('a');
+  host.time = 18000;
+  const c = host.spawnMob('creeper', p.x + 2, p.y, p.z);
+  const groundBefore = host.world.getBlock(Math.floor(c.x), Math.floor(c.y) - 1, Math.floor(c.z));
+  for (let i = 0; i < 60 && host.entities.has(c.id); i++) { c.x = p.x + 2; c.z = p.z; c.y = p.y; host.tick(0.05); }
+  assert.ok(!host.entities.has(c.id), 'creeper exploded');
+  assert.ok(all('a', 'boom').length === 1);
+  assert.ok(all('a', 'hurt').some((m) => /blown up/.test(m.cause) && m.amount > 5), 'player hurt by the blast');
+  assert.ok(groundBefore !== BLOCK.AIR && host.world.getBlock(Math.floor(p.x) + 2, Math.floor(p.y) - 1, Math.floor(p.z)) !== groundBefore, 'crater');
+});
+
+test('skeletons shoot arrows that hit players', () => {
+  const { host, join, all } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  const p = host.players.get('a');
+  // a clear flat platform high up so terrain can't block the shot
+  for (let dx = -12; dx <= 12; dx++) for (let dz = -3; dz <= 3; dz++) {
+    host.world.setBlock(Math.floor(p.x) + dx, 80, Math.floor(p.z) + dz, BLOCK.STONE);
+    for (let dy = 81; dy < 85; dy++) host.world.setBlock(Math.floor(p.x) + dx, dy, Math.floor(p.z) + dz, BLOCK.AIR);
+  }
+  p.y = 81;
+  host.time = 18000;
+  const s = host.spawnMob('skeleton', p.x + 9, 81, p.z);
+  for (let i = 0; i < 120 && !all('a', 'hurt').length; i++) { s.x = p.x + 9; s.z = p.z; host.tick(0.05); }
+  assert.ok(all('a', 'hurt').some((m) => /shot/.test(m.cause)), 'arrow hit');
+});
+
+test('shears give wool from sheep, which regrows', () => {
+  const { host, join } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  const p = host.players.get('a');
+  const sheep = host.spawnMob('sheep', p.x + 1, p.y, p.z);
+  host.message('a', { t: 'interact', e: sheep.id, tool: ITEM.SHEARS });
+  assert.ok(sheep.sheared);
+  assert.ok([...host.entities.values()].some((e) => e.item === BLOCK.WOOL));
+  sheep.regrow = 0.01;
+  host.tick(0.05);
+  assert.ok(!sheep.sheared, 'wool grew back');
+});
+
+test('identical items lying together merge into one stack', () => {
+  const { host, join } = setup();
+  join('a', 'A');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  for (let i = 0; i < 5; i++) host.spawnItem(x + 0.5 + i * 0.1, y + 0.2, z + 0.5, BLOCK.COBBLE, 20, undefined, [0, 0, 0]);
+  host.spawnItem(x + 0.5, y + 0.2, z + 0.5, BLOCK.DIRT, 3, undefined, [0, 0, 0]);
+  host.spawnItem(x + 0.5, y + 0.2, z + 0.5, ITEM.IRON_PICKAXE, 1, 200, [0, 0, 0]); // tools never merge
+  host.spawnItem(x + 0.5, y + 0.2, z + 0.5, ITEM.IRON_PICKAXE, 1, 100, [0, 0, 0]);
+  host.mergeItems();
+  const stacks = [...host.entities.values()].map((e) => [e.item, e.count]).sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  assert.deepEqual(stacks, [[BLOCK.DIRT, 3], [BLOCK.COBBLE, 64], [BLOCK.COBBLE, 36], [ITEM.IRON_PICKAXE, 1], [ITEM.IRON_PICKAXE, 1]].sort((a, b) => a[0] - b[0] || b[1] - a[1]));
+});
+
+test('worlds saved by the previous version still load (no generator version, chests or beds)', () => {
+  const old = {
+    version: 2, name: 'Old', seed: 2024, mode: 'survival', cheats: true, spawn: [0.5, 40, 0.5], time: 5000,
+    edits: [[1, 40, 1, 12]], players: { alex: { pos: [3, 40, 3], rot: [0, 0], mode: 'survival', inv: null, health: 17, food: 20 } },
+    furnaces: {}, created: 1, lastPlayed: 1,
+  };
+  const inbox = [];
+  const host = new GameHost(old, (peer, msg) => inbox.push(msg));
+  assert.equal(host.gen, 1, 'old worlds keep the original terrain generator');
+  host.message('p', { t: 'hello', name: 'Alex' });
+  const w = inbox.find((m) => m.t === 'welcome');
+  assert.equal(w.gen, 1);
+  assert.equal(w.me.health, 17, 'existing player data found by name');
+  assert.deepEqual(w.me.pos, [3, 40, 3]);
+  // and it saves in the new format
+  const saved = host.serialize();
+  assert.deepEqual(saved.chests, {});
+  assert.equal(host.world.getBlock(1, 40, 1), 12);
+});

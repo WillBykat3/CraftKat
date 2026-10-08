@@ -15,16 +15,18 @@ fs.mkdirSync(vendor, { recursive: true });
 for (const file of ['three.module.js', 'three.core.js']) {
   fs.copyFileSync(path.join(root, 'node_modules', 'three', 'build', file), path.join(vendor, file));
 }
-await build({
-  entryPoints: [path.join(root, 'scripts', 'trystero-entry.js')],
-  bundle: true,
-  format: 'esm',
-  minify: true,
-  target: 'es2020',
-  platform: 'browser',
-  outfile: path.join(vendor, 'trystero.js'),
-  logLevel: 'warning',
-});
+for (const name of ['trystero', 'supabase']) {
+  await build({
+    entryPoints: [path.join(root, 'scripts', `${name}-entry.js`)],
+    bundle: true,
+    format: 'esm',
+    minify: true,
+    target: 'es2020',
+    platform: 'browser',
+    outfile: path.join(vendor, `${name}.js`),
+    logLevel: 'warning',
+  });
+}
 console.log('vendor files ready in public/vendor');
 
 if (process.argv.includes('--dist')) {

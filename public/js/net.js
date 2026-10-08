@@ -30,6 +30,9 @@ export class HostNetwork {
     this.room = null;
     this.action = null;
     this.peers = new Set();
+    this.verified = new Set();
+    // async (token) => {id, name}; when set, friends must prove who they are before playing
+    this.verify = null;
   }
 
   // GameHost's send callback
@@ -69,13 +72,40 @@ export class HostNetwork {
     };
     this.room.onPeerLeave = (peerId) => {
       this.peers.delete(peerId);
+      this.verified.delete(peerId);
       this.host.disconnect(peerId);
       onPeerCount?.(this.peers.size);
     };
-    this.action.onMessage = (data, { peerId }) => {
-      if (this.peers.has(peerId)) this.host.message(peerId, data);
-    };
+    this.action.onMessage = (data, { peerId }) => this.receive(peerId, data);
     return roomId;
+  }
+
+  // Messages from friends. Until a friend's hello has been checked, nothing else gets through.
+  async receive(peerId, data) {
+    if (!this.peers.has(peerId) || !data || typeof data !== 'object') return;
+    if (this.verified.has(peerId)) {
+      if (data.t !== 'hello') this.host.message(peerId, data);
+      return;
+    }
+    if (data.t !== 'hello' || this.checking?.has(peerId)) return;
+    // never trust identity fields a friend sends about themselves
+    const hello = { t: 'hello', name: data.name, password: data.password };
+    if (this.verify) {
+      (this.checking ??= new Set()).add(peerId);
+      try {
+        const who = await this.verify(data.token);
+        hello.name = who.name;
+        hello.accountId = who.id;
+      } catch (err) {
+        this.deliver(peerId, { t: 'error', msg: err.message || 'Your login could not be verified.' });
+        return;
+      } finally {
+        this.checking.delete(peerId);
+      }
+      if (!this.peers.has(peerId)) return; // left while we were checking
+    }
+    this.verified.add(peerId);
+    this.host.message(peerId, hello);
   }
 
   isOpen() {
@@ -88,6 +118,7 @@ export class HostNetwork {
     this.action = null;
     for (const peerId of this.peers) this.host.disconnect(peerId);
     this.peers.clear();
+    this.verified.clear();
   }
 }
 

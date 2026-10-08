@@ -251,6 +251,83 @@ function drawBlockTile(p, name) {
       p.specks([70, 50, 110], 12);
       break;
     case 'clay': p.noisy([160, 166, 179], 0.06); break;
+    case 'deepslate':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([80, 80, 86], (y % 4 === 0 ? 0.8 : 1) * (0.88 + rand() * 0.2)));
+      break;
+    case 'deepslate_top':
+      p.noisy([80, 80, 86], 0.12);
+      for (let i = 0; i < 5; i++) { const cx = 2 + Math.floor(rand() * 12), cy = 2 + Math.floor(rand() * 12); px(cx, cy, [60, 60, 66]); px(cx + 1, cy, [60, 60, 66]); }
+      break;
+    case 'cobbled_deepslate': {
+      p.noisy([55, 55, 60], 0.06);
+      for (let by = 0; by < 4; by++) for (let bx = 0; bx < 4; bx++) {
+        const f = 0.9 + rand() * 0.35;
+        for (let y = by * 4 + 1; y < by * 4 + 4; y++) for (let x = bx * 4 + (by % 2) + 1; x < bx * 4 + (by % 2) + 4; x++) px(x % S, y, shade([88, 88, 94], f));
+      }
+      break;
+    }
+    case 'deepslate_coal_ore': drawBlockTile(p, 'deepslate'); p.ore([25, 25, 25]); break;
+    case 'deepslate_iron_ore': drawBlockTile(p, 'deepslate'); p.ore([216, 175, 147]); break;
+    case 'deepslate_gold_ore': drawBlockTile(p, 'deepslate'); p.ore([250, 220, 60]); break;
+    case 'deepslate_diamond_ore': drawBlockTile(p, 'deepslate'); p.ore([95, 230, 225]); break;
+    case 'copper_ore': drawBlockTile(p, 'stone'); p.ore([224, 128, 80]); p.ore([90, 170, 130]); break;
+    case 'deepslate_copper_ore': drawBlockTile(p, 'deepslate'); p.ore([224, 128, 80]); p.ore([90, 170, 130]); break;
+    case 'granite': p.noisy([154, 106, 89], 0.12); p.specks([190, 140, 120], 18); p.specks([110, 75, 65], 12); break;
+    case 'diorite': p.noisy([200, 200, 200], 0.06); p.specks([120, 120, 120], 22); p.specks([240, 240, 240], 10); break;
+    case 'andesite': p.noisy([132, 134, 133], 0.08); p.specks([105, 107, 106], 20); p.specks([160, 162, 161], 12); break;
+    case 'cherry_log_side':
+      for (let x = 0; x < S; x++) {
+        const stripe = 0.85 + rand() * 0.3;
+        for (let y = 0; y < S; y++) px(x, y, shade([55, 30, 40], stripe * (0.9 + rand() * 0.2)));
+      }
+      break;
+    case 'cherry_log_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+        px(x, y, d > 6.5 ? shade([55, 30, 40], 0.9 + rand() * 0.2) : shade([215, 150, 150], (Math.floor(d) % 2 ? 0.88 : 1) * (0.95 + rand() * 0.1)));
+      }
+      break;
+    case 'cherry_leaves':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (rand() < 0.16) continue;
+        px(x, y, rand() < 0.15 ? [255, 220, 235] : shade([238, 158, 196], 0.8 + rand() * 0.35));
+      }
+      break;
+    case 'cherry_planks':
+      for (let y = 0; y < S; y++) {
+        const seam = Math.floor(y / 4) % 2 ? 4 : 11;
+        for (let x = 0; x < S; x++) px(x, y, shade([226, 178, 172], y % 4 === 3 || x === seam ? 0.72 : 0.93 + rand() * 0.1));
+      }
+      break;
+    case 'chest_top':
+    case 'chest_side':
+    case 'chest_front': {
+      const wood = [160, 105, 45];
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const edge = x === 0 || y === 0 || x === S - 1 || y === S - 1;
+        px(x, y, edge ? [70, 45, 20] : shade(wood, (y % 5 === 0 ? 0.8 : 1) * (0.9 + rand() * 0.15)));
+      }
+      if (name !== 'chest_top') for (let x = 1; x < S - 1; x++) px(x, 6, [70, 45, 20]);
+      if (name === 'chest_front') { for (const [x, y] of [[7, 5], [8, 5], [7, 6], [8, 6], [7, 7], [8, 7]]) px(x, y, [200, 200, 200]); px(7, 7, [60, 60, 60]); }
+      break;
+    }
+    case 'bed_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (y < 5 && x > 1 && x < 14) px(x, y, shade([235, 235, 235], 0.92 + rand() * 0.1)); // pillow
+        else px(x, y, shade([175, 35, 35], 0.9 + rand() * 0.15));
+      }
+      break;
+    case 'bed_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (y < 7) px(x, y, [0, 0, 0], 0); // the top 7 rows are above the bed's 9/16 height
+        else if (y < 11) px(x, y, shade([175, 35, 35], 0.85 + rand() * 0.15));
+        else px(x, y, (x < 3 || x > 12) ? shade(C.oak, 0.8) : shade(C.oak, 0.95 + rand() * 0.1));
+      }
+      break;
+    case 'copper_block':
+      p.noisy([200, 110, 75], 0.08);
+      for (let i = 0; i < S; i++) { px(i, 0, [230, 140, 100]); px(0, i, [230, 140, 100]); px(i, 15, [150, 80, 55]); px(15, i, [150, 80, 55]); }
+      break;
     default:
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, (x < 8) === (y < 8) ? [255, 0, 255] : [0, 0, 0]);
   }
@@ -381,6 +458,42 @@ function drawItem(p, icon) {
     case 'rotten_flesh': blob([130, 100, 60], 8, 8, 6, 4, 0.5); p.specks([80, 110, 50], 8); break;
     case 'bread': blob([200, 150, 70], 8, 8, 6.5, 3.5, 0.2); for (let x = 5; x < 12; x += 3) px(x, 7, [150, 100, 40]); break;
     case 'leather': blob([150, 90, 50], 8, 8, 5.5, 5, 0.3); break;
+    case 'raw_copper': blob([210, 120, 80], 8, 8.5, 5, 4.5, 0.4); p.specks([90, 170, 130], 4); break;
+    case 'copper_ingot':
+      for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([225, 125, 85], y === 6 ? 1.1 : 0.9 + rand() * 0.1));
+      break;
+    case 'bucket':
+    case 'water_bucket':
+      for (let y = 4; y < 14; y++) for (let x = 4 + (y - 4) / 5; x < 12 - (y - 4) / 5; x++) px(Math.floor(x), y, shade([200, 200, 205], y === 4 ? 1.15 : 0.85 + rand() * 0.15));
+      for (let x = 5; x < 11; x++) px(x, 2, [150, 150, 155]);
+      px(4, 3, [150, 150, 155]); px(11, 3, [150, 150, 155]);
+      if (icon === 'water_bucket') for (let x = 5; x < 11; x++) { px(x, 4, [60, 100, 230]); px(x, 5, [50, 85, 210]); }
+      else for (let x = 5; x < 11; x++) px(x, 5, [70, 70, 75]);
+      break;
+    case 'shears':
+      for (let i = 0; i < 7; i++) { px(4 + i, 4 + i, [215, 215, 220]); px(11 - i, 4 + i, [190, 190, 195]); }
+      for (const [x, y] of [[3, 11], [4, 12], [3, 12], [12, 11], [11, 12], [12, 12]]) px(x, y, [150, 40, 40]);
+      break;
+    case 'raw_chicken': blob([245, 200, 185], 8, 8, 5, 4, 0.2); break;
+    case 'cooked_chicken': blob([205, 140, 70], 8, 8, 5, 4, 0.25); break;
+    case 'raw_mutton': blob([215, 70, 70], 8, 8, 5.5, 4, 0.3); blob([245, 230, 225], 11, 7, 1.5, 1.5); break;
+    case 'cooked_mutton': blob([150, 85, 50], 8, 8, 5.5, 4, 0.3); blob([225, 200, 160], 11, 7, 1.5, 1.5); break;
+    case 'feather':
+      for (let i = 0; i < 10; i++) { px(4 + i, 13 - i, [200, 200, 200]); px(5 + i, 13 - i, [240, 240, 240]); px(4 + i, 12 - i, [235, 235, 235]); }
+      break;
+    case 'bone':
+      for (let i = 0; i < 10; i++) px(3 + i, 12 - i, [235, 232, 220]);
+      for (const [x, y] of [[2, 12], [3, 13], [2, 13], [13, 2], [12, 1], [13, 1]]) px(x, y, [235, 232, 220]);
+      break;
+    case 'arrow':
+      for (let i = 0; i < 10; i++) px(3 + i, 12 - i, STICK);
+      for (const [x, y] of [[12, 2], [13, 2], [13, 3], [12, 1]]) px(x, y, [170, 170, 175]);
+      for (const [x, y] of [[2, 12], [3, 13], [2, 13], [4, 13], [2, 11]]) px(x, y, [230, 230, 230]);
+      break;
+    case 'gunpowder': blob([90, 90, 90], 8, 9, 5, 3.5, 0.6); break;
+    case 'string':
+      for (let i = 0; i < 12; i++) px(2 + i, 8 + Math.round(Math.sin(i * 0.9) * 2), [235, 235, 235]);
+      break;
     default: px(8, 8, [255, 0, 255]);
   }
 }

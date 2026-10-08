@@ -118,10 +118,11 @@ export function quickMove(stack, to, targets) {
 }
 
 // ---------- crafting ----------
-const PLANKS = [BLOCK.PLANKS, BLOCK.BIRCH_PLANKS];
+const PLANKS = [BLOCK.PLANKS, BLOCK.BIRCH_PLANKS, BLOCK.CHERRY_PLANKS];
+const STONES = [BLOCK.COBBLE, BLOCK.COBBLED_DEEPSLATE]; // like Minecraft, either works for stone tools
 const TOOL_MATERIALS = [
   [PLANKS, ITEM.WOODEN_PICKAXE],
-  [[BLOCK.COBBLE], ITEM.STONE_PICKAXE],
+  [STONES, ITEM.STONE_PICKAXE],
   [[ITEM.IRON_INGOT], ITEM.IRON_PICKAXE],
   [[ITEM.DIAMOND], ITEM.DIAMOND_PICKAXE],
 ];
@@ -133,7 +134,15 @@ export const RECIPES = [
   { pattern: ['P', 'P'], keys: { P: PLANKS }, result: [ITEM.STICK, 4] },
   { pattern: ['PP', 'PP'], keys: { P: PLANKS }, result: [BLOCK.CRAFTING_TABLE, 1] },
   { pattern: ['C', 'S'], keys: { C: [ITEM.COAL], S: [ITEM.STICK] }, result: [BLOCK.TORCH, 4] },
-  { pattern: ['CCC', 'C.C', 'CCC'], keys: { C: [BLOCK.COBBLE] }, result: [BLOCK.FURNACE, 1] },
+  { pattern: ['L'], keys: { L: [BLOCK.CHERRY_LOG] }, result: [BLOCK.CHERRY_PLANKS, 4] },
+  { pattern: ['CCC', 'C.C', 'CCC'], keys: { C: STONES }, result: [BLOCK.FURNACE, 1] },
+  { pattern: ['PPP', 'P.P', 'PPP'], keys: { P: PLANKS }, result: [BLOCK.CHEST, 1] },
+  { pattern: ['WWW', 'PPP'], keys: { W: [BLOCK.WOOL], P: PLANKS }, result: [BLOCK.BED, 1] },
+  { pattern: ['I.I', '.I.'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.BUCKET, 1] },
+  { pattern: ['.I', 'I.'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.SHEARS, 1] },
+  { pattern: ['SS', 'SS'], keys: { S: [ITEM.STRING] }, result: [BLOCK.WOOL, 1] },
+  { pattern: ['CCC', 'CCC', 'CCC'], keys: { C: [ITEM.COPPER_INGOT] }, result: [BLOCK.COPPER_BLOCK, 1] },
+  { pattern: ['B'], keys: { B: [BLOCK.COPPER_BLOCK] }, result: [ITEM.COPPER_INGOT, 9] },
   { pattern: ['SS', 'SS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_BRICKS, 4] },
   { pattern: ['SS', 'SS'], keys: { S: [BLOCK.SAND] }, result: [BLOCK.SANDSTONE, 1] },
   { pattern: ['SS', 'SS'], keys: { S: [BLOCK.SNOW] }, result: [BLOCK.SNOW, 1] },
@@ -200,4 +209,76 @@ export function consumeGrid(grid) {
 
 export function foodValue(id) {
   return ITEMS[id]?.food ?? 0;
+}
+
+// ---------- recipe book ----------
+function patternSize(r) {
+  return { w: Math.max(...r.pattern.map((row) => row.length)), h: r.pattern.length };
+}
+
+// Does this recipe fit in a size x size grid?
+export function recipeFits(r, size) {
+  const { w, h } = patternSize(r);
+  return w <= size && h <= size;
+}
+
+// The ingredient cells of a recipe: [{x, y, ids}]
+function cells(r) {
+  const out = [];
+  r.pattern.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] !== '.' && row[x] !== ' ') out.push({ x, y, ids: r.keys[row[x]] });
+  });
+  return out;
+}
+
+// Picks which item fills each cell for `times` crafts, using `have` (id -> count). null if not enough.
+function plan(r, have, times) {
+  const left = new Map(have);
+  const picks = [];
+  for (const c of cells(r)) {
+    const id = c.ids.find((i) => (left.get(i) || 0) >= times);
+    if (id === undefined) return null;
+    left.set(id, left.get(id) - times);
+    picks.push({ ...c, id });
+  }
+  return picks;
+}
+
+function counts(stacks) {
+  const have = new Map();
+  for (const s of stacks) if (s && s.dur === undefined) have.set(s.id, (have.get(s.id) || 0) + s.count);
+  return have;
+}
+
+// How many times the recipe could be crafted from these stacks (capped at 64).
+export function craftableTimes(r, stacks) {
+  const have = counts(stacks);
+  let n = 0;
+  while (n < 64 && plan(r, have, n + 1)) n++;
+  return n;
+}
+
+// Moves ingredients from the inventory into an empty grid for `times` crafts.
+// Returns false (changing nothing) if there aren't enough ingredients.
+export function fillGrid(r, inv, grid, size, times = 1) {
+  if (!recipeFits(r, size) || grid.some(Boolean)) return false;
+  const picks = plan(r, counts(inv), times);
+  if (!picks) return false;
+  for (const { x, y, id } of picks) {
+    let need = times;
+    for (let i = 0; i < inv.length && need > 0; i++) {
+      const s = inv[i];
+      if (!s || s.id !== id || s.dur !== undefined) continue;
+      const n = Math.min(need, s.count);
+      s.count -= n;
+      need -= n;
+      if (s.count === 0) inv[i] = null;
+    }
+    grid[y * size + x] = { id, count: times };
+  }
+  return true;
+}
+
+export function recipeResult(r) {
+  return makeStack(r.result[0], r.result[1]);
 }

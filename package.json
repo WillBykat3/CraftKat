@@ -10,12 +10,14 @@
     "vendor": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs && node scripts/serve.mjs",
     "dev:relay": "node scripts/build.mjs && node scripts/serve.mjs --relay",
+    "pretest": "node scripts/build.mjs",
     "test": "node --test"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
     "@trystero-p2p/core": "0.26.0",
     "@trystero-p2p/nostr": "0.26.0",
     "@trystero-p2p/ws-relay": "0.26.0",

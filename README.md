@@ -8,20 +8,29 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 
 ## What's in it
 
-- **Endless worlds**: hills, mountains with snow, deserts, oceans, oak and birch forests, flowers, tall grass
-- **Caves and ores**: tunnels and caverns, coal, iron, gold and diamond ore, bedrock at the bottom
+- **Logins**: everyone needs an account to play, and only you can create them, on your private admin page (see below)
+- **Endless worlds**: hills, mountains with snow, deserts, oceans, oak, birch and cherry forests, flowers, tall grass
+- **Caves and ores**: tunnels and caverns, coal, iron, copper, gold and diamond ore, a deepslate layer deep down,
+  granite, diorite and andesite, bedrock at the bottom
 - **Survival mode**: health, hunger, fall damage, drowning, death and respawning (you drop your items)
 - **Mining and tools**: blocks take time to break, the right tool is faster, wooden → stone → iron → diamond tools with durability, some ores need a better pickaxe
-- **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table (planks, sticks, tools, torches, furnace, stone bricks…)
-- **Furnace**: smelt raw iron/gold into ingots, sand into glass, cook pork and beef
+- **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
+  fills the grid for you
+- **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
+- **Chests** for storage, **beds** to sleep through the night and set your respawn point, **buckets** for water, **shears** for wool
 - **Day and night**: a 20-minute day with sunrise, sunset, stars and moving clouds
 - **Real lighting**: caves are dark, torches light them up, smooth shading
-- **Mobs**: pigs and cows (food and leather), zombies at night that burn in sunlight
+- **Mobs**: pigs, cows, sheep and chickens; at night zombies and skeletons (both burn in sunlight), spiders that climb walls,
+  and creepers that explode
 - **Creative mode**: every block, flying, instant breaking
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** redstone, the Nether and End, villages, beds, enchanting, armor, flowing water/lava, and most of Minecraft's mobs. It needs a keyboard and mouse, so phones and tablets aren't supported.
+**Not included (yet):** redstone, the Nether and End, villages, enchanting, armor, bows for players, doors, farming,
+flowing water/lava, and many of Minecraft's mobs. It needs a keyboard and mouse, so phones and tablets aren't supported.
+
+Worlds created before an update keep their original terrain; new features like deepslate and cherry trees appear in
+newly created worlds.
 
 ---
 
@@ -36,13 +45,23 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 Every time you push to `main` (or the current default branch), the site updates automatically.
 Tests run first, and nothing gets deployed if they fail.
 
+## Logins and accounts
+
+Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After that:
+
+- The game asks everyone to log in. Friends use the **username** and password you give them; you use your email.
+- Your admin page is **https://willbykat3.github.io/minecraft/admin.html**. Only you can log in there, and it lets you
+  see every account, create new ones, rename them, change passwords and delete them. Nobody can sign up by themselves.
+- When a friend joins your world, your browser checks their login with Supabase, and the name everyone sees comes from
+  their account.
+
 ## Play with friends
 
-1. Open the game, type your name and click **Play** → **Create new world**.
+1. Open the game, log in and click **Play** → **Create new world**.
 2. In the game press **Esc** → **Invite friends**.
 3. Optionally set a password, then click **Open to friends**.
 4. **Copy** the link and send it to your friends (with the password, if you set one).
-5. Friends open the link, type their name and click **Join**. That's it!
+5. Friends open the link, log in, and click **Join**. That's it!
 
 **Good to know**
 - **You are the server.** Your browser runs the world. Keep the game tab open while friends play.
@@ -69,7 +88,7 @@ Tests run first, and nothing gets deployed if they fail.
 | Shift | Sneak (you won't fall off edges) · fly down |
 | Double-tap Space | Fly (creative mode) |
 | Left click (hold) | Break block · attack |
-| Right click | Place block · use crafting table/furnace · eat (hold) |
+| Right click | Place block · open crafting table/furnace/chest · sleep in a bed · eat (hold) · use bucket or shears |
 | Middle click | Pick block |
 | 1–9 / mouse wheel | Choose hotbar slot |
 | E | Inventory and crafting |
@@ -81,6 +100,7 @@ Tests run first, and nothing gets deployed if they fail.
 | Esc | Game menu (invite friends, options, save and quit) |
 
 **Inventory:** left click picks up or puts down a stack, right click splits a stack or places one item, Shift+click moves items quickly.
+Click **📖 Recipe Book** in a crafting screen to see every recipe; click one to fill the grid (Shift+click for as many as you can make).
 
 **Commands:** `/help`, `/list`, `/seed`, `/spawn`, `/kill`, and for the host (or everyone, if the world allows it):
 `/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/tp <player>`.
@@ -92,7 +112,8 @@ If the game is slow, lower the view distance.
 
 Punch a tree for logs (hold left click) → open your inventory (E) and turn logs into planks → make a
 **crafting table** (4 planks) and place it → craft sticks and a **wooden pickaxe** → mine stone for a **stone pickaxe** →
-find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron. Make a shelter before your first night!
+find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron. Make a shelter before your first night,
+or craft a **bed** (3 wool from sheep + 3 planks) and sleep through it. Store things in a **chest** (8 planks).
 
 ---
 
@@ -101,9 +122,12 @@ find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron.
 ```bash
 npm install
 npm run dev        # http://localhost:8080
-npm test           # unit tests (world generation, lighting, crafting, the game host)
+npm test           # unit tests (world generation, lighting, crafting, the game host, logins, the admin function)
 npm run build      # the static site in dist/ (what GitHub Pages serves)
 ```
+
+Without Supabase settings in `public/js/config.js`, the game runs without logins **only on localhost** (for
+development); the live site shows "Almost ready" instead.
 
 To test multiplayer offline, run `npm run dev:relay` and open `http://localhost:8080/?relay=ws://localhost:8787`
 in two different browsers. Add `?debug` to the URL to get `window.blockcraft` in the browser console.
@@ -128,8 +152,11 @@ public/
   js/entities.js          other players, mobs and dropped items
   js/textures.js          all pixel art, drawn with code
   js/sound.js             synthesized sound effects
+  js/auth.js, js/config.js  logins (Supabase)
+  admin.html, js/admin.js   the owner's account manager
+supabase/functions/admin-users/index.ts   server-side, owner-only account management
 scripts/                  build and dev server
 test/                     node:test unit tests
 ```
 
-Built with [three.js](https://threejs.org) and [Trystero](https://github.com/dmotz/trystero) (both MIT licensed).
+Built with [three.js](https://threejs.org), [Trystero](https://github.com/dmotz/trystero) and [supabase-js](https://github.com/supabase/supabase-js) (all MIT licensed).

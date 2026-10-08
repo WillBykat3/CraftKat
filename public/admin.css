@@ -1,0 +1,43 @@
+:root {
+  --bg: #f4f5f7;
+  --card: #fff;
+  --text: #1d2330;
+  --muted: #667085;
+  --border: #d9dde5;
+  --accent: #3f7d2a;
+  --danger: #c0392b;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171c; --card: #1e232b; --text: #e8eaee; --muted: #9aa3b2; --border: #333b47; --accent: #6bbf4e; --danger: #e5675a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { margin: 0; font-size: 24px; }
+h2 { margin: 0 0 10px; font-size: 18px; }
+.hidden { display: none !important; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.error { color: var(--danger); min-height: 1em; margin: 6px 0 0; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; margin-bottom: 10px; flex: 1; min-width: 160px; }
+input { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
+button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+button.link { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
+button:disabled { opacity: 0.5; cursor: wait; }
+.row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.row.space { justify-content: space-between; align-items: center; }
+.row > button { margin-bottom: 10px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { font-size: 13px; color: var(--muted); font-weight: 600; }
+td.actions { text-align: right; }
+td.actions button { padding: 5px 10px; font-size: 13px; margin-left: 6px; }
+.badge { font-size: 12px; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); width: min(420px, calc(100vw - 32px)); padding: 18px; }
+dialog::backdrop { background: rgba(0, 0, 0, 0.45); }

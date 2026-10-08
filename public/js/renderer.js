@@ -121,13 +121,13 @@ export class Renderer {
   }
 
   // ---------- chunks ----------
-  startWorld(seed, edits) {
+  startWorld(seed, edits, gen = 1) {
     this.clearChunks();
     if (this.worker) this.worker.terminate();
     this.worker = new Worker(new URL('./mesh-worker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.onMesh(e.data);
     this.worker.onerror = (e) => console.error('mesh worker error', e.message || e);
-    this.worker.postMessage({ t: 'init', seed, edits });
+    this.worker.postMessage({ t: 'init', seed, edits, gen });
   }
 
   clearChunks() {

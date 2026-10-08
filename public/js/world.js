@@ -16,9 +16,16 @@ export function blockIndex(lx, y, lz) {
   return (y * CHUNK + lz) * CHUNK + lx;
 }
 
+// Generator versions: worlds remember which one created them, so updating the
+// game never reshapes terrain in worlds that already exist.
+//   1: original terrain
+//   2: adds deepslate, copper, granite/diorite/andesite and cherry trees
+export const LATEST_GEN = 2;
+
 export class World {
-  constructor(seed) {
+  constructor(seed, gen = 1) {
     this.seed = seed | 0;
+    this.gen = gen;
     this.chunks = new Map(); // chunkKey -> Uint8Array
     this.edits = new Map();  // chunkKey -> Map(blockIndex -> block id)
     this.noiseA = makeNoise2D(this.seed);
@@ -147,8 +154,10 @@ export class World {
     if (h <= SEA_LEVEL || h >= SNOW_LEVEL - 4 || this.temperature(tx, tz) > 0.45) return null;
     if (this.isCave(tx, h, tz, h)) return null;
     const birch = forest > 0.4 || hash2(gx, gz, s + 105) < 0.15;
+    const temp = this.temperature(tx, tz);
+    const cherry = this.gen >= 2 && !birch && forest > -0.1 && forest < 0.3 && temp > 0.12 && temp < 0.4;
     const trunk = 4 + Math.floor(hash2(tx, tz, s + 103) * 3);
-    return { x: tx, z: tz, h, birch, trunk };
+    return { x: tx, z: tz, h, birch, cherry, trunk };
   }
 
   generate(cx, cz) {
@@ -187,6 +196,7 @@ export class World {
           else if (y === h) id = top;
           else if (y >= h - 3) id = filler;
           else if (desert && y >= h - 7) id = BLOCK.SANDSTONE;
+          else if (this.gen >= 2 && y < 10 + Math.floor(hash2(x, z * 7 + y, s + 22) * 3)) id = BLOCK.DEEPSLATE;
           else id = BLOCK.STONE;
           if (id !== BLOCK.BEDROCK && this.isCave(x, y, z, h)) id = BLOCK.AIR;
           data[blockIndex(lx, y, lz)] = id;
@@ -238,6 +248,15 @@ export class World {
       [BLOCK.GOLD_ORE, 3, 30, 5, 4],
       [BLOCK.DIAMOND_ORE, 1, 16, 5, 3],
     ];
+    if (this.gen >= 2) {
+      // stone variants first (big patches), then copper; ores replace them like stone
+      kinds.unshift([BLOCK.GRANITE, 1, 70, 30, 4], [BLOCK.DIORITE, 1, 70, 30, 4], [BLOCK.ANDESITE, 1, 70, 30, 4]);
+      kinds.push([BLOCK.COPPER_ORE, 6, 60, 8, 4]);
+    }
+    const deep = { [BLOCK.COAL_ORE]: BLOCK.DEEPSLATE_COAL_ORE, [BLOCK.IRON_ORE]: BLOCK.DEEPSLATE_IRON_ORE,
+      [BLOCK.GOLD_ORE]: BLOCK.DEEPSLATE_GOLD_ORE, [BLOCK.DIAMOND_ORE]: BLOCK.DEEPSLATE_DIAMOND_ORE,
+      [BLOCK.COPPER_ORE]: BLOCK.DEEPSLATE_COPPER_ORE };
+    const isOreHost = (b) => b === BLOCK.STONE || b === BLOCK.GRANITE || b === BLOCK.DIORITE || b === BLOCK.ANDESITE;
     for (const [id, veins, maxY, size, minY] of kinds) {
       for (let v = 0; v < veins; v++) {
         let x = Math.floor(rand() * CHUNK);
@@ -247,7 +266,8 @@ export class World {
         for (let i = 0; i < n; i++) {
           if (x >= 0 && x < CHUNK && z >= 0 && z < CHUNK && y > 0 && y < HEIGHT) {
             const idx = blockIndex(x, y, z);
-            if (data[idx] === BLOCK.STONE) data[idx] = id;
+            if (data[idx] === BLOCK.STONE || (deep[id] === undefined ? false : isOreHost(data[idx]))) data[idx] = id;
+            else if (data[idx] === BLOCK.DEEPSLATE && deep[id]) data[idx] = deep[id];
           }
           const d = Math.floor(rand() * 6);
           if (d === 0) x++; else if (d === 1) x--; else if (d === 2) y++;
@@ -266,8 +286,8 @@ export class World {
       if (onlyAir && data[idx] !== BLOCK.AIR && data[idx] !== BLOCK.TALL_GRASS) return;
       data[idx] = id;
     };
-    const log = t.birch ? BLOCK.BIRCH_LOG : BLOCK.LOG;
-    const leaves = t.birch ? BLOCK.BIRCH_LEAVES : BLOCK.LEAVES;
+    const log = t.cherry ? BLOCK.CHERRY_LOG : t.birch ? BLOCK.BIRCH_LOG : BLOCK.LOG;
+    const leaves = t.cherry ? BLOCK.CHERRY_LEAVES : t.birch ? BLOCK.BIRCH_LEAVES : BLOCK.LEAVES;
     const ty = t.h + 1;
     const top = ty + t.trunk - 1;
     for (let y = top - 2; y <= top + 1; y++) {

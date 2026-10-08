@@ -33,7 +33,7 @@ onmessage = (event) => {
   const msg = event.data;
   switch (msg.t) {
     case 'init':
-      world = new World(msg.seed);
+      world = new World(msg.seed, msg.gen);
       world.importEdits(msg.edits);
       queue.length = 0;
       break;

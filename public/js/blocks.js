@@ -12,6 +12,10 @@ export const BLOCK = {
   GOLD_ORE: 16, DIAMOND_ORE: 17, WATER: 18, BIRCH_LOG: 19, BIRCH_LEAVES: 20, BIRCH_PLANKS: 21,
   CRAFTING_TABLE: 22, FURNACE: 23, TORCH: 24, DANDELION: 25, POPPY: 26, TALL_GRASS: 27,
   SANDSTONE: 28, WOOL: 29, STONE_BRICKS: 30, OBSIDIAN: 31, CLAY: 32, SNOW: 33,
+  DEEPSLATE: 34, COBBLED_DEEPSLATE: 35, DEEPSLATE_COAL_ORE: 36, DEEPSLATE_IRON_ORE: 37,
+  DEEPSLATE_GOLD_ORE: 38, DEEPSLATE_DIAMOND_ORE: 39, COPPER_ORE: 40, DEEPSLATE_COPPER_ORE: 41,
+  GRANITE: 42, DIORITE: 43, ANDESITE: 44, CHERRY_LOG: 45, CHERRY_LEAVES: 46, CHERRY_PLANKS: 47,
+  CHEST: 48, BED: 49, COPPER_BLOCK: 50,
 };
 
 // Block properties (defaults filled in below):
@@ -27,6 +31,7 @@ export const BLOCK = {
 //  gravity    falls when the block below is removed (sand, gravel)
 //  replaceable  placing a block here replaces it (water, tall grass)
 //  needsSupport breaks when the block underneath disappears (plants, torches)
+//  height     visual height of a partial cube (beds); collision is still a full block
 const B = [];
 function def(id, name, props) {
   B[id] = { name, ...props };
@@ -65,6 +70,23 @@ def(30, 'Stone Bricks', { tex: ['stone_bricks'], hardness: 1.5, tool: 'pickaxe',
 def(31, 'Obsidian', { tex: ['obsidian'], hardness: 50, tool: 'pickaxe', needsTier: 3 });
 def(32, 'Clay', { tex: ['clay'], hardness: 0.6, tool: 'shovel' });
 def(33, 'Snow Block', { tex: ['snow'], hardness: 0.2, tool: 'shovel' });
+def(34, 'Deepslate', { tex: ['deepslate_top', 'deepslate', 'deepslate_top'], hardness: 3, tool: 'pickaxe', needsTier: 0 });
+def(35, 'Cobbled Deepslate', { tex: ['cobbled_deepslate'], hardness: 3.5, tool: 'pickaxe', needsTier: 0 });
+def(36, 'Deepslate Coal Ore', { tex: ['deepslate_coal_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 0 });
+def(37, 'Deepslate Iron Ore', { tex: ['deepslate_iron_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 1 });
+def(38, 'Deepslate Gold Ore', { tex: ['deepslate_gold_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 2 });
+def(39, 'Deepslate Diamond Ore', { tex: ['deepslate_diamond_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 2 });
+def(40, 'Copper Ore', { tex: ['copper_ore'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
+def(41, 'Deepslate Copper Ore', { tex: ['deepslate_copper_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 1 });
+def(42, 'Granite', { tex: ['granite'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
+def(43, 'Diorite', { tex: ['diorite'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
+def(44, 'Andesite', { tex: ['andesite'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
+def(45, 'Cherry Log', { tex: ['cherry_log_top', 'cherry_log_side', 'cherry_log_top'], hardness: 2, tool: 'axe' });
+def(46, 'Cherry Leaves', { tex: ['cherry_leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
+def(47, 'Cherry Planks', { tex: ['cherry_planks'], hardness: 2, tool: 'axe' });
+def(48, 'Chest', { tex: ['chest_top', 'chest_side', 'chest_top', 'chest_front'], hardness: 2.5, tool: 'axe' });
+def(49, 'Bed', { tex: ['bed_top', 'bed_side', 'planks'], hardness: 0.2, transparent: true, height: 9 / 16 });
+def(50, 'Block of Copper', { tex: ['copper_block'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
 
 for (const b of B) {
   b.render ??= 'cube';
@@ -89,6 +111,9 @@ export const ITEM = {
   DIAMOND_PICKAXE: 275, DIAMOND_AXE: 276, DIAMOND_SHOVEL: 277, DIAMOND_SWORD: 278,
   APPLE: 279, RAW_PORKCHOP: 280, COOKED_PORKCHOP: 281, RAW_BEEF: 282, STEAK: 283, ROTTEN_FLESH: 284,
   BREAD: 285, LEATHER: 286,
+  RAW_COPPER: 287, COPPER_INGOT: 288, BUCKET: 289, WATER_BUCKET: 290, SHEARS: 291,
+  RAW_CHICKEN: 292, COOKED_CHICKEN: 293, RAW_MUTTON: 294, COOKED_MUTTON: 295,
+  FEATHER: 296, BONE: 297, ARROW: 298, GUNPOWDER: 299, STRING: 300,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -126,6 +151,20 @@ item(283, 'Steak', { icon: 'steak', food: 8 });
 item(284, 'Rotten Flesh', { icon: 'rotten_flesh', food: 2 });
 item(285, 'Bread', { icon: 'bread', food: 5 });
 item(286, 'Leather', { icon: 'leather' });
+item(287, 'Raw Copper', { icon: 'raw_copper' });
+item(288, 'Copper Ingot', { icon: 'copper_ingot' });
+item(289, 'Bucket', { icon: 'bucket', stack: 16 });
+item(290, 'Water Bucket', { icon: 'water_bucket', stack: 1 });
+item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
+item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
+item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
+item(294, 'Raw Mutton', { icon: 'raw_mutton', food: 2 });
+item(295, 'Cooked Mutton', { icon: 'cooked_mutton', food: 6 });
+item(296, 'Feather', { icon: 'feather' });
+item(297, 'Bone', { icon: 'bone' });
+item(298, 'Arrow', { icon: 'arrow' });
+item(299, 'Gunpowder', { icon: 'gunpowder' });
+item(300, 'String', { icon: 'string' });
 export const ITEMS = I;
 
 export function isBlockId(id) {
@@ -183,12 +222,20 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     case BLOCK.GRASS:
     case BLOCK.SNOWY_GRASS: return [[BLOCK.DIRT, 1]];
     case BLOCK.STONE: return [[BLOCK.COBBLE, 1]];
-    case BLOCK.COAL_ORE: return [[ITEM.COAL, 1]];
-    case BLOCK.IRON_ORE: return [[ITEM.RAW_IRON, 1]];
-    case BLOCK.GOLD_ORE: return [[ITEM.RAW_GOLD, 1]];
-    case BLOCK.DIAMOND_ORE: return [[ITEM.DIAMOND, 1]];
+    case BLOCK.DEEPSLATE: return [[BLOCK.COBBLED_DEEPSLATE, 1]];
+    case BLOCK.COAL_ORE:
+    case BLOCK.DEEPSLATE_COAL_ORE: return [[ITEM.COAL, 1]];
+    case BLOCK.IRON_ORE:
+    case BLOCK.DEEPSLATE_IRON_ORE: return [[ITEM.RAW_IRON, 1]];
+    case BLOCK.GOLD_ORE:
+    case BLOCK.DEEPSLATE_GOLD_ORE: return [[ITEM.RAW_GOLD, 1]];
+    case BLOCK.DIAMOND_ORE:
+    case BLOCK.DEEPSLATE_DIAMOND_ORE: return [[ITEM.DIAMOND, 1]];
+    case BLOCK.COPPER_ORE:
+    case BLOCK.DEEPSLATE_COPPER_ORE: return [[ITEM.RAW_COPPER, 2 + Math.floor(rand() * 4)]];
     case BLOCK.LEAVES: return rand() < 0.05 ? [[ITEM.APPLE, 1]] : [];
     case BLOCK.BIRCH_LEAVES:
+    case BLOCK.CHERRY_LEAVES:
     case BLOCK.GLASS:
     case BLOCK.TALL_GRASS:
     case BLOCK.WATER:
@@ -210,6 +257,11 @@ export const SMELTING = {
   [BLOCK.LOG]: ITEM.COAL,
   [BLOCK.BIRCH_LOG]: ITEM.COAL,
   [BLOCK.CLAY]: BLOCK.BRICK,
+  [BLOCK.CHERRY_LOG]: ITEM.COAL,
+  [ITEM.RAW_COPPER]: ITEM.COPPER_INGOT,
+  [ITEM.RAW_CHICKEN]: ITEM.COOKED_CHICKEN,
+  [ITEM.RAW_MUTTON]: ITEM.COOKED_MUTTON,
+  [BLOCK.COBBLED_DEEPSLATE]: BLOCK.DEEPSLATE,
 };
 export const FUEL = {
   [ITEM.COAL]: 8,
@@ -218,6 +270,9 @@ export const FUEL = {
   [BLOCK.PLANKS]: 1.5,
   [BLOCK.BIRCH_PLANKS]: 1.5,
   [BLOCK.CRAFTING_TABLE]: 1.5,
+  [BLOCK.CHERRY_LOG]: 1.5,
+  [BLOCK.CHERRY_PLANKS]: 1.5,
+  [BLOCK.CHEST]: 1.5,
   [ITEM.STICK]: 0.5,
 };
 for (const id of Object.keys(I).map(Number)) {

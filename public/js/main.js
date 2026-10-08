@@ -7,6 +7,7 @@ import { GameHost, newWorldSave } from './host.js';
 import { HostNetwork, joinFriend, randomRoomId } from './net.js';
 import { listWorlds, loadWorld, saveWorld, deleteWorld, requestPersistence } from './storage.js';
 import { setVolume, sound } from './sound.js';
+import { configured, currentUser, signIn, signOut, displayName, accessToken, verifyToken } from './auth.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.hash.slice(1));
@@ -31,7 +32,7 @@ let autosave = null;
 let currentSave = null;
 
 // ---------- screens ----------
-const MENU_SCREENS = ['title-screen', 'worlds-screen', 'new-world-screen', 'join-screen', 'options-screen'];
+const MENU_SCREENS = ['login-screen', 'setup-screen', 'title-screen', 'worlds-screen', 'new-world-screen', 'join-screen', 'options-screen'];
 function show(id) {
   $('menus').classList.remove('hidden');
   for (const s of MENU_SCREENS) $(s).classList.toggle('hidden', s !== id);
@@ -43,22 +44,85 @@ document.querySelectorAll('.back').forEach((b) => b.addEventListener('click', ()
   else show('title-screen');
 }));
 
-// ---------- player name (shared by the title and join screens) ----------
+// ---------- accounts ----------
+// Playing needs a login. Only when logins aren't configured AND the page runs on
+// this computer (localhost, for development) can you play without one.
+const LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const DEV_MODE = !configured && LOCAL;
+let account = null; // {id, name}
+
 function cleanName(text) {
   return text.replace(/[^A-Za-z0-9_\- ]/g, '').trim().slice(0, 16);
 }
 function playerName() {
-  return cleanName($('name').value) || cleanName($('join-name').value) || 'Steve';
+  return account?.name ?? (cleanName($('name').value) || 'Steve');
 }
 function rememberName(value) {
-  const n = cleanName(value);
-  $('name').value = n;
-  $('join-name').value = n;
-  try { localStorage.setItem('blockcraft-name', n); } catch { /* ignore */ }
+  if (!DEV_MODE) return;
+  $('name').value = cleanName(value);
+  try { localStorage.setItem('blockcraft-name', $('name').value); } catch { /* ignore */ }
 }
-try { rememberName(localStorage.getItem('blockcraft-name') || ''); } catch { /* ignore */ }
+try { if (DEV_MODE) $('name').value = localStorage.getItem('blockcraft-name') || ''; } catch { /* ignore */ }
 $('name').addEventListener('change', () => rememberName($('name').value));
-$('join-name').addEventListener('change', () => rememberName($('join-name').value));
+
+function homeScreen() {
+  if (params.get('join')) {
+    show('join-screen');
+    $('join-code').value = location.href;
+  } else {
+    show('title-screen');
+  }
+}
+
+function signedIn(user) {
+  account = { id: user.id, name: displayName(user) };
+  $('signed-in-name').textContent = `Playing as ${account.name}`;
+  $('signed-in').classList.remove('hidden');
+  $('dev-name-field').classList.add('hidden');
+  homeScreen();
+}
+
+async function startAccounts() {
+  if (!configured) {
+    if (DEV_MODE) {
+      $('signed-in').classList.add('hidden');
+      $('dev-name-field').classList.remove('hidden');
+      homeScreen();
+    } else {
+      show('setup-screen');
+    }
+    return;
+  }
+  let user = null;
+  try {
+    user = await currentUser();
+  } catch (err) {
+    $('login-message').textContent = 'Could not reach the login service: ' + err.message;
+  }
+  if (user) signedIn(user);
+  else show('login-screen');
+}
+
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('btn-login').disabled = true;
+  $('login-message').textContent = '';
+  try {
+    const user = await signIn($('login-name').value, $('login-password').value);
+    $('login-password').value = '';
+    signedIn(user);
+  } catch (err) {
+    $('login-message').textContent = err.message;
+  } finally {
+    $('btn-login').disabled = false;
+  }
+});
+
+$('btn-logout').addEventListener('click', async () => {
+  await signOut();
+  account = null;
+  show('login-screen');
+});
 
 // ---------- world list ----------
 $('btn-worlds').addEventListener('click', async () => {
@@ -192,9 +256,11 @@ async function playWorld(id) {
     onLog: (text) => console.log('[world]', text),
   });
   hostNet = new HostNetwork(host);
+  // every friend who joins must have a real login; their name comes from their account
+  if (configured) hostNet.verify = (token) => verifyToken(token);
   const conn = hostNet.connectLocal();
   startGame(conn, true);
-  conn.send({ t: 'hello', name: playerName(), isHost: true });
+  conn.send({ t: 'hello', name: playerName(), isHost: true, accountId: account?.id });
 
   // The host simulation keeps running when this tab is in the background:
   // browsers slow down timers in hidden tabs, but not messages from a worker.
@@ -282,16 +348,17 @@ function parseRoom(text) {
 
 $('btn-join').addEventListener('click', async () => {
   sound.unlock();
-  rememberName($('join-name').value || $('name').value);
   const roomId = parseRoom($('join-code').value);
   if (!roomId) { $('join-status').textContent = 'That does not look like an invite link.'; return; }
   $('btn-join').disabled = true;
   $('join-status').textContent = 'Looking for the world… (this can take up to 30 seconds)';
   try {
+    const token = configured ? await accessToken() : null;
+    if (configured && !token) throw new Error('Your login expired. Log out and log in again.');
     const conn = await joinFriend({ roomId, password: $('join-password').value, relay: RELAY });
     $('join-status').textContent = '';
     startGame(conn, false);
-    conn.send({ t: 'hello', name: playerName() });
+    conn.send({ t: 'hello', name: playerName(), token });
   } catch (err) {
     $('join-status').textContent = err.message;
   } finally {
@@ -325,6 +392,7 @@ $('btn-resume').addEventListener('click', () => {
 });
 $('btn-quit').addEventListener('click', () => quitToTitle());
 $('btn-respawn').addEventListener('click', () => game?.respawn());
+$('btn-leave-bed').addEventListener('click', () => game?.stopSleeping(true));
 $('btn-death-quit').addEventListener('click', () => quitToTitle());
 
 async function quitToTitle(reason) {
@@ -343,7 +411,7 @@ async function quitToTitle(reason) {
     hostNet = null;
     currentSave = null;
   }
-  for (const id of ['hud', 'pause', 'death', 'screen', 'water-overlay', 'friends-badge']) $(id).classList.add('hidden');
+  for (const id of ['hud', 'pause', 'death', 'sleep', 'screen', 'water-overlay', 'friends-badge']) $(id).classList.add('hidden');
   loading(null);
   show('title-screen');
   $('title-message').textContent = typeof reason === 'string' ? reason : '';
@@ -392,7 +460,7 @@ let titleAngle = 0;
 function startTitleBackground() {
   titleActive = true;
   renderer.setRenderDistance(4);
-  renderer.startWorld(20240607, []);
+  renderer.startWorld(20240607, [], 2);
 }
 
 // ---------- main loop ----------
@@ -423,10 +491,5 @@ function frame(now) {
 
 startTitleBackground();
 requestAnimationFrame(frame);
-if (params.get('join')) {
-  show('join-screen');
-  $('join-code').value = location.href;
-} else {
-  show('title-screen');
-}
+startAccounts();
 if (query.has('debug')) window.blockcraft = { get game() { return game; }, get host() { return host; }, renderer };
