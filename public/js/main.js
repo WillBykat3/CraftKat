@@ -8,6 +8,8 @@ import { World, LATEST_GEN } from './world.js';
 import { HostNetwork, joinFriend, randomRoomId } from './net.js';
 import { listWorlds, loadWorld, saveWorld, deleteWorld, requestPersistence } from './storage.js';
 import { setVolume, sound } from './sound.js';
+import { createUIArt, applyUIArt, drawLogo } from './ui-art.js';
+import { VERSION } from './version.js';
 import { configured, currentUser, signIn, signOut, displayName, accessToken, verifyToken } from './auth.js';
 
 const $ = (id) => document.getElementById(id);
@@ -37,7 +39,23 @@ const MENU_SCREENS = ['login-screen', 'setup-screen', 'title-screen', 'worlds-sc
 function show(id) {
   $('menus').classList.remove('hidden');
   for (const s of MENU_SCREENS) $(s).classList.toggle('hidden', s !== id);
+  $('title-corners').classList.toggle('hidden', id !== 'title-screen' && id !== 'login-screen');
+  if (id === 'title-screen') $('splash').textContent = SPLASHES[Math.floor(Math.random() * SPLASHES.length)];
 }
+
+// ---------- the look: pixel-art interface, logo, splash text ----------
+const SPLASHES = [
+  'Play with friends!', 'No download needed!', '100% blocks!', 'Made with code!', 'Now taller!', 'Biomes!',
+  'Cherry blossoms!', 'Watch out for creepers!', 'Punch a tree!', 'Lava is hot!', 'Also try the Nether... soon!',
+  'Sleep through the night!', 'Diamonds deep down!', 'Mind the gap!', 'Runs in your browser!', 'Kat approved!',
+  'Craft, build, explore!', 'Now with rivers!', 'Swamps are wet!', 'Pixel perfect!', 'Look up!', 'Hello, friend!',
+];
+applyUIArt(createUIArt());
+for (const logo of document.querySelectorAll('.logo')) {
+  logo.textContent = '';
+  logo.appendChild(drawLogo('CraftKat', 9));
+}
+$('version').textContent = VERSION;
 document.querySelectorAll('.back').forEach((b) => b.addEventListener('click', () => {
   const inOptions = !!b.closest('#options-screen');
   if (inOptions && game) closeOptionsInGame();

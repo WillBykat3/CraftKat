@@ -14,6 +14,7 @@ import { InventoryScreen, HUD } from './ui.js';
 import { sound } from './sound.js';
 import { uvOf } from './atlas-layout.js';
 import { BIOMES } from './biomes.js';
+import { VERSION } from './version.js';
 import { lightCurve, toLinear } from './renderer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -669,6 +670,7 @@ export class Game {
     this.screen.close();
     document.exitPointerLock();
     $('death-cause').textContent = `${this.name} ${cause}`;
+    $('death-score').textContent = this.stats.xpTotal || 0;
     $('death').classList.remove('hidden');
     this.invDirty = true;
   }
@@ -971,6 +973,7 @@ export class Game {
       if (hit && held && isBlockId(held.id)) this.placeBlock(hit, held);
     }
     this.r.setTarget(hit, progress);
+    this.lastHit = hit;
 
     // pick up nearby items (not while dead, or you'd grab back what you just dropped)
     const now = performance.now();
@@ -1024,13 +1027,74 @@ export class Game {
     this.hud.render(this.inv, this.selected, this.stats, this.mode);
     const dbg = $('debug');
     dbg.classList.toggle('hidden', !this.showDebug);
-    if (this.showDebug) {
-      const biome = BIOMES[this.world.biomeAt(Math.floor(p.x), Math.floor(p.z))]?.name || '?';
-      dbg.textContent = `XYZ ${p.x.toFixed(2)} ${(p.y - this.world.yOffset).toFixed(2)} ${p.z.toFixed(2)}\n` +
-        `Biome minecraft:${biome}\n` +
-        `Facing ${((p.yaw * 180 / Math.PI) % 360).toFixed(0)}°  Time ${Math.floor(this.time)}  ${this.fps || 0} fps\n` +
-        `Chunks ${this.r.meshes.size} (${this.r.pending.size} loading)  Players ${this.entities.players.size + 1}  Entities ${this.entities.entities.size}`;
+    if (this.showDebug && now - (this.debugUpdated || 0) > 250) {
+      this.debugUpdated = now;
+      this.renderDebug();
     }
+  }
+
+  // The F3 screen, laid out like Minecraft's.
+  renderDebug() {
+    const p = this.player;
+    const w = this.world;
+    const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
+    const y0 = w.yOffset;
+    const cx = Math.floor(bx / CHUNK), cz = Math.floor(bz / CHUNK);
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    const facing = Math.abs(fz) >= Math.abs(fx)
+      ? (fz < 0 ? 'north (Towards negative Z)' : 'south (Towards positive Z)')
+      : (fx > 0 ? 'east (Towards positive X)' : 'west (Towards negative X)');
+    const yawDeg = ((((180 - p.yaw * 180 / Math.PI) % 360) + 540) % 360) - 180; // Minecraft's yaw: 0 = south
+    let light = '';
+    const lc = this.lightCache.get(chunkKey(cx, cz));
+    if (lc && by >= 0 && by < HEIGHT) {
+      const i = regionIndex(bx - cx * CHUNK, by, bz - cz * CHUNK);
+      light = `Client Light: ${Math.max(lc.sky[i], lc.block[i])} (${lc.sky[i]} sky, ${lc.block[i]} block)`;
+    }
+    const biome = BIOMES[w.biomeAt(bx, bz)]?.name || '?';
+    const day = Math.floor(this.time / 24000);
+    const left = [
+      `${VERSION} (${w.gen >= 3 ? 'gen 3' : 'gen ' + w.gen})`,
+      `${this.fps || 0} fps`,
+      `C: ${this.r.meshes.size} (${this.r.pending.size} loading) D: ${this.r.renderDistance}`,
+      `E: ${this.entities.entities.size}  P: ${this.entities.players.size + 1}`,
+      '',
+      `XYZ: ${p.x.toFixed(3)} / ${(p.y - y0).toFixed(5)} / ${p.z.toFixed(3)}`,
+      `Block: ${bx} ${by - y0} ${bz}`,
+      `Chunk: ${bx - cx * CHUNK} ${by & 15} ${bz - cz * CHUNK} in ${cx} ${Math.floor((by - y0) / 16)} ${cz}`,
+      `Facing: ${facing} (${yawDeg.toFixed(1)} / ${(-p.pitch * 180 / Math.PI).toFixed(1)})`,
+      light,
+      `Biome: minecraft:${biome}`,
+      `Day ${day}, time ${Math.floor(this.time % 24000)}`,
+    ].filter((line, i) => line !== '' || i === 4);
+    const gl = this.r.renderer.getContext();
+    if (this.gpuName === undefined) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      this.gpuName = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).slice(0, 60) : 'WebGL';
+    }
+    const mem = performance.memory;
+    const right = [
+      `Browser: ${navigator.userAgent.match(/(Firefox|Edg|Chrome|Safari)\/[\d.]+/)?.[0] || 'unknown'}`,
+      mem ? `Mem: ${Math.round(mem.usedJSHeapSize / mem.totalJSHeapSize * 100)}% ${Math.round(mem.usedJSHeapSize / 1048576)}/${Math.round(mem.totalJSHeapSize / 1048576)}MB` : '',
+      '',
+      `Display: ${window.innerWidth}x${window.innerHeight}`,
+      this.gpuName,
+    ];
+    const hit = this.lastHit;
+    if (hit) {
+      right.push('', `Targeted Block: ${hit.x}, ${hit.y - y0}, ${hit.z}`, `craftkat:${BLOCKS[hit.id].name.toLowerCase().replace(/ /g, '_')}`);
+    }
+    const fill = (el, lines) => {
+      el.textContent = '';
+      for (const line of lines) {
+        const span = document.createElement('span');
+        if (!line) span.className = 'gap';
+        span.textContent = line;
+        el.appendChild(span);
+      }
+    };
+    fill($('debug-left'), left);
+    fill($('debug-right'), right.filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== '')));
   }
 
   // Light for mobs, items and the hand, using the same light engine as the terrain.

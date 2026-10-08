@@ -15,26 +15,31 @@
 
   <!-- ===== menus ===== -->
   <div id="menus">
+    <div id="title-corners" class="hidden">
+      <div class="corner left" id="version"></div>
+      <div class="corner right">Not affiliated with Mojang or Microsoft</div>
+    </div>
     <div id="title-screen" class="menu">
       <h1 class="logo">CraftKat</h1>
-      <p class="splash">Play with friends — no download!</p>
+      <div class="splash-wrap"><p class="splash" id="splash">Play with friends!</p></div>
+      <div class="title-gap"></div>
       <p id="signed-in" class="signed-in"><span id="signed-in-name"></span> <button id="btn-logout" class="link-button">Log out</button></p>
       <label id="dev-name-field" class="field hidden">Your name (local testing)
         <input id="name" maxlength="16" placeholder="Steve" autocomplete="nickname">
       </label>
-      <button id="btn-worlds" class="big">Play</button>
-      <button id="btn-join-code" class="big secondary">Join a friend's world</button>
-      <button id="btn-options" class="big secondary">Options</button>
+      <button id="btn-worlds">Singleplayer</button>
+      <button id="btn-join-code">Multiplayer</button>
+      <button id="btn-options">Options...</button>
       <p id="title-message" class="message"></p>
-      <p class="footnote">Independent fan project — not affiliated with Mojang or Microsoft.</p>
     </div>
 
     <div id="login-screen" class="menu hidden">
       <h1 class="logo">CraftKat</h1>
+      <div class="title-gap"></div>
       <form id="login-form">
         <label class="field">Username <input id="login-name" autocomplete="username" required></label>
         <label class="field">Password <input id="login-password" type="password" autocomplete="current-password" required></label>
-        <button id="btn-login" type="submit" class="big">Log in</button>
+        <button id="btn-login" type="submit">Log In</button>
       </form>
       <p id="login-message" class="message"></p>
       <p class="hint">No account? Ask the owner of this game to make one for you.</p>
@@ -47,19 +52,19 @@
     </div>
 
     <div id="worlds-screen" class="menu hidden">
-      <h2>Your worlds</h2>
+      <h2>Select World</h2>
       <p class="hint">Worlds are saved in this browser. Open a world, then invite friends from the pause menu (Esc).</p>
       <div id="world-list"></div>
       <div class="row">
-        <button id="btn-new-world">Create new world</button>
-        <button id="btn-import" class="secondary">Import world</button>
+        <button id="btn-new-world">Create New World</button>
+        <button id="btn-import" class="secondary">Import World</button>
         <input id="import-file" type="file" accept=".json,application/json" class="hidden">
       </div>
       <button class="secondary back">Back</button>
     </div>
 
     <div id="new-world-screen" class="menu hidden">
-      <h2>Create new world</h2>
+      <h2>Create New World</h2>
       <label class="field">World name <input id="world-name" maxlength="32" value="New World"></label>
       <label class="field">Game mode
         <select id="world-mode">
@@ -70,13 +75,14 @@
       <label class="field">Seed <small>(optional)</small> <input id="world-seed" maxlength="20" placeholder="random"></label>
       <label class="check"><input id="world-cheats" type="checkbox"> Let friends use commands like /gamemode</label>
       <div class="row">
-        <button id="btn-create">Create world</button>
+        <button id="btn-create">Create New World</button>
         <button class="secondary back">Cancel</button>
       </div>
     </div>
 
     <div id="join-screen" class="menu hidden">
-      <h2>Join a friend's world</h2>
+      <h2>Multiplayer</h2>
+      <p class="hint">Join a friend's world with the invite link they sent you.</p>
       <label class="field">Invite link or code <input id="join-code" placeholder="paste the link your friend sent"></label>
       <label class="field">Password <small>(if your friend set one)</small> <input id="join-password" type="password" maxlength="64"></label>
       <div class="row">
@@ -88,21 +94,11 @@
 
     <div id="options-screen" class="menu hidden">
       <h2>Options</h2>
-      <label class="field">View distance: <span id="opt-distance-value"></span> chunks
-        <input id="opt-distance" type="range" min="2" max="12" step="1">
-      </label>
-      <label class="field">Field of view: <span id="opt-fov-value"></span>°
-        <input id="opt-fov" type="range" min="50" max="110" step="1">
-      </label>
-      <label class="field">Brightness: <span id="opt-bright-value"></span>
-        <input id="opt-bright" type="range" min="0" max="100" step="5">
-      </label>
-      <label class="field">Mouse sensitivity: <span id="opt-sens-value"></span>
-        <input id="opt-sens" type="range" min="0.2" max="3" step="0.1">
-      </label>
-      <label class="field">Volume: <span id="opt-volume-value"></span>%
-        <input id="opt-volume" type="range" min="0" max="100" step="5">
-      </label>
+      <label class="field slider"><input id="opt-distance" type="range" min="2" max="12" step="1"><span class="slider-label">Render Distance: <span id="opt-distance-value"></span> chunks</span></label>
+      <label class="field slider"><input id="opt-fov" type="range" min="50" max="110" step="1"><span class="slider-label">FOV: <span id="opt-fov-value"></span></span></label>
+      <label class="field slider"><input id="opt-bright" type="range" min="0" max="100" step="5"><span class="slider-label">Brightness: <span id="opt-bright-value"></span></span></label>
+      <label class="field slider"><input id="opt-sens" type="range" min="0.2" max="3" step="0.1"><span class="slider-label">Sensitivity: <span id="opt-sens-value"></span></span></label>
+      <label class="field slider"><input id="opt-volume" type="range" min="0" max="100" step="5"><span class="slider-label">Master Volume: <span id="opt-volume-value"></span>%</span></label>
       <button class="back">Done</button>
     </div>
   </div>
@@ -110,13 +106,14 @@
   <!-- ===== in-game ===== -->
   <div id="hud" class="hidden">
     <div id="crosshair"></div>
-    <pre id="debug" class="hidden"></pre>
+    <div id="debug" class="hidden"><div class="col" id="debug-left"></div><div class="col right" id="debug-right"></div></div>
     <div id="itemname"></div>
     <div id="stats">
       <div id="hearts"></div>
       <div id="food"></div>
       <div id="air"></div>
     </div>
+    <div id="xp"><div id="xp-fill"></div><div id="xp-level"></div></div>
     <div id="hotbar"></div>
     <div id="chat">
       <div id="chat-log"></div>
@@ -128,20 +125,21 @@
   <div id="damage-flash"></div>
   <div id="screen" class="overlay hidden"></div>
   <div id="cursor-stack" class="slot hidden"></div>
+  <div id="tooltip" class="hidden"></div>
 
   <div id="pause" class="overlay hidden">
     <div class="menu">
-      <h2>Game menu</h2>
-      <button id="btn-resume" class="big">Back to game</button>
-      <button id="btn-invite" class="big secondary">Invite friends</button>
-      <button id="btn-pause-options" class="big secondary">Options</button>
-      <button id="btn-quit" class="big secondary">Save and quit to title</button>
+      <h2>Game Menu</h2>
+      <button id="btn-resume">Back to Game</button>
+      <button id="btn-invite">Invite Friends</button>
+      <button id="btn-pause-options">Options...</button>
+      <button id="btn-quit">Save and Quit to Title</button>
       <div id="invite-panel" class="hidden">
         <div id="invite-setup">
           <label class="field">Password <small>(optional — friends will need it)</small>
             <input id="invite-password" type="password" maxlength="64">
           </label>
-          <button id="btn-open">Open to friends</button>
+          <button id="btn-open">Open to Friends</button>
         </div>
         <div id="invite-ready" class="hidden">
           <p>Send this link to your friends:</p>
@@ -157,16 +155,17 @@
     <div class="menu">
       <h2>Sleeping…</h2>
       <p class="hint">Night is skipped when everyone in the world is in bed.</p>
-      <button id="btn-leave-bed" class="big">Leave bed</button>
+      <button id="btn-leave-bed">Leave Bed</button>
     </div>
   </div>
 
   <div id="death" class="overlay hidden">
     <div class="menu">
-      <h1 class="dead-title">You died!</h1>
+      <h1 class="dead-title">You Died!</h1>
       <p id="death-cause"></p>
-      <button id="btn-respawn" class="big">Respawn</button>
-      <button id="btn-death-quit" class="big secondary">Title screen</button>
+      <p class="score">Score: <b id="death-score">0</b></p>
+      <button id="btn-respawn">Respawn</button>
+      <button id="btn-death-quit">Title Screen</button>
     </div>
   </div>
 

@@ -20,7 +20,7 @@ function el(tag, className, parent) {
 // Draws a stack into a slot element.
 export function paintSlot(slotEl, stack, iconURL) {
   slotEl.innerHTML = '';
-  slotEl.title = stack ? itemName(stack.id) : '';
+  slotEl.dataset.name = stack ? itemName(stack.id) : '';
   if (!stack) return;
   const img = el('img', 'icon', slotEl);
   img.src = iconURL(stack.id);
@@ -46,9 +46,20 @@ export class InventoryScreen {
     this.grid = [];
     this.furnace = null;
     this.cursorEl = $('cursor-stack');
+    this.tooltip = $('tooltip');
     document.addEventListener('mousemove', (e) => {
       this.cursorEl.style.left = e.clientX + 'px';
       this.cursorEl.style.top = e.clientY + 'px';
+      // item name tooltip, like Minecraft's, when hovering a filled slot with nothing held
+      const slot = this.isOpen && !this.cursor && e.target.closest?.('#screen .slot');
+      const name = slot ? slot.dataset.name : '';
+      this.tooltip.classList.toggle('hidden', !name);
+      if (name) {
+        this.tooltip.textContent = name;
+        const right = e.clientX + 18 + this.tooltip.offsetWidth > window.innerWidth;
+        this.tooltip.style.left = (right ? e.clientX - 18 - this.tooltip.offsetWidth : e.clientX + 18) + 'px';
+        this.tooltip.style.top = Math.max(4, e.clientY - 30) + 'px';
+      }
     });
   }
 
@@ -76,6 +87,7 @@ export class InventoryScreen {
     if (this.cursor) this.returnStack(this.cursor);
     this.cursor = null;
     this.kind = null;
+    this.tooltip.classList.add('hidden');
     this.root.classList.add('hidden');
     this.root.innerHTML = '';
     this.paintCursor();
@@ -353,19 +365,32 @@ export class HUD {
     this.iconURL = iconURL;
     this.hotbarEl = $('hotbar');
     this.slots = [];
-    for (let i = 0; i < HOTBAR_SIZE; i++) this.slots.push(el('div', 'slot', this.hotbarEl));
+    for (let i = 0; i < HOTBAR_SIZE; i++) {
+      const slot = el('div', 'slot', this.hotbarEl);
+      slot.style.left = (6 + i * 40) + 'px';
+      this.slots.push(slot);
+    }
+    this.selector = el('div', '', this.hotbarEl);
+    this.selector.id = 'selector';
+    // 10 hearts, 10 drumsticks and 10 bubbles, built once and updated by class
+    const row = (id, cls) => Array.from({ length: 10 }, () => el('i', cls, $(id)));
+    this.hearts = row('hearts', 'heart');
+    this.food = row('food', 'food');
+    this.air = row('air', 'bubble');
     this.lastName = '';
+    this.lastStats = '';
   }
 
   render(inv, selected, stats, mode) {
     for (let i = 0; i < HOTBAR_SIZE; i++) {
-      const key = JSON.stringify(inv[i]) + (i === selected);
+      const key = JSON.stringify(inv[i]);
       if (this.slots[i].dataset.key !== key) {
         this.slots[i].dataset.key = key;
         paintSlot(this.slots[i], inv[i], this.iconURL);
-        this.slots[i].classList.toggle('selected', i === selected);
       }
     }
+    this.selector.style.left = (-2 + selected * 40) + 'px';
+    const survival = mode === 'survival';
     const name = inv[selected] ? itemName(inv[selected].id) : '';
     if (name !== this.lastName) {
       this.lastName = name;
@@ -375,24 +400,34 @@ export class HUD {
       void n.offsetWidth;
       if (name) n.classList.add('fade');
     }
-    const survival = mode === 'survival';
+    $('itemname').classList.toggle('creative', !survival);
+    const key = [mode, stats.health, stats.food, Math.ceil(stats.air / 15), stats.hurtFlash, stats.xpLevel, stats.xpProgress].join();
+    if (key === this.lastStats) return;
+    this.lastStats = key;
     $('stats').classList.toggle('hidden', !survival);
-    if (survival) {
-      $('hearts').innerHTML = icons(stats.health, '♥', 'heart', stats.hurtFlash);
-      $('food').innerHTML = icons(stats.food, '🍗', 'drumstick', false);
-      $('air').innerHTML = stats.air < 300 ? icons(Math.ceil(stats.air / 15), '●', 'bubble', false) : '';
-    }
+    $('xp').classList.toggle('hidden', !survival);
+    if (!survival) return;
+    setIcons(this.hearts, stats.health);
+    setIcons(this.food, stats.food);
+    setIcons(this.air, stats.air < 300 ? Math.ceil(stats.air / 15) : 0, true);
+    $('hearts').classList.toggle('flash', !!stats.hurtFlash);
+    $('hearts').classList.toggle('low', stats.health <= 4);
+    $('xp-fill').style.width = `${Math.round((stats.xpProgress || 0) * 100)}%`;
+    $('xp-level').textContent = stats.xpLevel > 0 ? stats.xpLevel : '';
   }
 }
 
-function icons(value, glyph, cls, flash) {
-  let s = '';
-  for (let i = 0; i < 10; i++) {
+// value 0-20: two points per icon, like Minecraft. Bubbles have no "empty" look.
+function setIcons(icons, value, hideEmpty = false) {
+  icons.forEach((icon, i) => {
     const v = value - i * 2;
-    const state = v >= 2 ? 'full' : v === 1 ? 'half' : 'empty';
-    s += `<span class="${cls} ${state}${flash ? ' flash' : ''}">${glyph}</span>`;
-  }
-  return s;
+    const state = v >= 2 ? 'full' : v === 1 ? (hideEmpty ? 'full' : 'half') : 'empty';
+    if (icon.dataset.state !== state) {
+      icon.dataset.state = state;
+      icon.className = icon.className.split(' ')[0] + ' ' + state;
+      icon.style.visibility = hideEmpty && state === 'empty' ? 'hidden' : '';
+    }
+  });
 }
 
 export function foodName(id) {

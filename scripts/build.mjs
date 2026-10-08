@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { buildPixelFont } from './pixel-font.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pub = path.join(root, 'public');
@@ -27,6 +28,7 @@ for (const name of ['trystero', 'supabase']) {
     logLevel: 'warning',
   });
 }
+fs.writeFileSync(path.join(vendor, 'craftkat-font.otf'), buildPixelFont());
 console.log('vendor files ready in public/vendor');
 
 if (process.argv.includes('--dist')) {
