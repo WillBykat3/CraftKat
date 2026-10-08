@@ -227,12 +227,32 @@ const MOB_BUILDERS = {
     g.add(abdomen, thorax, head);
     return { group: g, head, legs: [], spiderLegs: legs, arms: [] };
   },
-  skeleton: () => {
+  husk: () => humanoid(0xa89766, 0x6e5f3e, 0x4f4430, true),
+  stray: () => MOB_BUILDERS.skeleton(0xa6b6b4, 0x5d6f78),
+  enderman: () => {
     const g = new THREE.Group();
-    const bone = 0xc8c8c0;
+    const black = 0x141414;
+    const legL = limb(0.14, 1.5, 0.14, black, -0.1, 1.5, 0);
+    const legR = limb(0.14, 1.5, 0.14, black, 0.1, 1.5, 0);
+    const body = box(0.5, 0.75, 0.25, black); body.position.y = 1.87;
+    const armL = limb(0.14, 1.5, 0.14, black, -0.32, 2.2, 0);
+    const armR = limb(0.14, 1.5, 0.14, black, 0.32, 2.2, 0);
+    const head = new THREE.Group();
+    head.position.y = 2.25;
+    const skull = box(0.5, 0.5, 0.5, 0x1a1a1a); skull.position.y = 0.25; head.add(skull);
+    for (const ex of [-0.13, 0.13]) {
+      const eye = box(0.16, 0.05, 0.02, 0xe079fa); eye.position.set(ex, 0.22, -0.26); head.add(eye);
+      const glow = box(0.06, 0.05, 0.02, 0xcc00fa); glow.position.set(ex + (ex < 0 ? 0.05 : -0.05), 0.22, -0.265); head.add(glow);
+    }
+    g.add(legL, legR, body, armL, armR, head);
+    return { group: g, head, legs: [legL, legR], arms: [armL, armR] };
+  },
+  skeleton: (boneColor = 0xc8c8c0, clothes = null) => {
+    const g = new THREE.Group();
+    const bone = boneColor;
     const legL = limb(0.12, 0.75, 0.12, bone, -0.12, 0.75, 0);
     const legR = limb(0.12, 0.75, 0.12, bone, 0.12, 0.75, 0);
-    const body = box(0.45, 0.75, 0.2, bone); body.position.y = 1.125;
+    const body = box(0.45, 0.75, 0.2, clothes ?? bone); body.position.y = 1.125;
     const armL = limb(0.12, 0.75, 0.12, bone, -0.3, 1.45, 0);
     const armR = limb(0.12, 0.75, 0.12, bone, 0.3, 1.45, 0);
     armL.rotation.x = armR.rotation.x = Math.PI / 2;
@@ -250,6 +270,7 @@ const MOB_BUILDERS = {
 const HITBOX = {
   pig: [0.5, 0.95], cow: [0.5, 1.4], sheep: [0.5, 1.3], chicken: [0.3, 0.75],
   zombie: [0.35, 1.95], skeleton: [0.35, 1.95], creeper: [0.35, 1.7], spider: [0.75, 0.95],
+  husk: [0.35, 1.95], stray: [0.35, 1.95], enderman: [0.35, 2.9],
 };
 
 function itemMesh(id, textures) {

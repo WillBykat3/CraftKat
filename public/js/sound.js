@@ -140,7 +140,8 @@ export const sound = {
     osc.stop(t + 4.6);
   },
   mobHurt(kind) {
-    if (kind === 'zombie') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });
+    if (kind === 'zombie' || kind === 'husk') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });
+    else if (kind === 'enderman') { tone({ freq: 900, endFreq: 300, duration: 0.6, gain: 0.25, type: 'sawtooth' }); tone({ freq: 1250, endFreq: 420, duration: 0.6, gain: 0.15, type: 'square' }); }
     else if (kind === 'cow') tone({ freq: 220, endFreq: 160, duration: 0.35, gain: 0.3, type: 'sawtooth' });
     else tone({ freq: 520, endFreq: 300, duration: 0.2, gain: 0.25, type: 'square' });
   },

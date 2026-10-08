@@ -10,6 +10,8 @@ import { World, LATEST_GEN } from './world.js';
 import { moveBody, collides } from './physics.js';
 import { clickSlot, quickMove } from './inventory.js';
 import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
+import { BIOME, FROZEN } from './biomes.js';
+import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -26,9 +28,14 @@ const MOB_TYPES = {
   skeleton: { hp: 20, halfW: 0.3, height: 1.95, speed: 2.0, hostile: true, burns: true },
   spider: { hp: 16, halfW: 0.7, height: 0.9, speed: 2.8, hostile: true, damage: 2 },
   creeper: { hp: 20, halfW: 0.3, height: 1.7, speed: 2.0, hostile: true },
+  husk: { hp: 20, halfW: 0.3, height: 1.9, speed: 2.2, hostile: true, damage: 3 },       // desert zombie, doesn't burn
+  stray: { hp: 20, halfW: 0.3, height: 1.95, speed: 2.0, hostile: true, burns: true },  // snowy skeleton
+  enderman: { hp: 40, halfW: 0.3, height: 2.9, speed: 3.2, hostile: true, damage: 7 }, // neutral until angered
 };
+const MOB_NAMES = { zombie: 'a Zombie', husk: 'a Husk', spider: 'a Spider', enderman: 'an Enderman', skeleton: 'a Skeleton', stray: 'a Stray' };
 const PASSIVE = ['pig', 'cow', 'sheep', 'chicken'];
-const HOSTILE = [['zombie', 0.4], ['skeleton', 0.25], ['creeper', 0.2], ['spider', 0.15]];
+const HOSTILE = [['zombie', 0.38], ['skeleton', 0.24], ['creeper', 0.19], ['spider', 0.14], ['enderman', 0.05]];
+const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
@@ -309,6 +316,10 @@ export class GameHost {
     this.world.setBlock(x, y, z, id);
     const key = `${x},${y},${z}`;
     if (BLOCKS[id].crop) this.crops.add(key); else this.crops.delete(key);
+    if (this.lightCache) {
+      const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.lightCache.delete((cx + dx) + ',' + (cz + dz));
+    }
     this.dirty = true;
     this.broadcast({ t: 'set', x, y, z, id }, exceptPeer);
   }
@@ -540,7 +551,7 @@ export class GameHost {
     if (by) e.angryAt = by;
     this.broadcast({ t: 'mobhurt', e: e.id });
     if (e.hp <= 0) this.killMob(e);
-    else this.onMobHurt?.(e);
+    else this.onMobHurt(e);
   }
 
   killMob(e) {
@@ -551,10 +562,13 @@ export class GameHost {
       cow: [[ITEM.RAW_BEEF, 1 + Math.floor(r() * 3)], [ITEM.LEATHER, Math.floor(r() * 3)]],
       sheep: [[ITEM.RAW_MUTTON, 1 + Math.floor(r() * 2)], [BLOCK.WOOL, e.sheared ? 0 : 1]],
       chicken: [[ITEM.RAW_CHICKEN, 1], [ITEM.FEATHER, Math.floor(r() * 3)]],
-      zombie: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
+      zombie: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)], [r() < 0.5 ? ITEM.CARROT : ITEM.POTATO, r() < 0.05 ? 1 : 0]],
       skeleton: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
       spider: [[ITEM.STRING, Math.floor(r() * 3)]],
       creeper: [[ITEM.GUNPOWDER, Math.floor(r() * 3)]],
+      husk: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
+      stray: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
+      enderman: [[ITEM.ENDER_PEARL, Math.floor(r() * 2)]],
     }[e.type] || [];
     for (const [id, n] of drops) if (n > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n);
     this.spawnXP(e.x, e.y + 0.5, e.z, MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
@@ -774,7 +788,7 @@ export class GameHost {
       vx: ((tx - sx) / (dist || 1)) * speed + (this.random() - 0.5) * 1.2,
       vy: (ty - sy) / (t || 1) + 0.5 * 20 * t + (this.random() - 0.5) * 1.2, // aim up to make up for gravity
       vz: ((tz - sz) / (dist || 1)) * speed + (this.random() - 0.5) * 1.2,
-      yaw: Math.atan2(-(tx - sx), -(tz - sz)), age: 0, shooter: from.id,
+      yaw: Math.atan2(-(tx - sx), -(tz - sz)), age: 0, shooter: from.id, cause: `was shot by ${MOB_NAMES[from.type] || 'a Skeleton'}`,
     };
     this.entities.set(a.id, a);
   }
@@ -1135,7 +1149,8 @@ export class GameHost {
           if (e.burn > 1) { e.burn = 0; e.hp -= 2; this.broadcast({ t: 'mobhurt', e: e.id }); }
           if (e.hp <= 0) { this.killMob(e); continue; }
         }
-        const target = this.nearestPlayer(e, e.type === 'skeleton' ? 20 : 24, true);
+        if (e.type === 'enderman') this.endermanMind(e, dt);
+        const target = e.type === 'enderman' && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : e.type === 'enderman' ? 40 : 24, true);
         if (target) {
           const [p, dist] = target;
           e.yaw = Math.atan2(-(p.x - e.x), -(p.z - e.z));
@@ -1150,7 +1165,7 @@ export class GameHost {
               this.explode(e.x, e.y + 0.5, e.z, 3);
               continue;
             }
-          } else if (e.type === 'skeleton') {
+          } else if (e.type === 'skeleton' || e.type === 'stray') {
             // keep some distance and shoot
             targetSpeed = dist > 12 ? t.speed : dist < 6 ? -t.speed * 0.7 : 0;
             if (e.attackCooldown === 0 && dist < 16) {
@@ -1161,8 +1176,7 @@ export class GameHost {
             targetSpeed = dist > 1.2 ? t.speed : 0;
             if (dist < 1.6 && Math.abs(p.y - e.y) < 1.8 && e.attackCooldown === 0) {
               e.attackCooldown = 1;
-              const name = e.type === 'spider' ? 'a Spider' : 'a Zombie';
-              this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: `was slain by ${name}` });
+              this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: `was slain by ${MOB_NAMES[e.type] || 'a Zombie'}` });
             }
           }
         } else if (e.type === 'creeper' && e.fuse) {
@@ -1203,14 +1217,14 @@ export class GameHost {
 
   spawnMobs() {
     const light = daylight(this.time);
-    const counts = { passive: 0, hostile: 0 };
     for (const p of this.players.values()) {
-      counts.passive = 0;
-      counts.hostile = 0;
+      const counts = { passive: 0, hostile: 0 };
       for (const e of this.entities.values()) {
         if (!isMob(e) || Math.hypot(e.x - p.x, e.z - p.z) > 64) continue;
         if (MOB_TYPES[e.type].hostile) counts.hostile++; else counts.passive++;
       }
+      // underground: monsters appear in total darkness, day or night
+      if (counts.hostile < 8 && p.y < this.world.seaLevel + 10 && this.random() < 0.5) this.spawnInCave(p);
       const wantHostile = light < 0.3 && counts.hostile < 6;
       const wantPassive = counts.passive < 6 && this.random() < 0.3;
       if (!wantHostile && !wantPassive) continue;
@@ -1222,10 +1236,7 @@ export class GameHost {
       if (y < 1 || y >= HEIGHT - 3) continue;
       const ground = this.world.getBlock(x, y, z);
       if (wantHostile && BLOCKS[ground].solid && !BLOCKS[ground].transparent) {
-        let roll = this.random(), type = 'zombie';
-        for (const [kind, chance] of HOSTILE) { if (roll < chance) { type = kind; break; } roll -= chance; }
-        const e = this.spawnMob(type, x + 0.5, y + 1, z + 0.5);
-        if (collides(this.world, e)) this.entities.delete(e.id);
+        this.spawnHostile(x, y + 1, z);
       } else if (wantPassive && ground === BLOCK.GRASS) {
         const type = PASSIVE[Math.floor(this.random() * PASSIVE.length)];
         const herd = 2 + Math.floor(this.random() * 3);
@@ -1236,6 +1247,111 @@ export class GameHost {
       }
     }
   }
+
+  // A random monster, with the biome's variant: husks in deserts, strays in the snow.
+  spawnHostile(x, y, z) {
+    let roll = this.random(), type = 'zombie';
+    for (const [kind, chance] of HOSTILE) { if (roll < chance) { type = kind; break; } roll -= chance; }
+    const biome = this.world.biomeAt(x, z);
+    if (type === 'zombie' && DESERT_BIOMES.has(biome) && y > this.world.seaLevel) type = 'husk';
+    if (type === 'skeleton' && FROZEN.has(biome) && y > this.world.seaLevel) type = 'stray';
+    const e = this.spawnMob(type, x + 0.5, y, z + 0.5);
+    if (collides(this.world, e)) { this.entities.delete(e.id); return null; }
+    return e;
+  }
+
+  // Tries one spot near the player underground: air with room to stand, on a solid
+  // floor, with no light at all.
+  spawnInCave(p) {
+    const angle = this.random() * Math.PI * 2;
+    const dist = 12 + this.random() * 20;
+    const x = Math.floor(p.x + Math.cos(angle) * dist);
+    const z = Math.floor(p.z + Math.sin(angle) * dist);
+    const y0 = Math.floor(p.y) + Math.floor(this.random() * 24) - 16;
+    for (let y = y0; y < y0 + 8; y++) {
+      if (y < 2 || y >= HEIGHT - 3) continue;
+      const floor = this.world.getBlock(x, y - 1, z);
+      if (!BLOCKS[floor].solid || BLOCKS[floor].transparent) continue;
+      if (this.world.getBlock(x, y, z) !== BLOCK.AIR || this.world.getBlock(x, y + 1, z) !== BLOCK.AIR) continue;
+      const light = this.lightAt(x, y, z);
+      if (light.sky > 0 || light.block > 0) return null;
+      return this.spawnHostile(x, y, z);
+    }
+    return null;
+  }
+
+  // Sky and block light (0-15) at a block, computed per chunk and cached until blocks change.
+  lightAt(x, y, z) {
+    const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
+    const key = cx + ',' + cz;
+    this.lightCache ??= new Map();
+    let light = this.lightCache.get(key);
+    if (!light) {
+      if (this.lightCache.size > 16) this.lightCache.delete(this.lightCache.keys().next().value);
+      light = computeLight(gatherRegion(this.world, cx, cz));
+      this.lightCache.set(key, light);
+    }
+    const i = regionIndex(x - cx * 16, y, z - cz * 16);
+    return { sky: light.sky[i], block: light.block[i] };
+  }
+
+  // Endermen are calm until hit or stared at, then chase you, and teleport when hurt.
+  endermanMind(e, dt) {
+    if (!e.angry) {
+      for (const p of this.players.values()) {
+        if (p.dead || p.mode !== 'survival') continue;
+        const ex = e.x - p.x, ey = e.y + 2.55 - (p.y + 1.62), ez = e.z - p.z;
+        const dist = Math.hypot(ex, ey, ez);
+        if (dist > 64 || dist < 0.5) continue;
+        const lx = -Math.sin(p.yaw) * Math.cos(p.pitch), ly = Math.sin(p.pitch), lz = -Math.cos(p.yaw) * Math.cos(p.pitch);
+        const dot = (lx * ex + ly * ey + lz * ez) / dist;
+        if (dot > 1 - 0.025 / dist && this.canSee(p.x, p.y + 1.62, p.z, e.x, e.y + 2.55, e.z)) {
+          e.angry = true;
+          e.angryAt = p.name;
+          this.broadcast({ t: 'mobhurt', e: e.id }); // a scream (the client plays a sound)
+        }
+      }
+    }
+    if (e.angryAt && !e.angry) e.angry = true;
+    // now and then an angry enderman teleports closer
+    e.teleportTimer = (e.teleportTimer || 0) - dt;
+    if (e.angry && e.teleportTimer <= 0) {
+      e.teleportTimer = 4 + this.random() * 4;
+      const target = this.nearestPlayer(e, 64, true);
+      if (target && target[1] > 10) this.teleportMob(e, target[0].x, target[0].z, 6);
+    }
+  }
+
+  canSee(x0, y0, z0, x1, y1, z1) {
+    const d = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    for (let t = 0.5; t < d; t += 0.5) {
+      const f = t / d;
+      const id = this.world.getBlock(Math.floor(x0 + (x1 - x0) * f), Math.floor(y0 + (y1 - y0) * f), Math.floor(z0 + (z1 - z0) * f));
+      if (BLOCKS[id].solid && !BLOCKS[id].transparent) return false;
+    }
+    return true;
+  }
+
+  // Jumps a mob to a random standing spot within `range` blocks of (x, z).
+  teleportMob(e, x, z, range) {
+    for (let tries = 0; tries < 16; tries++) {
+      const tx = Math.floor(x + (this.random() - 0.5) * 2 * range), tz = Math.floor(z + (this.random() - 0.5) * 2 * range);
+      for (let y = Math.floor(e.y) + 8; y > Math.floor(e.y) - 8; y--) {
+        const floor = this.world.getBlock(tx, y - 1, tz);
+        if (!BLOCKS[floor].solid || BLOCKS[floor].liquid) continue;
+        const spot = { ...e, x: tx + 0.5, y, z: tz + 0.5 };
+        if (collides(this.world, spot) || BLOCKS[this.world.getBlock(tx, y, tz)].liquid) continue;
+        e.x = spot.x; e.y = spot.y; e.z = spot.z; e.vx = e.vy = e.vz = 0;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  onMobHurt(e) {
+    if (e.type === 'enderman') { e.angry = true; this.teleportMob(e, e.x, e.z, 16); }
+  }
+
 
   sendStates() {
     const moved = [];

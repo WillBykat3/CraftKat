@@ -523,3 +523,46 @@ test('arrows from a bow hit mobs; armor is saved, checked and shown to others', 
   assert.deepEqual(last('b', 'equip'), { t: 'equip', id: pl.id, armor: [0, ITEM.IRON_CHESTPLATE, 0, 0] });
   void x; void y; void z;
 });
+
+test('endermen get angry when stared at, husks in deserts, monsters spawn in dark caves', () => {
+  const { host, join } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  const p = [...host.players.values()][0];
+  p.x = 0.5; p.y = 220; p.z = 0.5; p.yaw = 0; p.pitch = 0;
+  for (let x = -3; x <= 3; x++) for (let z = -12; z <= 3; z++) host.world.setBlock(x, 219, z, BLOCK.STONE);
+  const e = host.spawnMob('enderman', 0.5, 220, -8.5);
+  host.tick(0.05);
+  assert.ok(!e.angry, 'calm when not looked at');
+  // look straight at its head
+  p.pitch = Math.atan2(2.55 - 1.62, 9);
+  host.tick(0.05);
+  assert.ok(e.angry, 'angry when stared at');
+
+  // biome variants
+  const desertSpot = (() => {
+    for (let x = 0; x < 6000; x += 16) if (host.world.biomeAt(x, 0) === 19) return x;
+    return null;
+  })();
+  if (desertSpot !== null) {
+    host.random = () => 0.01; // always the first kind (zombie)
+    const m = host.spawnHostile(desertSpot, host.world.heightAt(desertSpot, 0) + 1, 0);
+    assert.equal(m?.type, 'husk');
+  }
+
+  // a dark sealed room underground gets a monster
+  host.random = Math.random;
+  const y = 40;
+  const R = 36;
+  for (let x = -R; x <= R; x++) for (let z = -R; z <= R; z++) for (let yy = y - 1; yy <= y + 3; yy++) {
+    host.world.setBlock(x, yy, z, Math.abs(x) === R || Math.abs(z) === R || yy === y - 1 || yy === y + 3 ? BLOCK.STONE : BLOCK.AIR);
+  }
+  host.lightCache = null;
+  let spawned = null;
+  for (let i = 0; i < 400 && !spawned; i++) spawned = host.spawnInCave({ x: 0.5, y, z: 0.5 });
+  assert.ok(spawned && Math.abs(spawned.y - y) < 0.01, 'a monster appeared in the dark room');
+  // a torch keeps monsters away from where its light reaches
+  host.world.setBlock(spawned.x - 0.5, y, spawned.z - 0.5 + 2, BLOCK.TORCH);
+  host.lightCache = null;
+  assert.ok(host.lightAt(Math.floor(spawned.x), y, Math.floor(spawned.z)).block > 0, 'torch light reaches the spot');
+});
