@@ -20,6 +20,12 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Mining and tools**: blocks take time to break (with flying bits of block), the right tool is faster,
   wooden → stone → iron → diamond tools with durability, some ores need a better pickaxe
 - **Experience**: orbs from mobs, ores and smelting, an XP bar and levels; dying drops some of it
+- **Building blocks**: doors (they open and close), ladders, fences, slabs and stairs you walk up, plus all the
+  usual blocks
+- **Farming**: till dirt with a hoe, plant wheat seeds (from tall grass), carrots and potatoes; crops grow over time,
+  faster near water; bone meal speeds them up; bake bread and potatoes
+- **Armor**: leather, iron, gold and diamond, with armor slots, an armor bar and Minecraft's protection rules
+- **Bows**: draw and shoot (arrows from flint, sticks and feathers)
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
@@ -28,15 +34,15 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
   screen, view bobbing, third-person view (F5), calm generated piano music and cave sounds
 - **Real lighting**: caves are dark, torches light them up, smooth shading
-- **Mobs**: pigs, cows, sheep and chickens; at night zombies and skeletons (both burn in sunlight), spiders that climb walls,
-  and creepers that explode
+- **Mobs**: pigs, cows, sheep and chickens; at night (and anywhere dark underground) zombies and skeletons (both burn in
+  sunlight), spiders that climb walls, creepers that explode, husks in deserts, strays in the snow, and endermen that
+  attack if you look them in the eye
 - **Creative mode**: every block, flying, instant breaking
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** redstone, the Nether and End, villages, enchanting, armor, bows for players, doors, farming,
-flowing water/lava, and many of Minecraft's mobs. (Redstone dust, lapis and emeralds can be mined but don't do
-anything yet.) It needs a keyboard and mouse, so phones and tablets aren't supported.
+**Not included (yet):** redstone, the Nether and End, villages, enchanting, potions, flowing water/lava, and many of
+Minecraft's mobs. (Redstone dust, lapis, emeralds and ender pearls can be collected but don't do anything yet.) It needs a keyboard and mouse, so phones and tablets aren't supported.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -97,7 +103,7 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 | Shift | Sneak (you won't fall off edges) · fly down |
 | Double-tap Space | Fly (creative mode) |
 | Left click (hold) | Break block · attack |
-| Right click | Place block · open crafting table/furnace/chest · sleep in a bed · eat (hold) · use bucket or shears |
+| Right click | Place block · open doors, crafting tables, furnaces, chests · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears or bone meal |
 | Middle click | Pick block |
 | 1–9 / mouse wheel | Choose hotbar slot |
 | E | Inventory and crafting |
@@ -122,8 +128,10 @@ view bobbing, and clouds (Fancy, Fast or off). If the game is slow, lower the re
 
 Punch a tree for logs (hold left click) → open your inventory (E) and turn logs into planks → make a
 **crafting table** (4 planks) and place it → craft sticks and a **wooden pickaxe** → mine stone for a **stone pickaxe** →
-find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron. Make a shelter before your first night,
-or craft a **bed** (3 wool from sheep + 3 planks) and sleep through it. Store things in a **chest** (8 planks).
+find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron. Make a shelter (with a **door**: 6
+planks) before your first night, or craft a **bed** (3 wool from sheep + 3 planks) and sleep through it. Store things in
+a **chest** (8 planks). Iron makes **armor**; light caves with torches, because monsters appear wherever it's dark.
+For food, break tall grass for seeds, till dirt with a **hoe** next to water and grow wheat for **bread**.
 
 ---
 
@@ -166,6 +174,7 @@ public/
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo
   js/pixel-glyphs.js      the pixel font's letters (scripts/pixel-font.mjs turns them into a font file)
   js/particles.js         block-breaking particles
+  js/shapes.js            shapes of slabs, stairs, doors, ladders and fences (drawing, collisions, aiming)
   js/xp.js                experience levels and rewards
   js/sound.js, js/music.js  synthesized sound effects and generated music
   js/auth.js, js/config.js  logins (Supabase)
