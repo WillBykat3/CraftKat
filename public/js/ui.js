@@ -4,8 +4,9 @@
 import { itemName, ITEMS, maxDurability, armorOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
 import {
   HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem,
-  RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult,
+  RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult, countItem,
 } from './inventory.js';
+import { LEVELS } from './trades.js';
 import { sound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
@@ -70,10 +71,12 @@ export class InventoryScreen {
   // kind: 'inventory' | 'crafting' | 'furnace' | 'chest' | 'creative'
   open(kind, data = {}) {
     this.kind = kind;
+    this.title = data.name; // e.g. Smoker or Barrel instead of Furnace or Chest
     this.gridSize = kind === 'crafting' ? 3 : 2;
     this.grid = new Array(this.gridSize * this.gridSize).fill(null);
     this.furnace = kind === 'furnace' ? { at: data.at, slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 } : null;
     this.chest = kind === 'chest' ? { at: data.at, slots: new Array(27).fill(null), loaded: false } : null;
+    this.trade = kind === 'trade' ? data : null;
     this.creativeTab = this.creativeTab || 'blocks';
     this.root.classList.remove('hidden');
     this.render();
@@ -300,6 +303,26 @@ export class InventoryScreen {
     });
   }
 
+  // A villager's offers: what it wants, and what it gives. Click one to trade.
+  tradeArea(panel, title) {
+    const t = this.trade;
+    const job = t.profession.charAt(0).toUpperCase() + t.profession.slice(1);
+    title.textContent = `${job} - ${LEVELS[t.level]}`;
+    const bar = el('div', 'trade-xp', panel);
+    const fill = el('div', 'trade-xp-fill', bar);
+    fill.style.width = t.next ? `${Math.min(100, ((t.xp - t.prev) / (t.next - t.prev)) * 100)}%` : '100%';
+    const list = el('div', 'trade-list', panel);
+    t.offers.forEach((o, i) => {
+      const row = el('div', 'trade-row' + (o.uses >= o.max ? ' sold-out' : ''), list);
+      const afford = o.cost.every(([id, n]) => countItem(this.game.inv, id) >= n);
+      if (!afford) row.classList.add('cant');
+      for (const [id, n] of o.cost) this.slot(row, { id, count: n }, () => this.game.tradeOffer(i));
+      el('span', 'trade-arrow', row).textContent = o.uses >= o.max ? '✕' : '→';
+      this.slot(row, { id: o.result[0], count: o.result[1] }, () => this.game.tradeOffer(i));
+      row.addEventListener('mousedown', (e) => { if (e.target === row) this.game.tradeOffer(i); });
+    });
+  }
+
   furnaceArea(panel) {
     const f = this.furnace;
     const row = el('div', 'furnace-row', panel);
@@ -347,11 +370,12 @@ export class InventoryScreen {
     if (this.bookOpen && (this.kind === 'inventory' || this.kind === 'crafting')) this.recipeBook(wrap);
     const panel = el('div', 'inv-panel', wrap);
     const title = el('h3', '', panel);
-    title.textContent = { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory' }[this.kind];
+    title.textContent = this.title || { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory' }[this.kind];
     if (this.kind === 'inventory' || this.kind === 'crafting') this.craftingArea(panel);
     if (this.kind === 'furnace') this.furnaceArea(panel);
     if (this.kind === 'chest') this.chestArea(panel);
     if (this.kind === 'creative') this.creativeArea(panel);
+    if (this.kind === 'trade') this.tradeArea(panel, title);
     el('h3', 'small', panel).textContent = 'Inventory';
     this.playerSlots(panel);
     el('p', 'hint', panel).textContent = this.kind === 'creative'

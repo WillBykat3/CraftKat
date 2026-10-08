@@ -51,6 +51,12 @@ export function shapeBoxes(id, neighbor, collision = false) {
       }
       return boxes;
     }
+    case 'path': return [[0, 0, 0, 1, 15 * P, 1]];
+    case 'stonecutter': return [[0, 0, 0, 1, 9 * P, 1]];
+    case 'grindstone': return [[4 * P, 4 * P, 2 * P, 12 * P, 16 * P, 14 * P], [2 * P, 0, 6 * P, 4 * P, 12 * P, 10 * P, 'planks'], [12 * P, 0, 6 * P, 14 * P, 12 * P, 10 * P, 'planks']];
+    case 'cauldron': return [[0, 3 * P, 0, 1, 1, 2 * P], [0, 3 * P, 14 * P, 1, 1, 1], [0, 3 * P, 2 * P, 2 * P, 1, 14 * P], [14 * P, 3 * P, 2 * P, 1, 1, 14 * P], [2 * P, 3 * P, 2 * P, 14 * P, 4 * P, 14 * P],
+      [0, 0, 0, 4 * P, 3 * P, 4 * P], [12 * P, 0, 0, 1, 3 * P, 4 * P], [0, 0, 12 * P, 4 * P, 3 * P, 1], [12 * P, 0, 12 * P, 1, 3 * P, 1]];
+    case 'bell': return [[5 * P, 4 * P, 5 * P, 11 * P, 11 * P, 11 * P], [4 * P, 4 * P, 4 * P, 12 * P, 6 * P, 12 * P], [7 * P, 11 * P, 7 * P, 9 * P, 16 * P, 9 * P, 'cobble']];
     case 'portal': return [b.axis === 0 ? [0, 0, 6 * P, 1, 1, 10 * P] : [6 * P, 0, 0, 10 * P, 1, 1]];
     case 'end_portal': return [[0, 11 * P, 0, 1, 12 * P, 1]];
     case 'frame': {

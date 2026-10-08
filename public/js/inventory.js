@@ -42,6 +42,20 @@ export function countItem(slots, id) {
   return slots.reduce((n, s) => n + (s && s.id === id ? s.count : 0), 0);
 }
 
+// Removes `count` items of a kind from wherever they are (if there are enough). Returns whether it did.
+export function takeItems(slots, id, count) {
+  if (countItem(slots, id) < count) return false;
+  for (let i = slots.length - 1; i >= 0 && count > 0; i--) {
+    const s = slots[i];
+    if (!s || s.id !== id) continue;
+    const n = Math.min(count, s.count);
+    s.count -= n;
+    count -= n;
+    if (s.count <= 0) slots[i] = null;
+  }
+  return true;
+}
+
 // Removes one item from a slot.
 export function takeOne(slots, i) {
   const s = slots[i];
@@ -208,6 +222,24 @@ RECIPES.push(
   { pattern: ['G'], keys: { G: [ITEM.GOLD_INGOT] }, result: [ITEM.GOLD_NUGGET, 9] },
   { pattern: ['R'], keys: { R: [ITEM.BLAZE_ROD] }, result: [ITEM.BLAZE_POWDER, 2] },
   { pattern: ['PB'], keys: { P: [ITEM.ENDER_PEARL], B: [ITEM.BLAZE_POWDER] }, result: [ITEM.EYE_OF_ENDER, 1], shapeless: true },
+  // books and village job sites
+  { pattern: ['SSS'], keys: { S: [BLOCK.SUGAR_CANE] }, result: [ITEM.PAPER, 3] },
+  { pattern: ['PPL'], keys: { P: [ITEM.PAPER], L: [ITEM.LEATHER] }, result: [ITEM.BOOK, 1], shapeless: true },
+  { pattern: ['PPP', 'BBB', 'PPP'], keys: { P: PLANKS, B: [ITEM.BOOK] }, result: [BLOCK.BOOKSHELF, 1] },
+  { pattern: ['WWW', 'WWW', 'WWW'], keys: { W: [ITEM.WHEAT] }, result: [BLOCK.HAY_BALE, 1] },
+  { pattern: ['H'], keys: { H: [BLOCK.HAY_BALE] }, result: [ITEM.WHEAT, 9] },
+  { pattern: ['S.S', 'S.S', 'SSS'], keys: { S: [BLOCK.OAK_SLAB] }, result: [BLOCK.COMPOSTER, 1] },
+  { pattern: ['SSS', '.B.', '.S.'], keys: { S: [BLOCK.OAK_SLAB], B: [BLOCK.BOOKSHELF] }, result: [BLOCK.LECTERN, 1] },
+  { pattern: ['III', 'IFI', 'SSS'], keys: { I: [ITEM.IRON_INGOT], F: [BLOCK.FURNACE], S: [BLOCK.STONE] }, result: [BLOCK.BLAST_FURNACE, 1] },
+  { pattern: ['.L.', 'LFL', '.L.'], keys: { L: [BLOCK.LOG, BLOCK.BIRCH_LOG, BLOCK.SPRUCE_LOG, BLOCK.ACACIA_LOG, BLOCK.DARK_OAK_LOG, BLOCK.JUNGLE_LOG, BLOCK.CHERRY_LOG], F: [BLOCK.FURNACE] }, result: [BLOCK.SMOKER, 1] },
+  { pattern: ['II', 'PP', 'PP'], keys: { I: [ITEM.IRON_INGOT], P: PLANKS }, result: [BLOCK.SMITHING_TABLE, 1] },
+  { pattern: ['SAS', 'P.P'], keys: { S: [ITEM.STICK], A: [BLOCK.STONE_SLAB], P: PLANKS }, result: [BLOCK.GRINDSTONE, 1] },
+  { pattern: ['FF', 'PP', 'PP'], keys: { F: [ITEM.FLINT], P: PLANKS }, result: [BLOCK.FLETCHING_TABLE, 1] },
+  { pattern: ['SS', 'PP'], keys: { S: [ITEM.STRING], P: PLANKS }, result: [BLOCK.LOOM, 1] },
+  { pattern: ['AA', 'PP', 'PP'], keys: { A: [ITEM.PAPER], P: PLANKS }, result: [BLOCK.CARTOGRAPHY_TABLE, 1] },
+  { pattern: ['.I.', 'SSS'], keys: { I: [ITEM.IRON_INGOT], S: [BLOCK.STONE] }, result: [BLOCK.STONECUTTER, 1] },
+  { pattern: ['I.I', 'I.I', 'III'], keys: { I: [ITEM.IRON_INGOT] }, result: [BLOCK.CAULDRON, 1] },
+  { pattern: ['PSP', 'P.P', 'PSP'], keys: { P: PLANKS, S: [BLOCK.OAK_SLAB] }, result: [BLOCK.BARREL, 1] },
 );
 
 // Trims empty rows/columns: returns {w, h, cells} for a square grid of slots.

@@ -326,6 +326,129 @@ function drawBlockTile(p, name) {
       for (let x = 3; x < 13; x++) { px(x, 7, [70, 70, 70]); px(x, 13, [70, 70, 70]); }
       for (let x = 4; x < 12; x++) px(x, 4, [60, 60, 60]);
       break;
+    // ---- villages ----
+    case 'dirt_path_top': p.noisy([150, 122, 70], 0.1); p.specks([120, 95, 55], 14); break;
+    case 'dirt_path_side':
+      drawBlockTile(p, 'dirt');
+      for (let x = 0; x < S; x++) { px(x, 0, [0, 0, 0], 0); px(x, 1, shade([150, 122, 70], 0.9 + rand() * 0.2)); px(x, 2, shade([140, 112, 62], 0.9 + rand() * 0.2)); }
+      break;
+    case 'hay_top':
+      p.noisy([190, 160, 40], 0.12);
+      for (let i = 0; i < S; i++) { px(i, 0, [120, 70, 30]); px(i, 15, [120, 70, 30]); px(0, i, [120, 70, 30]); px(15, i, [120, 70, 30]); }
+      break;
+    case 'hay_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([195, 165, 45], (x % 3 ? 0.95 : 0.8) + rand() * 0.15));
+      for (const y of [3, 12]) for (let x = 0; x < S; x++) px(x, y, [130, 75, 30]);
+      break;
+    case 'bookshelf': {
+      drawBlockTile(p, 'planks');
+      const colors = [[150, 40, 40], [40, 70, 150], [50, 120, 50], [130, 100, 40], [110, 50, 120], [180, 160, 120]];
+      for (const y0 of [1, 9]) {
+        for (let x = 1; x < 15;) {
+          const w = 1 + Math.floor(rand() * 2), h = 5 + Math.floor(rand() * 2), c = colors[Math.floor(rand() * colors.length)];
+          for (let dx = 0; dx < w && x + dx < 15; dx++) for (let y = y0 + 6 - h; y < y0 + 6; y++) px(x + dx, y, shade(c, dx ? 0.8 : 1));
+          x += w;
+        }
+      }
+      break;
+    }
+    case 'composter_top':
+      drawBlockTile(p, 'planks');
+      for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) px(x, y, shade([90, 70, 40], 0.8 + rand() * 0.3));
+      break;
+    case 'composter_side':
+      drawBlockTile(p, 'planks');
+      for (let y = 0; y < S; y++) { px(0, y, [100, 70, 35]); px(15, y, [100, 70, 35]); }
+      for (let x = 0; x < S; x++) for (const y of [0, 7, 15]) px(x, y, [100, 70, 35]);
+      break;
+    case 'lectern_top':
+      drawBlockTile(p, 'planks');
+      for (let y = 3; y < 13; y++) for (let x = 2; x < 14; x++) px(x, y, x === 7 || x === 8 ? [180, 170, 150] : [235, 225, 200]);
+      for (let y = 5; y < 12; y += 2) for (let x = 3; x < 13; x++) if (x !== 7 && x !== 8 && rand() < 0.7) px(x, y, [90, 80, 70]);
+      break;
+    case 'lectern_side':
+      drawBlockTile(p, 'planks');
+      for (let y = 4; y < S; y++) for (let x = 5; x < 11; x++) px(x, y, shade([150, 110, 60], 0.85 + rand() * 0.2));
+      break;
+    case 'blast_furnace_top': p.noisy([110, 110, 112], 0.08); for (let i = 3; i < 13; i++) { px(i, 3, [70, 70, 70]); px(i, 12, [70, 70, 70]); } break;
+    case 'blast_furnace_side':
+      p.noisy([120, 120, 122], 0.08);
+      for (let i = 0; i < S; i++) { px(i, 0, [80, 80, 82]); px(i, 15, [80, 80, 82]); px(i, 5, [150, 150, 155]); px(i, 10, [150, 150, 155]); }
+      break;
+    case 'blast_furnace_front':
+      drawBlockTile(p, 'blast_furnace_side');
+      for (let y = 7; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, (x + y) % 2 ? [40, 40, 42] : [70, 70, 75]);
+      break;
+    case 'smoker_top': p.noisy([90, 80, 70], 0.1); for (let y = 5; y < 11; y++) for (let x = 5; x < 11; x++) px(x, y, [40, 35, 30]); break;
+    case 'smoker_side':
+      drawBlockTile(p, 'furnace_side');
+      for (let x = 0; x < S; x++) for (const y of [0, 1, 14, 15]) px(x, y, shade([110, 80, 50], 0.85 + rand() * 0.2));
+      break;
+    case 'smoker_front':
+      drawBlockTile(p, 'smoker_side');
+      for (let y = 7; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, [30, 30, 30]);
+      for (let x = 3; x < 13; x++) px(x, 6, [110, 80, 50]);
+      break;
+    case 'smithing_table_top':
+      p.noisy([60, 60, 70], 0.1);
+      for (let i = 0; i < S; i++) { px(i, 0, [110, 80, 50]); px(i, 15, [110, 80, 50]); px(0, i, [110, 80, 50]); px(15, i, [110, 80, 50]); }
+      break;
+    case 'smithing_table_side':
+      drawBlockTile(p, 'planks');
+      for (let x = 0; x < S; x++) for (const y of [0, 1, 2]) px(x, y, shade([60, 60, 70], 0.9 + rand() * 0.2));
+      for (let y = 6; y < 11; y++) for (let x = 5; x < 11; x++) px(x, y, [70, 70, 80]);
+      break;
+    case 'grindstone': p.noisy([140, 140, 140], 0.1); for (let i = 0; i < S; i += 3) for (let x = 0; x < S; x++) px(x, i, [115, 115, 115]); break;
+    case 'grindstone_side':
+      p.noisy([140, 140, 140], 0.08);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (Math.hypot(x - 7.5, y - 7.5) < 3) px(x, y, [100, 100, 100]);
+      break;
+    case 'fletching_table_top':
+      drawBlockTile(p, 'birch_planks');
+      for (let i = 2; i < 14; i++) px(i, i, [120, 90, 60]);
+      px(12, 12, [230, 230, 230]); px(13, 13, [230, 230, 230]); px(3, 3, [100, 100, 100]);
+      break;
+    case 'fletching_table_side':
+      drawBlockTile(p, 'birch_planks');
+      for (let y = 6; y < 10; y++) for (let x = 3; x < 13; x++) px(x, y, [170, 150, 110]);
+      break;
+    case 'loom_top':
+      drawBlockTile(p, 'planks');
+      for (let x = 2; x < 14; x += 2) for (let y = 1; y < 15; y++) px(x, y, [230, 230, 230]);
+      break;
+    case 'loom_side':
+      drawBlockTile(p, 'planks');
+      for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) px(x, y, (x + y) % 2 ? [200, 60, 60] : [230, 220, 200]);
+      break;
+    case 'cartography_table_top':
+      drawBlockTile(p, 'dark_oak_planks');
+      for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) px(x, y, shade([220, 205, 160], 0.92 + rand() * 0.1));
+      for (let i = 0; i < 9; i++) px(4 + i, 5 + Math.round(Math.sin(i) * 2), [80, 120, 200]);
+      break;
+    case 'cartography_table_side':
+      drawBlockTile(p, 'dark_oak_planks');
+      for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) px(x, y, [220, 205, 160]);
+      break;
+    case 'stonecutter_top':
+      drawBlockTile(p, 'stone');
+      for (let x = 2; x < 14; x++) { px(x, 7, [180, 180, 190]); px(x, 8, [150, 150, 160]); }
+      break;
+    case 'stonecutter_side': drawBlockTile(p, 'stone'); for (let x = 0; x < S; x++) px(x, 0, [110, 80, 50]); break;
+    case 'cauldron_top':
+    case 'cauldron_side':
+      p.noisy([60, 60, 64], 0.1);
+      for (let i = 0; i < S; i++) { px(i, 0, [85, 85, 90]); px(0, i, [45, 45, 48]); }
+      break;
+    case 'barrel_top':
+      drawBlockTile(p, 'spruce_planks');
+      for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) if (Math.hypot(x - 7.5, y - 7.5) < 5.5) px(x, y, shade([110, 75, 40], 0.9 + rand() * 0.15));
+      for (let i = 0; i < S; i++) { px(i, 0, [70, 70, 70]); px(i, 15, [70, 70, 70]); px(0, i, [70, 70, 70]); px(15, i, [70, 70, 70]); }
+      break;
+    case 'barrel_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([115, 80, 45], (x % 4 === 3 ? 0.7 : 0.92) + rand() * 0.1));
+      for (const y of [2, 13]) for (let x = 0; x < S; x++) px(x, y, [75, 75, 78]);
+      break;
+    case 'bell': p.noisy([240, 200, 60], 0.1); break;
     case 'fire':
       // flickering tongues of flame, transparent between them
       for (let x = 0; x < S; x++) {
@@ -973,6 +1096,13 @@ function drawItem(p, icon) {
     case 'raw_copper': blob([210, 120, 80], 8, 8.5, 5, 4.5, 0.4); p.specks([90, 170, 130], 4); break;
     case 'copper_ingot':
       for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([225, 125, 85], y === 6 ? 1.1 : 0.9 + rand() * 0.1));
+      break;
+    case 'paper':
+      for (let y = 3; y < 13; y++) for (let x = 3 + (y % 3 === 0 ? 1 : 0); x < 13; x++) px(x, y, shade([240, 240, 235], 0.92 + rand() * 0.08));
+      break;
+    case 'book':
+      for (let y = 3; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, x === 4 ? [90, 40, 20] : shade([130, 60, 30], 0.9 + rand() * 0.15));
+      for (let y = 4; y < 12; y++) px(11, y, [235, 230, 210]);
       break;
     case 'bucket':
     case 'lava_bucket':

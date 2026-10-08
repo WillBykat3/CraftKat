@@ -32,6 +32,9 @@ export const BLOCK = {
   DRAGON_EGG: 248, NETHER_BRICK_FENCE: 249, MOSSY_STONE_BRICKS: 250, CRACKED_STONE_BRICKS: 251,
   // ids from 1000 on (see HIGH_BLOCKS)
   WATER_FLOW: 1000, FALLING_WATER: 1008, LAVA_FLOW: 1010, FALLING_LAVA: 1018, FIRE: 1020,
+  DIRT_PATH: 1030, HAY_BALE: 1031, BOOKSHELF: 1032, COMPOSTER: 1033, LECTERN: 1034, BLAST_FURNACE: 1035, SMOKER: 1036,
+  SMITHING_TABLE: 1037, GRINDSTONE: 1038, FLETCHING_TABLE: 1039, LOOM: 1040, CARTOGRAPHY_TABLE: 1041, STONECUTTER: 1042,
+  CAULDRON: 1043, BARREL: 1044, BELL: 1045,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -236,6 +239,23 @@ for (let level = 1; level <= 8; level++) {
   def(1000 + level, 'Water', { tex: ['water'], render: 'water', liquid: 'water', tint: 'water', solid: false, transparent: true, lightFilter: 2, replaceable: true, hardness: Infinity, hidden: true, item: 0, level: falling ? 0 : level, falling });
   def(1010 + level, 'Lava', { tex: ['lava'], render: 'water', liquid: 'lava', solid: false, transparent: true, emit: 15, replaceable: true, hardness: Infinity, hidden: true, item: 0, level: falling ? 0 : level, falling });
 }
+// villages: paths, decoration and the job sites that give villagers their professions
+def(1030, 'Dirt Path', { tex: ['dirt_path_top', 'dirt_path_side', 'dirt'], hardness: 0.65, tool: 'shovel', transparent: true, shape: 'path' });
+def(1031, 'Hay Bale', { tex: ['hay_top', 'hay_side', 'hay_top'], hardness: 0.5, tool: 'hoe' });
+def(1032, 'Bookshelf', { tex: ['planks', 'bookshelf', 'planks'], hardness: 1.5, tool: 'axe' });
+def(1033, 'Composter', { tex: ['composter_top', 'composter_side', 'planks'], hardness: 0.6, tool: 'axe', job: 'farmer' });
+def(1034, 'Lectern', { tex: ['lectern_top', 'lectern_side', 'planks'], hardness: 2.5, tool: 'axe', job: 'librarian' });
+def(1035, 'Blast Furnace', { tex: ['blast_furnace_top', 'blast_furnace_side', 'blast_furnace_top', 'blast_furnace_front'], hardness: 3.5, tool: 'pickaxe', needsTier: 0, job: 'armorer', furnace: 'ore' });
+def(1036, 'Smoker', { tex: ['smoker_top', 'smoker_side', 'smoker_top', 'smoker_front'], hardness: 3.5, tool: 'pickaxe', needsTier: 0, job: 'butcher', furnace: 'food' });
+def(1037, 'Smithing Table', { tex: ['smithing_table_top', 'smithing_table_side', 'planks'], hardness: 2.5, tool: 'axe', job: 'toolsmith' });
+def(1038, 'Grindstone', { tex: ['grindstone', 'grindstone_side', 'grindstone'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'grindstone', job: 'weaponsmith' });
+def(1039, 'Fletching Table', { tex: ['fletching_table_top', 'fletching_table_side', 'planks'], hardness: 2.5, tool: 'axe', job: 'fletcher' });
+def(1040, 'Loom', { tex: ['loom_top', 'loom_side', 'planks'], hardness: 2.5, tool: 'axe', job: 'shepherd' });
+def(1041, 'Cartography Table', { tex: ['cartography_table_top', 'cartography_table_side', 'planks'], hardness: 2.5, tool: 'axe', job: 'cartographer' });
+def(1042, 'Stonecutter', { tex: ['stonecutter_top', 'stonecutter_side', 'stone'], hardness: 3.5, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'stonecutter', job: 'mason' });
+def(1043, 'Cauldron', { tex: ['cauldron_top', 'cauldron_side', 'cauldron_side'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'cauldron', job: 'leatherworker' });
+def(1044, 'Barrel', { tex: ['barrel_top', 'barrel_side', 'barrel_top'], hardness: 2.5, tool: 'axe', job: 'fisherman', container: true });
+def(1045, 'Bell', { tex: ['bell'], hardness: 5, tool: 'pickaxe', transparent: true, shape: 'bell', solid: false });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
 B.forEach((b) => {
@@ -302,7 +322,7 @@ export const ITEM = {
   BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
   ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
   GLOWSTONE_DUST: 335, QUARTZ: 336, BLAZE_ROD: 337, BLAZE_POWDER: 338, EYE_OF_ENDER: 339, NETHER_BRICK: 340,
-  GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343,
+  GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343, PAPER: 344, BOOK: 345,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -345,6 +365,8 @@ item(288, 'Copper Ingot', { icon: 'copper_ingot' });
 item(289, 'Bucket', { icon: 'bucket', stack: 16 });
 item(290, 'Water Bucket', { icon: 'water_bucket', stack: 1 });
 item(343, 'Lava Bucket', { icon: 'lava_bucket', stack: 1 });
+item(344, 'Paper', { icon: 'paper' });
+item(345, 'Book', { icon: 'book' });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -407,6 +429,9 @@ export function fluidLevel(id) {
   return B[id]?.level ?? 0;
 }
 export const isSource = (id) => id === BLOCK.WATER || id === BLOCK.LAVA;
+// furnaces (and the smoker and blast furnace), and blocks that hold 27 items like a chest (barrels)
+export const isFurnace = (id) => id === BLOCK.FURNACE || !!B[id]?.furnace;
+export const isContainer = (id) => id === BLOCK.CHEST || !!B[id]?.container;
 
 export function isBlockId(id) {
   return ((id > 0 && id < ITEM_BASE) || (id >= HIGH_BLOCKS && id < MAX_BLOCK)) && !!BLOCKS[id];
@@ -479,7 +504,9 @@ export function getDrops(blockId, heldId, rand = Math.random) {
   if (b.needsTier !== undefined && !(tool && tool.kind === b.tool && tool.tier >= b.needsTier)) return [];
   switch (blockId) {
     case BLOCK.GRASS:
+    case BLOCK.DIRT_PATH:
     case BLOCK.SNOWY_GRASS: return [[BLOCK.DIRT, 1]];
+    case BLOCK.BOOKSHELF: return [[ITEM.BOOK, 3]];
     case BLOCK.STONE: return [[BLOCK.COBBLE, 1]];
     case BLOCK.DEEPSLATE: return [[BLOCK.COBBLED_DEEPSLATE, 1]];
     case BLOCK.COAL_ORE:

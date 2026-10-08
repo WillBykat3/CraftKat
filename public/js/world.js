@@ -9,6 +9,7 @@ import { BIOME } from './biomes.js';
 import { NetherTerrain, NETHER_LAVA } from './terrain-nether.js';
 import { EndTerrain } from './terrain-end.js';
 import { applyStrongholds, strongholdSpots } from './stronghold.js';
+import { Villages } from './village.js';
 
 export const DIMENSIONS = ['overworld', 'nether', 'end'];
 
@@ -49,6 +50,7 @@ export class World {
     this.cave2 = makeNoise3D(this.seed + 7);
     this.cavern = makeNoise3D(this.seed + 8);
     this.terrain = dim === 'overworld' && gen >= 3 ? new Terrain3(this.seed) : null;
+    this.villages = this.terrain ? new Villages(this.seed, this.terrain) : null;
     this.other = dim === 'nether' ? new NetherTerrain(this.seed) : dim === 'end' ? new EndTerrain(this.seed) : null;
     this.biomes = new Map(); // chunkKey -> Uint8Array of biome ids (version 3)
     this.seaLevel = this.terrain ? SEA : dim === 'nether' ? NETHER_LAVA : SEA_LEVEL;
@@ -213,6 +215,7 @@ export class World {
       this.biomes.set(chunkKey(cx, cz), out.biomes);
       data = out.data;
       applyStrongholds(data, cx, cz, this.seed, this.strongholds());
+      this.villages.apply(data, cx, cz);
     } else {
       data = this.generateLegacy(cx, cz);
     }

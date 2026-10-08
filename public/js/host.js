@@ -4,7 +4,7 @@
 
 import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
-  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource,
+  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS,
 } from './blocks.js';
 import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
@@ -16,6 +16,7 @@ import { RedstoneSim } from './redstone-sim.js';
 import { FluidSim, flowAt } from './fluids.js';
 import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
+import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -40,6 +41,9 @@ const MOB_TYPES = {
   ghast: { hp: 10, halfW: 2, height: 4, speed: 1.6, hostile: true, flies: true, fireproof: true },
   blaze: { hp: 20, halfW: 0.3, height: 1.8, speed: 1.8, hostile: true, flies: true, fireproof: true, damage: 6 },
   wither_skeleton: { hp: 20, halfW: 0.35, height: 2.4, speed: 2.4, hostile: true, damage: 8, fireproof: true },
+  // villages
+  villager: { hp: 20, halfW: 0.3, height: 1.95, speed: 1.4, hostile: false, villager: true },
+  iron_golem: { hp: 100, halfW: 0.7, height: 2.7, speed: 1.5, hostile: false, golem: true },
   // the End
   ender_dragon: { hp: 200, halfW: 3.5, height: 3, speed: 14, hostile: true, boss: true, fireproof: true, damage: 10 },
   end_crystal: { hp: 1, halfW: 1, height: 2, speed: 0, hostile: false, still: true, fireproof: true },
@@ -56,6 +60,8 @@ const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
+const ORE_INPUTS = new Set([ITEM.RAW_IRON, ITEM.RAW_GOLD, ITEM.RAW_COPPER, BLOCK.IRON_ORE, BLOCK.GOLD_ORE, BLOCK.COPPER_ORE,
+  BLOCK.DEEPSLATE_IRON_ORE, BLOCK.DEEPSLATE_GOLD_ORE, BLOCK.DEEPSLATE_COPPER_ORE, BLOCK.NETHER_GOLD_ORE, BLOCK.NETHER_QUARTZ_ORE]);
 // How readily a block catches fire and how fast it burns away ([catch, burn]), like Minecraft, or null.
 const FLAMMABLE_CACHE = new Map();
 function FLAMMABLE(id) {
@@ -183,12 +189,20 @@ export class GameHost {
     }
     const end = saved.end || {};
     this.endState = { dragonKilled: !!end.dragonKilled, crystalsGone: Array.isArray(end.crystalsGone) ? end.crystalsGone.filter(isInt) : [] };
+    this.villagesDone = new Set(Array.isArray(save.villagesDone) ? save.villagesDone : []);
+    this.restoreEntities = Array.isArray(save.entities) ? save.entities : [];
     this.portals = Array.isArray(save.portals) ? save.portals.filter((q) => Array.isArray(q) && DIMENSIONS.includes(q[0])) : []; // [dim, x, y, z, axis]
     this.players = new Map();   // peerId -> player
     this.entities = new Map();  // id -> entity
     this.nextPlayerId = 1;
     this.nextEntityId = 1;
     this.time = save.time ?? 1000;
+    // villagers, golems (and later pets) are kept in the save, like Minecraft keeps them in chunks
+    for (const saved of this.restoreEntities) {
+      if (!saved || !MOB_TYPES[saved.type] || !DIMENSIONS.includes(saved.dim) || ![saved.x, saved.y, saved.z].every(isNum)) continue;
+      const e = { ...saved, id: this.nextEntityId++, vx: 0, vy: 0, vz: 0, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false };
+      this.entities.set(e.id, e);
+    }
     this.sleepTimer = 0;
     this.dirty = false;
     this.acc = { state: 0, spawn: 0, time: 0, furnace: 0 };
@@ -324,6 +338,7 @@ export class GameHost {
       case 'use': return this.onUse(peerId, p, msg);
       case 'shoot': return this.onShoot(p, msg);
       case 'eye': return this.onEye(p);
+      case 'trade': return this.onTrade(p, msg);
     }
   }
 
@@ -443,8 +458,8 @@ export class GameHost {
       !this.blockedByEntity(x, y, z, id) && p.canBuild();
     if (!ok) return this.correct(peerId, x, y, z);
     this.setBlock(x, y, z, id, peerId);
-    if (id === BLOCK.FURNACE) this.furnaces.set(`${x},${y},${z}`, { slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 });
-    if (id === BLOCK.CHEST) this.chests.set(`${x},${y},${z}`, { slots: new Array(27).fill(null) });
+    if (isFurnace(id)) this.furnaces.set(`${x},${y},${z}`, { slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 });
+    if (isContainer(id)) this.chests.set(`${x},${y},${z}`, { slots: new Array(27).fill(null) });
     this.settle(x, y, z);
   }
 
@@ -503,14 +518,14 @@ export class GameHost {
       const xp = ORE_XP[id];
       if (xp && drops.length) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
     }
-    if (id === BLOCK.FURNACE) {
+    if (isFurnace(id)) {
       const key = `${x},${y},${z}`;
       const f = this.furnaces.get(key);
       if (f) for (const s of f.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur);
       this.furnaces.delete(key);
       this.furnaceViewers.delete(key);
     }
-    if (id === BLOCK.CHEST) {
+    if (isContainer(id)) {
       const key = `${x},${y},${z}`;
       const c = this.chests.get(key);
       if (c) for (const s of c.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur);
@@ -748,13 +763,16 @@ export class GameHost {
       husk: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
       stray: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
       enderman: [[ITEM.ENDER_PEARL, Math.floor(r() * 2)]],
+      iron_golem: [[ITEM.IRON_INGOT, 3 + Math.floor(r() * 3)], [BLOCK.POPPY, Math.floor(r() * 3)]],
+      villager: [],
       zombified_piglin: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 2)], [ITEM.GOLD_NUGGET, Math.floor(r() * 2)], [ITEM.GOLD_INGOT, r() < 0.025 ? 1 : 0]],
       ghast: [[ITEM.GHAST_TEAR, Math.floor(r() * 2)], [ITEM.GUNPOWDER, Math.floor(r() * 3)]],
       blaze: [[ITEM.BLAZE_ROD, Math.floor(r() * 2)]],
       wither_skeleton: [[ITEM.COAL, r() < 1 / 3 ? 1 : 0], [ITEM.BONE, Math.floor(r() * 3)]],
     }[e.type] || [];
     for (const [id, n] of drops) if (n > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n);
-    this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
+    if (e.type !== 'villager' && e.type !== 'iron_golem') this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
+    if (e.type === 'villager') this.sys(`Villager died${e.angryAt ? ` (killed by ${e.angryAt})` : ''}`);
     this.broadcast({ t: 'mobdeath', e: e.id });
   }
 
@@ -764,7 +782,7 @@ export class GameHost {
   }
 
   chestAt(p, msg) {
-    if (!this.validCoords(msg) || this.world.getBlock(msg.x, msg.y, msg.z) !== BLOCK.CHEST) return null;
+    if (!this.validCoords(msg) || !isContainer(this.world.getBlock(msg.x, msg.y, msg.z))) return null;
     if (!this.inReach(p, msg.x, msg.y, msg.z)) return null;
     const key = this.keyOf(msg);
     if (!this.chests.has(key)) this.chests.set(key, { slots: new Array(27).fill(null) });
@@ -961,6 +979,11 @@ export class GameHost {
   onInteract(p, msg) {
     const e = this.entities.get(msg.e);
     if (!e || e.dim !== p.dim || Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
+    if (e.type === 'villager') {
+      if (!e.offers?.length) return this.send(p.peerId, { t: 'sfx', s: 'villagerNo', x: e.x, y: e.y, z: e.z });
+      e.trading = this.now() + 5000;
+      return this.sendTrades(p, e);
+    }
     if (e.type === 'sheep' && msg.tool === ITEM.SHEARS && !e.sheared) {
       e.sheared = true;
       e.regrow = 60 + this.random() * 60;
@@ -1158,7 +1181,7 @@ export class GameHost {
   furnaceAt(msg) {
     if (!this.validCoords(msg)) return null;
     const key = `${msg.x},${msg.y},${msg.z}`;
-    if (this.world.getBlock(msg.x, msg.y, msg.z) !== BLOCK.FURNACE) return null;
+    if (!isFurnace(this.world.getBlock(msg.x, msg.y, msg.z))) return null;
     if (!this.furnaces.has(key)) this.furnaces.set(key, { slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 });
     return [key, this.furnaces.get(key)];
   }
@@ -1222,7 +1245,13 @@ export class GameHost {
     for (const [key, f] of this.furnaces) {
       const [input, fuel, output] = f.slots;
       const result = input ? SMELTING[input.id] : undefined;
-      const canSmelt = result !== undefined && (!output || (output.id === result && output.count < maxStack(result)));
+      // the smoker only cooks food and the blast furnace only smelts ores, both twice as fast
+      const [bx, by, bz] = key.split(',').map(Number);
+      const kind = BLOCKS[this.world.getBlock(bx, by, bz)]?.furnace;
+      const fits = kind === 'food' ? !!ITEMS[result]?.food : kind === 'ore' ? ORE_INPUTS.has(input?.id) : true;
+      const canSmelt = result !== undefined && fits && (!output || (output.id === result && output.count < maxStack(result)));
+      const speed = kind ? 2 : 1;
+      const step = dt * speed;
       const before = `${f.burn > 0}|${Math.floor(f.progress)}|${f.slots.map((s) => s && s.count).join()}`;
       if (f.burn <= 0 && canSmelt && fuel && FUEL[fuel.id]) {
         f.burn = f.burnMax = FUEL[fuel.id] * SMELT_SECONDS;
@@ -1230,9 +1259,9 @@ export class GameHost {
         if (fuel.count <= 0) f.slots[1] = null;
       }
       if (f.burn > 0) {
-        f.burn = Math.max(0, f.burn - dt);
+        f.burn = Math.max(0, f.burn - step);
         if (canSmelt) {
-          f.progress += dt;
+          f.progress += step;
           if (f.progress >= SMELT_SECONDS) {
             f.progress = 0;
             input.count--;
@@ -1257,7 +1286,9 @@ export class GameHost {
 
   // ---------- simulation ----------
   tick(dt) {
+    const timeBefore = this.time;
     this.time = (this.time + dt * TICKS_PER_SECOND) % DAY_TICKS;
+    this.restockVillagers(timeBefore, this.time);
     const crops = this.acc.spawn + dt >= 1;
     for (const dim of DIMENSIONS) {
       this.ctx = dim;
@@ -1278,6 +1309,7 @@ export class GameHost {
       this.acc.spawn = 0;
       this.spawnMobs();
       this.mergeItems();
+      this.populateVillages();
     }
     this.acc.state += dt;
     if (this.acc.state >= 0.1) {
@@ -1352,6 +1384,7 @@ export class GameHost {
       if (e.type === 'tnt') { this.tickTnt(e, dt); continue; } // lit TNT always goes off
       if (e.type === 'end_crystal') continue;                  // crystals just sit there
       if (e.type === 'ender_dragon') { if (this.here().length) this.tickDragon(e, dt); continue; } // waits for you to come back
+      if (!near && e.persist) continue; // villagers and golems wait for someone to come back
       if (!near) {
         // nobody around: items keep ageing, mobs vanish
         if (e.type !== 'item' || e.age > ITEM_LIFETIME) this.entities.delete(e.id);
@@ -1424,7 +1457,14 @@ export class GameHost {
         }
         if (e.type === 'enderman') this.endermanMind(e, dt);
         const target = t.neutral && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : t.neutral ? 40 : 24, true);
-        if (target) {
+        // zombies go after villagers too
+        const prey = (e.type === 'zombie' || e.type === 'husk') && this.nearestOf(e, 'villager', target ? target[1] : 24);
+        if (prey) {
+          const [v, dist] = prey;
+          e.yaw = Math.atan2(-(v.x - e.x), -(v.z - e.z));
+          targetSpeed = dist > 1.2 ? t.speed : 0;
+          if (dist < 1.6 && e.attackCooldown === 0) { e.attackCooldown = 1; this.hurtMob(v, t.damage, v.x - e.x, v.z - e.z, null); }
+        } else if (target) {
           const [p, dist] = target;
           e.yaw = Math.atan2(-(p.x - e.x), -(p.z - e.z));
           if (e.type === 'creeper') {
@@ -1461,6 +1501,10 @@ export class GameHost {
         } else {
           targetSpeed = e.walk ? t.speed * 0.4 : 0;
         }
+      } else if (t.villager) {
+        targetSpeed = this.villagerMind(e, t, dt, light);
+      } else if (t.golem) {
+        targetSpeed = this.golemMind(e, t, dt);
       } else {
         if (e.think <= 0) {
           e.think = 2 + this.random() * 5;
@@ -1623,7 +1667,154 @@ export class GameHost {
     return false;
   }
 
+  // The nearest mob of a type in the same dimension within maxDist: [mob, distance], or null.
+  nearestOf(e, type, maxDist) {
+    let best = null, bestD = maxDist;
+    for (const o of this.entities.values()) {
+      if (o.type !== type || o.dim !== e.dim || o === e) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y, o.z - e.z);
+      if (d < bestD) { best = o; bestD = d; }
+    }
+    return best ? [best, bestD] : null;
+  }
+
+  // ---------- villages ----------
+  // The first time a player comes near a village, its villagers and iron golem appear:
+  // one villager per bed, with the profession of the job site in their house.
+  populateVillages() {
+    const villages = this.dims.overworld.world.villages;
+    if (!villages) return;
+    for (const p of this.players.values()) {
+      if (p.dim !== 'overworld') continue;
+      const v = villages.nearest(p.x, p.z, 96);
+      if (!v || this.villagesDone.has(v.key)) continue;
+      this.villagesDone.add(v.key);
+      this.dirty = true;
+      this.inDim('overworld', () => {
+        for (const bed of v.beds) {
+          const e = this.spawnMob('villager', bed.x + 0.5, bed.y, bed.z + 0.5);
+          const profession = PROFESSION_OF[bed.job] || (this.random() < 0.2 ? 'nitwit' : 'unemployed');
+          Object.assign(e, { persist: true, profession, level: 0, vxp: 0, home: [v.x, v.z], bed: [bed.x, bed.y, bed.z] });
+          e.offers = offersFor(profession, 0, this.random);
+        }
+        const g = this.spawnMob('iron_golem', v.x + 3.5, v.y, v.z + 3.5);
+        Object.assign(g, { persist: true, home: [v.x, v.z] });
+      });
+    }
+  }
+
+  // Villagers wander near home, run from monsters, and stay by their bed at night.
+  // Returns the speed to walk at (e.yaw is the direction).
+  villagerMind(e, t, dt, light) {
+    const threat = this.nearestHostile(e, 8);
+    if (threat) {
+      e.yaw = Math.atan2(threat.x - e.x, threat.z - e.z); // away
+      return t.speed * 1.8;
+    }
+    if (e.trading && this.now() < e.trading) return 0; // stands still while someone trades
+    const goTo = (x, z, near) => {
+      const d = Math.hypot(x - e.x, z - e.z);
+      if (d < near) return 0;
+      e.yaw = Math.atan2(-(x - e.x), -(z - e.z));
+      return t.speed;
+    };
+    if (light < 0.3 && e.bed) return goTo(e.bed[0] + 0.5, e.bed[2] + 0.5, 0.8);
+    if (e.home && Math.hypot(e.home[0] - e.x, e.home[1] - e.z) > 24) return goTo(e.home[0], e.home[1], 4);
+    if (e.think <= 0) {
+      e.think = 2 + this.random() * 6;
+      e.walk = this.random() < 0.5 ? 1 : 0;
+      e.yaw = this.random() * Math.PI * 2;
+    }
+    if (e.panic > 0) return t.speed * 2;
+    return e.walk ? t.speed * 0.6 : 0;
+  }
+
+  nearestHostile(e, range) {
+    let best = null, bestD = range;
+    for (const o of this.entities.values()) {
+      if (o.dim !== e.dim || !isMob(o) || !MOB_TYPES[o.type].hostile || o.type === 'creeper' || MOB_TYPES[o.type].boss) continue;
+      if (MOB_TYPES[o.type].neutral && !o.angry) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y, o.z - e.z);
+      if (d < bestD) { best = o; bestD = d; }
+    }
+    return best;
+  }
+
+  // Iron golems guard the village: they fight monsters nearby, and anyone who hurt them or a villager.
+  golemMind(e, t, dt) {
+    let target = this.nearestHostile(e, 16);
+    let player = null;
+    if (!target && e.angryAt) {
+      player = [...this.here()].find((q) => q.name === e.angryAt && !q.dead && q.mode === 'survival');
+      if (player && Math.hypot(player.x - e.x, player.z - e.z) > 32) { player = null; e.angryAt = null; }
+    }
+    const foe = target || player;
+    if (foe) {
+      const d = Math.hypot(foe.x - e.x, foe.z - e.z);
+      e.yaw = Math.atan2(-(foe.x - e.x), -(foe.z - e.z));
+      if (d < 2.4 && Math.abs(foe.y - e.y) < 2.5 && e.attackCooldown === 0) {
+        e.attackCooldown = 1.25;
+        e.swing = this.now() + 400;
+        const dmg = 7 + Math.floor(this.random() * 15); // Minecraft: 7 to 21
+        if (target) { this.hurtMob(target, dmg, target.x - e.x, target.z - e.z, null); target.vy = 9; }
+        else this.send(player.peerId, { t: 'hurt', amount: dmg, from: [e.x, e.z], cause: 'was slain by Iron Golem', up: true });
+      }
+      return d > 1.8 ? t.speed * 1.4 : 0;
+    }
+    if (e.home && Math.hypot(e.home[0] - e.x, e.home[1] - e.z) > 20) {
+      e.yaw = Math.atan2(-(e.home[0] - e.x), -(e.home[1] - e.z));
+      return t.speed;
+    }
+    if (e.think <= 0) {
+      e.think = 4 + this.random() * 8;
+      e.walk = this.random() < 0.4 ? 1 : 0;
+      e.yaw = this.random() * Math.PI * 2;
+    }
+    return e.walk ? t.speed * 0.5 : 0;
+  }
+
+  // ---------- trading ----------
+  // Right-clicking a villager with a profession shows its offers.
+  sendTrades(p, e) {
+    this.send(p.peerId, {
+      t: 'trades', e: e.id, profession: e.profession, level: e.level, xp: e.vxp,
+      next: LEVEL_XP[e.level + 1] ?? null, prev: LEVEL_XP[e.level], offers: e.offers,
+    });
+  }
+
+  // The client has checked the player can pay; the host checks the offer isn't used up,
+  // and the villager gains experience (and new offers at each level).
+  onTrade(p, msg) {
+    const e = this.entities.get(msg.e);
+    if (!e || e.type !== 'villager' || e.dim !== p.dim || !isInt(msg.i) || Math.hypot(e.x - p.x, e.z - p.z) > 8) return;
+    const o = e.offers?.[msg.i];
+    if (!o || o.uses >= o.max) return this.send(p.peerId, { t: 'traded', e: e.id, i: msg.i, ok: false });
+    o.uses++;
+    e.vxp += o.xp;
+    e.trading = this.now() + 5000;
+    this.send(p.peerId, { t: 'traded', e: e.id, i: msg.i, ok: true });
+    this.spawnXP(p.x, p.y + 0.5, p.z, 3 + Math.floor(this.random() * 4));
+    while (e.level < 4 && e.vxp >= LEVEL_XP[e.level + 1]) {
+      e.level++;
+      e.offers.push(...offersFor(e.profession, e.level, this.random));
+      this.broadcastHere({ t: 'sfx', s: 'levelUp', x: e.x, y: e.y, z: e.z });
+    }
+    this.dirty = true;
+    this.sendTrades(p, e);
+  }
+
+  // Villagers restock twice a day (in the morning and at noon), like working at their job sites.
+  restockVillagers(before, after) {
+    const crossed = (t) => (before < t && after >= t) || (before > after && (after >= t || before < t));
+    if (!crossed(1000) && !crossed(6000)) return;
+    for (const e of this.entities.values()) if (e.type === 'villager') for (const o of e.offers || []) o.uses = 0;
+  }
+
   onMobHurt(e) {
+    if ((e.type === 'villager' || e.type === 'iron_golem') && e.angryAt) {
+      // hurting a villager or a golem makes the village's golems come for you
+      for (const g of this.entities.values()) if (g.type === 'iron_golem' && g.dim === e.dim && Math.hypot(g.x - e.x, g.z - e.z) < 32) g.angryAt = e.angryAt;
+    }
     if (e.type === 'enderman') { e.angry = true; this.teleportMob(e, e.x, e.z, 16); }
     if (e.type === 'zombified_piglin' && e.angryAt) {
       // hurting one angers every zombified piglin nearby, for 20-40 seconds
@@ -1970,7 +2161,7 @@ export class GameHost {
     const air = (x, y, z) => w.getBlock(x, y, z) === BLOCK.AIR;
     const ground = (x, y, z) => {
       const id = w.getBlock(x, y, z), b = BLOCKS[id];
-      return b.solid && b.render === 'cube' && !b.transparent && b.hardness !== Infinity && id !== BLOCK.CHEST && id !== BLOCK.FURNACE;
+      return b.solid && b.render === 'cube' && !b.transparent && b.hardness !== Infinity && !isContainer(id) && !isFurnace(id);
     };
     let best = null, bestD = Infinity;
     for (let dx = -16; dx <= 16; dx++) for (let dz = -16; dz <= 16; dz++) {
@@ -2341,7 +2532,8 @@ export class GameHost {
         // flags: 1 = sheared sheep, 2 = creeper about to explode
         // (and for ghasts and blazes, 2 = about to shoot)
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
-          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 ? 2 : 0) | (e.fireTime > 0 ? 4 : 0);
+          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
+            (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
@@ -2367,6 +2559,11 @@ export class GameHost {
     Object.assign(dims.end, this.endState);
     this.save.dims = dims;
     this.save.portals = this.portals;
+    this.save.villagesDone = [...this.villagesDone];
+    this.save.entities = [...this.entities.values()].filter((e) => e.persist).map((e) => {
+      const { id, vx, vy, vz, think, walk, panic, attackCooldown, onGround, hurtUntil, ...keep } = e;
+      return structuredClone(keep);
+    });
     this.save.lastPlayed = Date.now();
     this.dirty = false;
     return this.save;

@@ -472,6 +472,14 @@ button.danger:hover { color: #ff8080; }
 .tab { font-size: 16px; min-height: 32px; padding: 4px 10px 2px; flex: 0; }
 .tab.active { background: #4a7d2f linear-gradient(#6aa84a, #3f6d28); }
 .creative-grid { display: grid; grid-template-columns: repeat(9, 40px); max-height: 210px; overflow-y: auto; padding-right: 4px; }
+.trade-xp { height: 5px; background: #333; margin: 2px 0 6px; border: 1px solid #111; }
+.trade-xp-fill { height: 100%; background: #7cfc3f; }
+.trade-list { display: flex; flex-direction: column; gap: 3px; max-height: 230px; overflow-y: auto; margin-bottom: 6px; }
+.trade-row { display: flex; align-items: center; gap: 4px; padding: 2px 4px; background: rgba(0, 0, 0, 0.08); cursor: pointer; }
+.trade-row:hover { background: rgba(255, 255, 255, 0.35); }
+.trade-row.cant { opacity: 0.65; }
+.trade-row.sold-out { opacity: 0.4; }
+.trade-arrow { font-size: 18px; width: 22px; text-align: center; color: #3a3a3a; }
 .trash-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; font-size: 16px; }
 
 @media (max-width: 480px) {

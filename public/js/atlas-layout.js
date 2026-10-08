@@ -25,6 +25,11 @@ export const TILE_NAMES = [
   'piston_side', 'piston_top', 'piston_bottom', 'piston_inner',
   'netherrack', 'nether_quartz_ore', 'soul_sand', 'glowstone', 'nether_bricks', 'nether_portal', 'magma', 'nether_gold_ore',
   'basalt_top', 'basalt_side', 'end_stone', 'end_portal_frame_top', 'end_portal_frame_side', 'end_portal_frame_eye', 'end_portal', 'dragon_egg', 'mossy_stone_bricks', 'cracked_stone_bricks', 'fire',
+  'dirt_path_top', 'dirt_path_side', 'hay_top', 'hay_side', 'bookshelf', 'composter_top', 'composter_side', 'lectern_top', 'lectern_side',
+  'blast_furnace_top', 'blast_furnace_side', 'blast_furnace_front', 'smoker_top', 'smoker_side', 'smoker_front',
+  'smithing_table_top', 'smithing_table_side', 'grindstone', 'grindstone_side', 'fletching_table_top', 'fletching_table_side',
+  'loom_top', 'loom_side', 'cartography_table_top', 'cartography_table_side', 'stonecutter_top', 'stonecutter_side',
+  'cauldron_top', 'cauldron_side', 'barrel_top', 'barrel_side', 'bell',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

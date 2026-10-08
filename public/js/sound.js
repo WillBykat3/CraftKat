@@ -132,6 +132,8 @@ export const sound = {
   },
   // water meeting lava
   fizz() { burst({ freq: 3500, q: 0.6, duration: 0.6, gain: 0.25, type: 'highpass' }); },
+  // a villager's "hmm" (no, when they have nothing to trade)
+  villagerNo() { tone({ freq: 220, endFreq: 160, duration: 0.25, gain: 0.25, type: 'triangle' }); setTimeout(() => tone({ freq: 200, endFreq: 150, duration: 0.2, gain: 0.2, type: 'triangle' }), 220); },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)
@@ -196,6 +198,8 @@ export const sound = {
     else if (kind === 'enderman') { tone({ freq: 900, endFreq: 300, duration: 0.6, gain: 0.25, type: 'sawtooth' }); tone({ freq: 1250, endFreq: 420, duration: 0.6, gain: 0.15, type: 'square' }); }
     else if (kind === 'ender_dragon') { tone({ freq: 120, endFreq: 70, duration: 0.6, gain: 0.35, type: 'sawtooth' }); burst({ freq: 400, q: 0.5, duration: 0.5, gain: 0.3, type: 'lowpass' }); }
     else if (kind === 'end_crystal') return;
+    else if (kind === 'villager') tone({ freq: 260, endFreq: 190, duration: 0.25, gain: 0.3, type: 'triangle' });
+    else if (kind === 'iron_golem') burst({ freq: 900, q: 3, duration: 0.25, gain: 0.4 });
     else if (kind === 'ghast') tone({ freq: 1200, endFreq: 500, duration: 0.6, gain: 0.2, type: 'sawtooth' });
     else if (kind === 'zombified_piglin') { tone({ freq: 260, endFreq: 120, duration: 0.3, gain: 0.3, type: 'sawtooth' }); burst({ freq: 700, q: 2, duration: 0.15, gain: 0.2 }); }
     else if (kind === 'blaze') { burst({ freq: 300, q: 0.5, duration: 0.4, gain: 0.3, type: 'lowpass' }); tone({ freq: 180, endFreq: 120, duration: 0.3, gain: 0.15, type: 'square' }); }

@@ -40,6 +40,15 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
   room with eyes to open the End portal. In the End, the Ender Dragon flies around the island, healed by end
   crystals on the obsidian pillars: break the crystals, then fight the dragon (it's easiest to hit while it perches
   on the fountain). Defeating it opens the portal home and leaves the dragon egg.
+- **Villages** in plains, deserts, savannas, taigas and snowy plains, built in the local style: a well with a bell,
+  dirt paths, houses with beds, farms, lamp posts. **Villagers** (one per bed) wander, run from monsters and go to
+  bed at night; the job site block in their house gives their profession (farmer, librarian, armorer, butcher,
+  toolsmith, weaponsmith, fletcher, shepherd, cartographer, mason, leatherworker, fisherman). Right-click one to
+  **trade** for emeralds; trading levels them up from Novice to Master, unlocking new offers, and they restock twice a
+  day. An **iron golem** guards each village (and turns on players who hurt villagers); zombies hunt villagers
+- **Job site blocks** you can craft: composter, lectern, blast furnace and smoker (twice as fast, for ores and food),
+  smithing table, grindstone, fletching table, loom, cartography table, stonecutter, cauldron, barrel (a chest);
+  also paper, books, bookshelves and hay bales
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
@@ -62,7 +71,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** villages, enchanting, potions, brewing, and many of Minecraft's mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** enchanting, potions, brewing, and many of Minecraft's mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no piglins, hoglins, magma cubes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
@@ -72,6 +81,11 @@ in worlds created with this terrain version or later (older worlds can still vis
 **Redstone differences from Minecraft:** no comparators, observers, hoppers, dispensers, droppers or note blocks yet;
 repeaters can't be locked; pistons don't push players or mobs and have no quasi-connectivity; redstone torches don't
 burn out. Sticky pistons are made with string instead of a slimeball, until slimes exist. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
+
+**Village differences from Minecraft:** no raids, pillagers, wandering traders, zombie villagers, breeding or
+baby villagers; villagers don't claim new job sites or open doors; trades use only items in this game (no enchanted
+books or gear yet), and prices don't change with demand or reputation. The loom, stonecutter, smithing table,
+cartography table, fletching table, grindstone and composter are decoration for now.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -207,6 +221,8 @@ public/
   js/terrain-nether.js    the Nether: caverns, lava sea, biomes, glowstone, ores, fortresses
   js/terrain-end.js       the End: the main island, obsidian pillars, exit fountain, outer islands
   js/stronghold.js        strongholds and their End portal rooms
+  js/village.js           village layouts, built from the biome's materials
+  js/trades.js            villager professions and their trades
   js/biomes.js            biomes and their grass/foliage/water colours
   js/textures.js          all pixel art, drawn with code
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo

@@ -4,12 +4,12 @@
 import * as THREE from 'three';
 import {
   BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
-  fluidOf, isSource,
+  fluidOf, isSource, isFurnace, isContainer,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { collides, moveBody, boxOverlapsBlock } from './physics.js';
-import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE } from './inventory.js';
+import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems } from './inventory.js';
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD } from './ui.js';
 import { sound } from './sound.js';
@@ -156,6 +156,11 @@ export class Game {
         return;
       }
       case 'mobdeath': return;
+      case 'trades':
+        if (this.screen.kind === 'trade' && this.screen.trade.e === msg.e) { this.screen.trade = msg; this.screen.render(); }
+        else if (!this.screen.isOpen) this.openScreen('trade', msg);
+        return;
+      case 'traded': return this.finishTrade(msg);
       case 'boss':
         $('bossbar').classList.toggle('hidden', !(msg.hp > 0));
         if (msg.hp > 0) {
@@ -285,7 +290,7 @@ export class Game {
     // light can change up to 15 blocks away: forget cached light for nearby chunks
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) this.lightCache.delete(chunkKey(cx + dx, cz + dz));
-    if (this.screen.kind === 'furnace' && id !== BLOCK.FURNACE) {
+    if (this.screen.kind === 'furnace' && !isFurnace(id)) {
       const at = this.screen.furnace.at;
       if (at[0] === x && at[1] === y && at[2] === z) this.closeScreen();
     }
@@ -602,6 +607,11 @@ export class Game {
     const hit = this.raycast();
     const held = this.held();
     const mob = this.targetMob(hit);
+    if (mob && this.entities.entities.get(mob.id)?.mob === 'villager') {
+      this.send({ t: 'interact', e: mob.id });
+      this.swing = 1;
+      return;
+    }
     if (mob && held?.id === ITEM.SHEARS) {
       this.send({ t: 'interact', e: mob.id, tool: held.id });
       this.useTool(1);
@@ -611,13 +621,13 @@ export class Game {
     if (hit && !this.player.sneaking) {
       const at = [hit.x, hit.y, hit.z];
       if (hit.id === BLOCK.CRAFTING_TABLE) { this.openScreen('crafting'); return; }
-      if (hit.id === BLOCK.FURNACE) {
-        this.openScreen('furnace', { at });
+      if (isFurnace(hit.id)) {
+        this.openScreen('furnace', { at, name: BLOCKS[hit.id].name });
         this.send({ t: 'furnace_open', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
-      if (hit.id === BLOCK.CHEST) {
-        this.openScreen('chest', { at });
+      if (isContainer(hit.id)) {
+        this.openScreen('chest', { at, name: BLOCKS[hit.id].name });
         this.send({ t: 'chest_open', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
@@ -676,6 +686,31 @@ export class Game {
     this.swing = 1;
     this.useCooldown = 0.25;
     return true;
+  }
+
+  // ---------- trading ----------
+  tradeOffer(i) {
+    const t = this.screen.trade;
+    const o = t?.offers[i];
+    if (!o || o.uses >= o.max || this.tradePending) return;
+    if (!o.cost.every(([id, n]) => countItem(this.inv, id) >= n)) return;
+    this.tradePending = true;
+    this.send({ t: 'trade', e: t.e, i });
+  }
+
+  // The villager agreed: pay and take the goods.
+  finishTrade(msg) {
+    this.tradePending = false;
+    const o = this.screen.kind === 'trade' && this.screen.trade.e === msg.e ? this.screen.trade.offers[msg.i] : null;
+    if (!msg.ok || !o) return;
+    if (!o.cost.every(([id, n]) => countItem(this.inv, id) >= n)) return;
+    for (const [id, n] of o.cost) takeItems(this.inv, id, n);
+    const result = makeStack(o.result[0], o.result[1]);
+    const left = addItem(this.inv, result.id, result.count, result.dur);
+    if (left > 0) this.dropStack({ ...result, count: left });
+    sound.pop();
+    this.invDirty = true;
+    this.screen.render();
   }
 
   // An eye of ender goes into an empty End portal frame, or is thrown to find a stronghold.

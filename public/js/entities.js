@@ -21,6 +21,14 @@ function box(w, h, d, color, faceColors = null) {
   return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true }));
 }
 
+// Changes the colour of a box made by box().
+function recolor(mesh, color) {
+  const c = new THREE.Color(color);
+  const attr = mesh.geometry.getAttribute('color');
+  for (let f = 0; f < 6; f++) for (let v = 0; v < 4; v++) attr.setXYZ(f * 4 + v, c.r * FACE_SHADE[f], c.g * FACE_SHADE[f], c.b * FACE_SHADE[f]);
+  attr.needsUpdate = true;
+}
+
 // A limb that swings from its top end.
 function limb(w, h, d, color, x, y, z) {
   const pivot = new THREE.Group();
@@ -134,6 +142,13 @@ function quadruped(bodyColor, headColor, size, extra) {
   g.add(body, head);
   return { group: g, head, legs, arms: [] };
 }
+
+// villager profession (index in trades.js PROFESSIONS) -> [robe colour, hat colour or null]
+const PROFESSION_LOOK = [
+  [0x6b4a33, null], [0x4f7a3a, null], [0x8a6a3a, 0xd8c060], [0xe8e0d0, 0x8a2020], [0x3a3a40, 0x505058], [0xe8e8e8, 0x8a2020],
+  [0x2a2a2a, null], [0x2a2a2a, 0x202020], [0x6b4a33, 0x6a9a3a], [0xe8e8e8, 0x8a6a3a], [0x3a5a8a, null], [0x5a4a40, null],
+  [0x8a5a30, 0x5a3a20], [0x2a4a6a, 0xd8c060],
+];
 
 const MOB_BUILDERS = {
   pig: () => quadruped(0xf0a5a2, 0xf0a5a2, [0.6, 0.55, 0.9, 0.35], {
@@ -312,6 +327,45 @@ const MOB_BUILDERS = {
     const sword = box(0.05, 0.75, 0.05, 0x8a8a8a); sword.position.set(0.3, 1.45, -0.85); sword.rotation.x = Math.PI / 2.4; m.group.add(sword);
     return m;
   },
+  // villages
+  villager: () => {
+    const g = new THREE.Group();
+    const skin = 0xbd8b72, robe = 0x6b4a33;
+    const legL = limb(0.24, 0.75, 0.24, 0x4a3324, -0.12, 0.75, 0);
+    const legR = limb(0.24, 0.75, 0.24, 0x4a3324, 0.12, 0.75, 0);
+    const body = box(0.5, 0.95, 0.3, robe); body.position.y = 1.05;
+    // arms folded across the chest
+    const arms = box(0.62, 0.22, 0.24, robe); arms.position.set(0, 1.25, -0.22);
+    const hands = box(0.26, 0.2, 0.2, skin); hands.position.set(0, 1.25, -0.26);
+    const head = new THREE.Group();
+    head.position.y = 1.52;
+    const skull = box(0.5, 0.6, 0.5, skin); skull.position.y = 0.3; head.add(skull);
+    const nose = box(0.12, 0.22, 0.12, 0xa8735c); nose.position.set(0, 0.2, -0.31); head.add(nose);
+    const brow = box(0.4, 0.06, 0.02, 0x3a2a20); brow.position.set(0, 0.44, -0.26); head.add(brow);
+    eyes(head, 0.36, -0.26, 0x2a7a2a);
+    const hat = box(0.56, 0.1, 0.56, 0x000000); hat.position.y = 0.62; hat.visible = false; head.add(hat);
+    g.add(legL, legR, body, arms, hands, head);
+    return { group: g, head, legs: [legL, legR], arms: [], robe: body, hat, foldedArms: arms };
+  },
+  iron_golem: () => {
+    const g = new THREE.Group();
+    const iron = 0xd8d0c8;
+    const legL = limb(0.4, 1.0, 0.4, iron, -0.3, 1.0, 0);
+    const legR = limb(0.4, 1.0, 0.4, iron, 0.3, 1.0, 0);
+    const body = box(1.3, 0.85, 0.75, iron); body.position.y = 1.55;
+    const hips = box(0.85, 0.35, 0.5, iron); hips.position.y = 1.0;
+    const vines = box(1.32, 0.4, 0.77, 0x5a8a2a); vines.position.y = 1.4; vines.scale.set(1, 1, 1);
+    const armL = limb(0.4, 1.5, 0.4, iron, -0.85, 2.0, 0);
+    const armR = limb(0.4, 1.5, 0.4, iron, 0.85, 2.0, 0);
+    const head = new THREE.Group();
+    head.position.y = 2.0;
+    const skull = box(0.5, 0.6, 0.5, iron); skull.position.set(0, 0.3, -0.15); head.add(skull);
+    const nose = box(0.12, 0.25, 0.12, iron); nose.position.set(0, 0.2, -0.45); head.add(nose);
+    const brow = box(0.5, 0.08, 0.04, 0xa8a098); brow.position.set(0, 0.45, -0.41); head.add(brow);
+    eyes(head, 0.35, -0.41, 0x8a1010);
+    g.add(legL, legR, body, hips, vines, armL, armR, head);
+    return { group: g, head, legs: [legL, legR], arms: [armL, armR] };
+  },
   // the End
   ender_dragon: () => {
     const g = new THREE.Group();
@@ -392,6 +446,7 @@ const HITBOX = {
   pig: [0.5, 0.95], cow: [0.5, 1.4], sheep: [0.5, 1.3], chicken: [0.3, 0.75],
   zombie: [0.35, 1.95], skeleton: [0.35, 1.95], creeper: [0.35, 1.7], spider: [0.75, 0.95],
   husk: [0.35, 1.95], stray: [0.35, 1.95], enderman: [0.35, 2.9],
+  villager: [0.35, 1.95], iron_golem: [0.75, 2.7],
   zombified_piglin: [0.35, 1.95], ghast: [2, 4.2], blaze: [0.35, 1.8], wither_skeleton: [0.42, 2.4],
   fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
 };
@@ -759,6 +814,15 @@ export class EntityViews {
         const t = performance.now() / 1000;
         for (const w of v.model.wings) w.rotation.z = Math.sin(t * 2.6) * 0.55 * w.userData.side;
         v.model.tail.forEach((s, i) => { s.position.x = Math.sin(t * 1.5 - i * 0.25) * 0.15 * i; });
+      }
+      if (v.model.robe && v.prof !== v.flags >> 4) {
+        // robe and hat colours by profession
+        v.prof = v.flags >> 4;
+        const [robe, hat] = PROFESSION_LOOK[v.prof] || PROFESSION_LOOK[0];
+        recolor(v.model.robe, robe);
+        recolor(v.model.foldedArms, robe);
+        v.model.hat.visible = hat !== null;
+        if (hat !== null) recolor(v.model.hat, hat);
       }
       if (v.model.faces) {
         v.model.faces.open.visible = (v.flags & 2) !== 0;
