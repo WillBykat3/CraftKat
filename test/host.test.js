@@ -559,7 +559,11 @@ test('endermen get angry when stared at, husks in deserts, monsters spawn in dar
   }
   host.lightCache = null;
   let spawned = null;
-  for (let i = 0; i < 400 && !spawned; i++) spawned = host.spawnInCave({ x: 0.5, y, z: 0.5 });
+  // (tries can also land in natural caves above or below the room; keep going until one is in it)
+  for (let i = 0; i < 1000 && !spawned; i++) {
+    const m = host.spawnInCave({ x: 0.5, y, z: 0.5 });
+    if (m && Math.abs(m.y - y) < 0.01 && Math.abs(m.x) < R && Math.abs(m.z) < R) spawned = m;
+  }
   assert.ok(spawned && Math.abs(spawned.y - y) < 0.01, 'a monster appeared in the dark room');
   // a torch keeps monsters away from where its light reaches
   host.world.setBlock(spawned.x - 0.5, y, spawned.z - 0.5 + 2, BLOCK.TORCH);
