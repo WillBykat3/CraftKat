@@ -4,9 +4,11 @@
 import { itemName, ITEMS, maxDurability, armorOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
 import {
   HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem,
-  RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult, countItem,
+  RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult, countItem, extras,
 } from './inventory.js';
 import { LEVELS } from './trades.js';
+import { tableOffers, anvilCombine, grind, enchantName } from './enchant.js';
+import { ITEM } from './blocks.js';
 import { sound } from './sound.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,7 +23,8 @@ function el(tag, className, parent) {
 // Draws a stack into a slot element.
 export function paintSlot(slotEl, stack, iconURL) {
   slotEl.innerHTML = '';
-  slotEl.dataset.name = stack ? itemName(stack.id) : '';
+  slotEl.dataset.name = stack ? itemName(stack.id) + (stack.ench ? '\n' + Object.entries(stack.ench).map(([n, l]) => enchantName(n, l)).join('\n') : '') : '';
+  slotEl.classList.toggle('glint', !!stack?.ench);
   if (!stack) return;
   const img = el('img', 'icon', slotEl);
   img.src = iconURL(stack.id);
@@ -77,6 +80,8 @@ export class InventoryScreen {
     this.furnace = kind === 'furnace' ? { at: data.at, slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 } : null;
     this.chest = kind === 'chest' ? { at: data.at, slots: new Array(27).fill(null), loaded: false } : null;
     this.trade = kind === 'trade' ? data : null;
+    this.station = ['enchant', 'anvil', 'grindstone'].includes(kind) ? { at: data.at } : null;
+    this.work = [null, null]; // the input slots of the enchanting table, anvil or grindstone
     this.creativeTab = this.creativeTab || 'blocks';
     this.root.classList.remove('hidden');
     this.render();
@@ -87,6 +92,8 @@ export class InventoryScreen {
     // give back anything left in the crafting grid or on the cursor
     for (const s of this.grid) if (s) this.returnStack(s);
     this.grid = [];
+    for (const s of this.work || []) if (s) this.returnStack(s);
+    this.work = [];
     if (this.cursor) this.returnStack(this.cursor);
     this.cursor = null;
     this.kind = null;
@@ -98,7 +105,7 @@ export class InventoryScreen {
   }
 
   returnStack(s) {
-    const left = addItem(this.game.inv, s.id, s.count, s.dur);
+    const left = addItem(this.game.inv, s.id, s.count, s.dur, extras(s));
     if (left > 0) this.game.dropStack({ ...s, count: left });
   }
 
@@ -147,7 +154,7 @@ export class InventoryScreen {
     ['helmet', 'chestplate', 'leggings', 'boots'].forEach((piece, i) => {
       this.slot(col, armor[i], (button, shift) => {
         if (shift) {
-          if (armor[i] && addItem(this.game.inv, armor[i].id, armor[i].count, armor[i].dur) === 0) armor[i] = null;
+          if (armor[i] && addItem(this.game.inv, armor[i].id, armor[i].count, armor[i].dur, extras(armor[i])) === 0) armor[i] = null;
         } else if (this.cursor) {
           const a = armorOf(this.cursor.id);
           if (!a || a.slot !== i || this.cursor.count !== 1) return;
@@ -303,6 +310,103 @@ export class InventoryScreen {
     });
   }
 
+  // A slot of the station's inputs (accept: which items may go in, or any).
+  workSlot(parent, i, accept = null) {
+    return this.slot(parent, this.work[i], (button) => {
+      if (this.cursor && accept && !accept(this.cursor)) return;
+      this.cursor = clickSlot(this.work, i, this.cursor, button === 2 ? 2 : 0);
+    });
+  }
+
+  // The enchanting table: an item, lapis lazuli, and three offers. The more bookshelves
+  // around the table (up to 15), the higher the levels on offer.
+  enchantArea(panel) {
+    const g = this.game;
+    const row = el('div', 'station-row', panel);
+    const inputs = el('div', 'furnace-col', row);
+    this.workSlot(inputs, 0, (s) => s.id !== ITEM.LAPIS_LAZULI);
+    this.workSlot(inputs, 1, (s) => s.id === ITEM.LAPIS_LAZULI);
+    const list = el('div', 'enchant-list', row);
+    const item = this.work[0], lapis = this.work[1]?.count || 0;
+    const offers = item && !item.ench ? tableOffers(item.id, g.countShelves(this.station.at), g.enchSeed) : [];
+    for (let i = 0; i < 3; i++) {
+      const o = offers[i];
+      const b = el('button', 'enchant-option', list);
+      if (!o) { b.disabled = true; continue; }
+      const creative = g.mode === 'creative';
+      const ok = creative || (g.stats.xpLevel >= o.cost && lapis >= o.lapis);
+      b.disabled = !ok;
+      el('span', 'enchant-hint', b).textContent = `${o.hint} . . . ?`;
+      el('span', 'enchant-cost', b).textContent = `${o.cost}`;
+      el('span', 'enchant-lapis', b).textContent = `${o.lapis} lapis · ${o.levels} level${o.levels > 1 ? 's' : ''}`;
+      b.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (b.disabled) return;
+        const it = this.work[0];
+        if (it.id === ITEM.BOOK) { it.id = ITEM.ENCHANTED_BOOK; }
+        it.ench = { ...o.ench };
+        if (!creative) {
+          g.spendLevels(o.levels);
+          this.work[1].count -= o.lapis;
+          if (this.work[1].count <= 0) this.work[1] = null;
+        }
+        g.enchSeed = Math.floor(Math.random() * 2 ** 31);
+        g.enchanted();
+        this.render();
+      });
+    }
+  }
+
+  // The anvil: combine two of the same item, put a book's enchantments on, or repair with material.
+  anvilArea(panel) {
+    const g = this.game;
+    const row = el('div', 'station-row', panel);
+    this.workSlot(row, 0);
+    el('span', 'trade-arrow', row).textContent = '+';
+    this.workSlot(row, 1);
+    el('span', 'trade-arrow', row).textContent = '→';
+    const out = anvilCombine(this.work[0], this.work[1]);
+    const creative = g.mode === 'creative';
+    const ok = out && (creative || (out.cost < 40 && g.stats.xpLevel >= out.cost));
+    this.slot(row, out ? out.result : null, () => {
+      if (!ok || this.cursor) return;
+      this.cursor = out.result;
+      this.work[0] = null;
+      const right = this.work[1];
+      if (right) { right.count -= out.used; if (right.count <= 0) this.work[1] = null; }
+      if (!creative) g.spendLevels(out.cost);
+      g.anvilUsed(this.station.at);
+    }, ok ? '' : 'disabled');
+    const cost = el('p', 'anvil-cost' + (out && !ok ? ' too-much' : ''), panel);
+    cost.textContent = out ? (out.cost >= 40 && !creative ? 'Too Expensive!' : `Enchantment Cost: ${out.cost}`) : '';
+  }
+
+  // The grindstone: takes enchantments off (giving some experience back), or joins two worn items.
+  grindstoneArea(panel) {
+    const g = this.game;
+    const row = el('div', 'station-row', panel);
+    this.workSlot(row, 0);
+    el('span', 'trade-arrow', row).textContent = '+';
+    this.workSlot(row, 1);
+    el('span', 'trade-arrow', row).textContent = '→';
+    const [a, b] = this.work;
+    let out = null, xp = 0;
+    if (a && b && a.id === b.id && a.dur !== undefined) {
+      const max = maxDurability(a.id);
+      out = { id: a.id, count: 1, dur: Math.min(max, a.dur + b.dur + Math.floor(max * 0.05)) };
+      xp = (grind(a)?.xp || 0) + (grind(b)?.xp || 0);
+    } else if ((a && !b) || (b && !a)) {
+      const r = grind(a || b);
+      if (r) { out = r.result; xp = r.xp; }
+    }
+    this.slot(row, out, () => {
+      if (!out || this.cursor) return;
+      this.cursor = out;
+      this.work = [null, null];
+      if (xp) g.addXP(xp);
+    });
+  }
+
   // A villager's offers: what it wants, and what it gives. Click one to trade.
   tradeArea(panel, title) {
     const t = this.trade;
@@ -370,12 +474,16 @@ export class InventoryScreen {
     if (this.bookOpen && (this.kind === 'inventory' || this.kind === 'crafting')) this.recipeBook(wrap);
     const panel = el('div', 'inv-panel', wrap);
     const title = el('h3', '', panel);
-    title.textContent = this.title || { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory' }[this.kind];
+    title.textContent = this.title || { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory',
+      enchant: 'Enchant', anvil: 'Repair & Name', grindstone: 'Repair & Disenchant' }[this.kind];
     if (this.kind === 'inventory' || this.kind === 'crafting') this.craftingArea(panel);
     if (this.kind === 'furnace') this.furnaceArea(panel);
     if (this.kind === 'chest') this.chestArea(panel);
     if (this.kind === 'creative') this.creativeArea(panel);
     if (this.kind === 'trade') this.tradeArea(panel, title);
+    if (this.kind === 'enchant') this.enchantArea(panel);
+    if (this.kind === 'anvil') this.anvilArea(panel);
+    if (this.kind === 'grindstone') this.grindstoneArea(panel);
     el('h3', 'small', panel).textContent = 'Inventory';
     this.playerSlots(panel);
     el('p', 'hint', panel).textContent = this.kind === 'creative'

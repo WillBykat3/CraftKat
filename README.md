@@ -49,6 +49,14 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Job site blocks** you can craft: composter, lectern, blast furnace and smoker (twice as fast, for ores and food),
   smithing table, grindstone, fletching table, loom, cartography table, stonecutter, cauldron, barrel (a chest);
   also paper, books, bookshelves and hay bales
+- **Enchanting**: an enchanting table (book, diamonds, obsidian) offers three enchantments for levels and lapis
+  lazuli; bookshelves around it (up to 15) give better ones. 24 enchantments work like Minecraft's: Sharpness, Smite,
+  Bane of Arthropods, Knockback, Fire Aspect, Looting, Efficiency, Silk Touch, Fortune, Unbreaking, Mending (from
+  librarians), Power, Punch, Flame, Infinity, Protection, Fire/Blast/Projectile Protection, Feather Falling,
+  Respiration, Aqua Affinity, Depth Strider and Thorns. Enchanted items shimmer and list their enchantments
+- **Anvils** combine enchantments and repair items (each use costs more), and wear out; the **grindstone** takes
+  enchantments off for experience; librarians sell enchanted books
+- **Blocks of iron, gold, diamond, emerald, lapis and coal**
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
@@ -71,7 +79,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** enchanting, potions, brewing, and many of Minecraft's mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** potions, brewing, and many of Minecraft's mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no piglins, hoglins, magma cubes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
@@ -85,7 +93,10 @@ burn out. Sticky pistons are made with string instead of a slimeball, until slim
 **Village differences from Minecraft:** no raids, pillagers, wandering traders, zombie villagers, breeding or
 baby villagers; villagers don't claim new job sites or open doors; trades use only items in this game (no enchanted
 books or gear yet), and prices don't change with demand or reputation. The loom, stonecutter, smithing table,
-cartography table, fletching table, grindstone and composter are decoration for now.
+cartography table, fletching table and composter are decoration for now.
+
+**Enchanting differences from Minecraft:** no curses, Frost Walker, Sweeping Edge or fishing and trident
+enchantments; anvils can't rename items.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -223,6 +234,7 @@ public/
   js/stronghold.js        strongholds and their End portal rooms
   js/village.js           village layouts, built from the biome's materials
   js/trades.js            villager professions and their trades
+  js/enchant.js           enchantments: the table, anvils, grindstones and their effects
   js/biomes.js            biomes and their grass/foliage/water colours
   js/textures.js          all pixel art, drawn with code
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo

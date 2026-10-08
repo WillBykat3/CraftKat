@@ -4,12 +4,12 @@
 import * as THREE from 'three';
 import {
   BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
-  fluidOf, isSource, isFurnace, isContainer,
+  fluidOf, isSource, isFurnace, isContainer, maxDurability,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { collides, moveBody, boxOverlapsBlock } from './physics.js';
-import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems } from './inventory.js';
+import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems, extras } from './inventory.js';
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD } from './ui.js';
 import { sound } from './sound.js';
@@ -18,10 +18,11 @@ import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
 import { BIOMES } from './biomes.js';
 import { VERSION } from './version.js';
 import { Particles } from './particles.js';
-import { levelInfo } from './xp.js';
+import { levelInfo, pointsForLevel } from './xp.js';
 import { lightCurve, toLinear } from './renderer.js';
 import { NETHER_FOG } from './terrain-nether.js';
 import { flowAt } from './fluids.js';
+import { protectionPoints, wears, level as enchLevel, tableOffers, anvilCombine, grind } from './enchant.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -136,8 +137,9 @@ export class Game {
         this.player.fallStart = null;
         return;
       case 'give': {
-        const left = addItem(this.inv, msg.id, msg.count, msg.dur);
-        if (left > 0) this.dropStack({ id: msg.id, count: left, dur: msg.dur });
+        const extra = extras(msg);
+        const left = addItem(this.inv, msg.id, msg.count, msg.dur, extra);
+        if (left > 0) this.dropStack({ id: msg.id, count: left, dur: msg.dur, ...extra });
         sound.pop();
         this.invDirty = true;
         if (this.screen.isOpen) this.screen.render();
@@ -145,9 +147,9 @@ export class Game {
       }
       case 'hurt':
         if (msg.fire && this.mode === 'survival') this.onFire = Math.max(this.onFire || 0, msg.fire);
-        return this.damage(msg.amount, msg.cause, msg.from, true);
+        return this.damage(msg.amount, msg.cause, msg.from, true, msg.by);
       case 'equip': return this.entities.setArmor(msg.id, msg.armor);
-      case 'xp': return this.addXP(msg.amount);
+      case 'xp': return this.addXP(this.mend(msg.amount));
       case 'hiss': if (Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 32) sound.hiss(); return;
       case 'mobhurt': {
         const v = this.entities.entities.get(msg.e);
@@ -185,7 +187,7 @@ export class Game {
         if (this.screen.isOpen) return this.screen.setCursor(msg.stack);
         // the screen was closed before the host answered: put the item back in the inventory
         if (msg.stack) {
-          const left = addItem(this.inv, msg.stack.id, msg.stack.count, msg.stack.dur);
+          const left = addItem(this.inv, msg.stack.id, msg.stack.count, msg.stack.dur, extras(msg.stack));
           if (left > 0) this.dropStack({ ...msg.stack, count: left });
           this.invDirty = true;
         }
@@ -214,6 +216,7 @@ export class Game {
     this.stats.health = me.health ?? 20;
     this.stats.food = me.food ?? 20;
     this.stats.xpTotal = Number.isInteger(me.xp) ? me.xp : 0;
+    this.enchSeed = Number.isInteger(me.enchSeed) ? me.enchSeed : Math.floor(Math.random() * 2 ** 31);
     this.armor = Array.isArray(me.armor) && me.armor.length === 4 ? me.armor.map((s) => (s ? { ...s } : null)) : [null, null, null, null];
     this.armorChanged();
     this.addXP(0);
@@ -566,7 +569,7 @@ export class Game {
     const mob = this.targetMob(hit);
     if (mob) {
       if (this.attackCooldown <= 0) {
-        this.send({ t: 'attack', e: mob.id, tool: this.heldId() });
+        this.send({ t: 'attack', e: mob.id, tool: this.heldId(), ench: this.held()?.ench });
         this.attackCooldown = 0.35;
         this.useTool(1);
         this.stats.exhaustion += 0.1;
@@ -581,7 +584,7 @@ export class Game {
 
   breakBlockAt(hit) {
     const id = this.world.getBlock(hit.x, hit.y, hit.z);
-    this.send({ t: 'dig', x: hit.x, y: hit.y, z: hit.z, tool: this.heldId() });
+    this.send({ t: 'dig', x: hit.x, y: hit.y, z: hit.z, tool: this.heldId(), ench: this.held()?.ench });
     this.applyBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
     sound.broke(id);
     if (this.mode === 'survival') {
@@ -593,7 +596,7 @@ export class Game {
   useTool(wear) {
     if (this.mode !== 'survival') return;
     const s = this.held();
-    if (!s || s.dur === undefined) return;
+    if (!s || s.dur === undefined || !wears(s)) return;
     s.dur -= wear;
     if (s.dur <= 0) {
       this.inv[this.selected] = null;
@@ -621,6 +624,9 @@ export class Game {
     if (hit && !this.player.sneaking) {
       const at = [hit.x, hit.y, hit.z];
       if (hit.id === BLOCK.CRAFTING_TABLE) { this.openScreen('crafting'); return; }
+      if (hit.id === BLOCK.ENCHANTING_TABLE) { this.openScreen('enchant', { at }); return; }
+      if (hit.id === BLOCK.ANVIL || hit.id === BLOCK.CHIPPED_ANVIL || hit.id === BLOCK.DAMAGED_ANVIL) { this.openScreen('anvil', { at }); return; }
+      if (hit.id === BLOCK.GRINDSTONE) { this.openScreen('grindstone', { at }); return; }
       if (isFurnace(hit.id)) {
         this.openScreen('furnace', { at, name: BLOCKS[hit.id].name });
         this.send({ t: 'furnace_open', x: hit.x, y: hit.y, z: hit.z });
@@ -688,6 +694,30 @@ export class Game {
     return true;
   }
 
+  // ---------- enchanting ----------
+  // Bookshelves around an enchanting table: two blocks away, on its level or one up, with air between.
+  countShelves([x, y, z]) {
+    let n = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== 2) continue;
+      for (let dy = 0; dy <= 1; dy++) {
+        if (this.world.getBlock(x + dx, y + dy, z + dz) !== BLOCK.BOOKSHELF) continue;
+        if (this.world.getBlock(x + Math.trunc(dx / 2), y + dy, z + Math.trunc(dz / 2)) === BLOCK.AIR) n++;
+      }
+    }
+    return Math.min(15, n);
+  }
+
+  enchanted() {
+    sound.levelUp();
+    this.invDirty = true;
+  }
+
+  anvilUsed([x, y, z]) {
+    this.send({ t: 'anvil_used', x, y, z });
+    this.invDirty = true;
+  }
+
   // ---------- trading ----------
   tradeOffer(i) {
     const t = this.screen.trade;
@@ -705,8 +735,8 @@ export class Game {
     if (!msg.ok || !o) return;
     if (!o.cost.every(([id, n]) => countItem(this.inv, id) >= n)) return;
     for (const [id, n] of o.cost) takeItems(this.inv, id, n);
-    const result = makeStack(o.result[0], o.result[1]);
-    const left = addItem(this.inv, result.id, result.count, result.dur);
+    const result = { ...makeStack(o.result[0], o.result[1]), ...(o.ench ? { ench: { ...o.ench } } : {}) };
+    const left = addItem(this.inv, result.id, result.count, result.dur, extras(result));
     if (left > 0) this.dropStack({ ...result, count: left });
     sound.pop();
     this.invDirty = true;
@@ -947,7 +977,7 @@ export class Game {
     const reduced = amount * (1 - Math.min(20, Math.max(defense / 5, defense - amount / (2 + toughness / 4))) / 25);
     const wear = Math.max(1, Math.floor(amount / 4));
     this.armor.forEach((s, i) => {
-      if (!s) return;
+      if (!s || !wears(s, Math.random, true)) return;
       s.dur -= wear;
       if (s.dur <= 0) { this.armor[i] = null; sound.broke(BLOCK.GLASS); }
     });
@@ -960,11 +990,11 @@ export class Game {
     const power = Math.min(1, (seconds * seconds + 2 * seconds) / 3);
     if (power < 0.1) return;
     const p = this.player;
-    this.send({ t: 'shoot', power, yaw: p.yaw, pitch: p.pitch });
+    this.send({ t: 'shoot', power, yaw: p.yaw, pitch: p.pitch, ench: this.held()?.ench });
     sound.bow();
     if (this.mode === 'survival') {
       const i = this.inv.findIndex((st) => st && st.id === ITEM.ARROW);
-      if (i >= 0) takeOne(this.inv, i);
+      if (i >= 0 && !enchLevel(this.held(), 'infinity')) takeOne(this.inv, i); // Infinity: arrows aren't used up
       this.useTool(1);
     }
   }
@@ -980,6 +1010,30 @@ export class Game {
   }
 
   // ---------- experience ----------
+  // Mending: experience repairs held and worn items that have it first (2 durability per point).
+  // Returns what's left for the experience bar.
+  mend(amount) {
+    const items = [this.held(), ...this.armor].filter((s) => s && s.dur !== undefined && enchLevel(s, 'mending'));
+    for (const s of items) {
+      const max = maxDurability(s.id);
+      while (amount > 0 && s.dur < max) { s.dur = Math.min(max, s.dur + 2); amount--; }
+    }
+    if (items.length) this.invDirty = true;
+    return amount;
+  }
+
+  // Spends experience levels (enchanting, anvils), keeping the progress into the level.
+  spendLevels(n) {
+    const s = this.stats;
+    const { level, progress } = levelInfo(s.xpTotal);
+    const to = Math.max(0, level - n);
+    let total = 0;
+    for (let l = 0; l < to; l++) total += pointsForLevel(l);
+    s.xpTotal = total + Math.floor(progress * pointsForLevel(to));
+    this.addXP(0);
+    this.invDirty = true;
+  }
+
   addXP(amount) {
     const s = this.stats;
     const before = s.xpLevel;
@@ -995,9 +1049,18 @@ export class Game {
   }
 
   // ---------- survival ----------
-  damage(amount, cause = 'died', from = null, armored = false) {
+  damage(amount, cause = 'died', from = null, armored = false, by = null) {
     if (this.mode !== 'survival' || this.dead || this.stats.invuln > 0) return;
     if (armored) amount = this.armorReduce(amount);
+    // protection enchantments (4% per point, up to 80%); not against falling out of the world or starving
+    const kind = /lava|fire|flames|burn/.test(cause) ? 'fire' : /blown up|Intentional/.test(cause) ? 'blast'
+      : /shot|fireball/.test(cause) ? 'projectile' : /fell from/.test(cause) ? 'fall' : /out of the world|starved/.test(cause) ? null : 'other';
+    if (kind) amount *= 1 - protectionPoints(this.armor, kind) / 25;
+    // thorns hurt whoever hit you
+    if (by) {
+      const thorns = Math.max(0, ...this.armor.map((a) => enchLevel(a, 'thorns')));
+      if (thorns && Math.random() < 0.15 * thorns) this.send({ t: 'thorns', e: by, amount: 1 + Math.floor(Math.random() * 4) });
+    }
     this.stats.health = Math.max(0, this.stats.health - amount);
     this.stats.invuln = 0.5;
     this.stats.hurtUntil = performance.now() + 300;
@@ -1124,6 +1187,8 @@ export class Game {
     if (this.player.headInWater) {
       s.air -= dt * 20;
       if (s.air <= -20) { s.air = 0; this.damage(2, 'drowned'); }
+      const resp = enchLevel(this.armor[0], 'respiration');
+      if (resp && Math.random() < resp / (resp + 1)) s.air += dt * 20; // respiration: breath lasts longer
     } else {
       s.air = Math.min(MAX_AIR, s.air + dt * 60);
     }
@@ -1166,7 +1231,7 @@ export class Game {
     if (len > 0) { wx /= len; wz /= len; }
 
     let speed = p.flying ? (p.sprinting ? FLY * 2 : FLY) : p.sneaking ? SNEAK : p.sprinting ? SPRINT : WALK;
-    if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5;
+    if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5 + 0.5 * Math.min(3, enchLevel(this.armor[3], 'depth_strider')) / 3;
     const under = BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))];
     if (p.onGround && under.slow) speed *= under.slow; // soul sand
     p.onHot = p.onGround && !!under.hot;                 // magma blocks burn unless you sneak
@@ -1403,7 +1468,8 @@ export class Game {
       } else {
         const b = this.breaking;
         if (!b || b.x !== hit.x || b.y !== hit.y || b.z !== hit.z) this.breaking = { x: hit.x, y: hit.y, z: hit.z, progress: 0, sound: 0 };
-        const t = breakTime(hit.id, this.heldId()) * (p.onGround || p.flying ? 1 : 5) * (p.headInWater ? 5 : 1);
+        const aqua = this.armor.some((a) => enchLevel(a, 'aqua_affinity'));
+        const t = breakTime(hit.id, this.heldId(), enchLevel(this.held(), 'efficiency')) * (p.onGround || p.flying ? 1 : 5) * (p.headInWater && !aqua ? 5 : 1);
         this.breaking.progress += t === 0 ? 1 : dt / t;
         this.breaking.sound -= dt;
         if (this.breaking.sound <= 0) {
@@ -1500,7 +1566,7 @@ export class Game {
     if (this.invDirty && this.saveTimer > 2) {
       this.saveTimer = 0;
       this.invDirty = false;
-      this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
+      this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     }
 
     // HUD
@@ -1614,7 +1680,7 @@ export class Game {
 
   // Leaving the world: tell the host our final state.
   quit() {
-    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
+    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     this.playing = false;
     this.closed = true;
     this.screen.close();

@@ -3,6 +3,7 @@
 // with how many times it can be used before the villager restocks, and the experience it gives the villager.
 
 import { BLOCK, ITEM } from './blocks.js';
+import { randomBook, ENCHANTS } from './enchant.js';
 
 const E = ITEM.EMERALD;
 export const LEVELS = ['Novice', 'Apprentice', 'Journeyman', 'Expert', 'Master'];
@@ -114,10 +115,18 @@ export const TRADES = {
 // Picks two offers from a level's list (seeded by the villager), as fresh offers.
 export function offersFor(profession, level, rand) {
   const pool = [...(TRADES[profession]?.[level] || [])];
+  // librarians also sell enchanted books (for emeralds and a book), priced like Minecraft's
+  if (profession === 'librarian' && level < 4) {
+    const ench = randomBook(rand);
+    const [name, lvl] = Object.entries(ench)[0];
+    let price = 2 + 3 * lvl + Math.floor(rand() * (5 + lvl * 10));
+    if (ENCHANTS[name].treasure) price *= 2;
+    pool.push({ cost: [[E, Math.min(64, price)], [ITEM.BOOK, 1]], result: [ITEM.ENCHANTED_BOOK, 1], ench, uses: 12, xp: 1 + level * 5 });
+  }
   const out = [];
   for (let i = 0; i < 2 && pool.length; i++) {
     const o = pool.splice(Math.floor(rand() * pool.length), 1)[0];
-    out.push({ cost: o.cost.map((c) => [...c]), result: [...o.result], max: o.uses, uses: 0, xp: o.xp });
+    out.push({ cost: o.cost.map((c) => [...c]), result: [...o.result], max: o.uses, uses: 0, xp: o.xp, ...(o.ench ? { ench: { ...o.ench } } : {}) });
   }
   return out;
 }

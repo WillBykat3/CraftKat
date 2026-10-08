@@ -134,6 +134,9 @@ export const sound = {
   fizz() { burst({ freq: 3500, q: 0.6, duration: 0.6, gain: 0.25, type: 'highpass' }); },
   // a villager's "hmm" (no, when they have nothing to trade)
   villagerNo() { tone({ freq: 220, endFreq: 160, duration: 0.25, gain: 0.25, type: 'triangle' }); setTimeout(() => tone({ freq: 200, endFreq: 150, duration: 0.2, gain: 0.2, type: 'triangle' }), 220); },
+  // an anvil: a ringing clang (or a crash when it breaks)
+  anvil() { tone({ freq: 1250, endFreq: 1180, duration: 0.6, gain: 0.15, type: 'triangle' }); tone({ freq: 2520, duration: 0.4, gain: 0.06 }); burst({ freq: 3000, q: 4, duration: 0.08, gain: 0.3 }); },
+  anvilBreak() { burst({ freq: 400, q: 0.6, duration: 0.6, gain: 0.6, type: 'lowpass' }); burst({ freq: 2500, q: 2, duration: 0.3, gain: 0.3 }); },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)

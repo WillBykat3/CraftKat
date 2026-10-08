@@ -12,13 +12,23 @@ export function makeStack(id, count = 1) {
 }
 
 function canMerge(a, b) {
-  return a && b && a.id === b.id && a.dur === undefined && b.dur === undefined;
+  return a && b && a.id === b.id && a.dur === undefined && b.dur === undefined && !a.ench && !b.ench;
+}
+
+// The extra parts of a stack (enchantments, anvil uses) to keep when it moves.
+export function extras(s) {
+  const out = {};
+  if (s?.ench) out.ench = s.ench;
+  if (s?.rc) out.rc = s.rc;
+  return out;
 }
 
 // Adds items to the inventory (hotbar first). Returns how many did not fit.
-export function addItem(slots, id, count = 1, dur) {
+// extra: {ench, rc} of an enchanted item (those never stack)
+export function addItem(slots, id, count = 1, dur, extra) {
   const limit = maxStack(id);
-  if (dur === undefined && limit > 1) {
+  if (extra && !extra.ench && !extra.rc) extra = undefined;
+  if (dur === undefined && limit > 1 && !extra) {
     for (let i = 0; i < slots.length && count > 0; i++) {
       const s = slots[i];
       if (s && s.id === id && s.dur === undefined && s.count < limit) {
@@ -31,7 +41,7 @@ export function addItem(slots, id, count = 1, dur) {
   for (let i = 0; i < slots.length && count > 0; i++) {
     if (!slots[i]) {
       const n = Math.min(limit, count);
-      slots[i] = dur === undefined ? { id, count: n } : { id, count: n, dur };
+      slots[i] = dur === undefined ? { id, count: n, ...extra } : { id, count: n, dur, ...extra };
       count -= n;
     }
   }
@@ -162,6 +172,11 @@ export const RECIPES = [
   { pattern: ['.I', 'I.'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.SHEARS, 1] },
   { pattern: ['SS', 'SS'], keys: { S: [ITEM.STRING] }, result: [BLOCK.WOOL, 1] },
   { pattern: ['CCC', 'CCC', 'CCC'], keys: { C: [ITEM.COPPER_INGOT] }, result: [BLOCK.COPPER_BLOCK, 1] },
+  ...[[ITEM.IRON_INGOT, BLOCK.IRON_BLOCK], [ITEM.GOLD_INGOT, BLOCK.GOLD_BLOCK], [ITEM.DIAMOND, BLOCK.DIAMOND_BLOCK], [ITEM.EMERALD, BLOCK.EMERALD_BLOCK],
+    [ITEM.LAPIS_LAZULI, BLOCK.LAPIS_BLOCK], [ITEM.COAL, BLOCK.COAL_BLOCK]].flatMap(([item, block]) => [
+    { pattern: ['CCC', 'CCC', 'CCC'], keys: { C: [item] }, result: [block, 1] },
+    { pattern: ['B'], keys: { B: [block] }, result: [item, 9] },
+  ]),
   { pattern: ['B'], keys: { B: [BLOCK.COPPER_BLOCK] }, result: [ITEM.COPPER_INGOT, 9] },
   { pattern: ['SS', 'SS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_BRICKS, 4] },
   { pattern: ['SS', 'SS'], keys: { S: [BLOCK.SAND] }, result: [BLOCK.SANDSTONE, 1] },
@@ -224,6 +239,8 @@ RECIPES.push(
   { pattern: ['PB'], keys: { P: [ITEM.ENDER_PEARL], B: [ITEM.BLAZE_POWDER] }, result: [ITEM.EYE_OF_ENDER, 1], shapeless: true },
   // books and village job sites
   { pattern: ['SSS'], keys: { S: [BLOCK.SUGAR_CANE] }, result: [ITEM.PAPER, 3] },
+  { pattern: ['.B.', 'DOD', 'OOO'], keys: { B: [ITEM.BOOK], D: [ITEM.DIAMOND], O: [BLOCK.OBSIDIAN] }, result: [BLOCK.ENCHANTING_TABLE, 1] },
+  { pattern: ['BBB', '.I.', 'III'], keys: { B: [BLOCK.IRON_BLOCK], I: [ITEM.IRON_INGOT] }, result: [BLOCK.ANVIL, 1] },
   { pattern: ['PPL'], keys: { P: [ITEM.PAPER], L: [ITEM.LEATHER] }, result: [ITEM.BOOK, 1], shapeless: true },
   { pattern: ['PPP', 'BBB', 'PPP'], keys: { P: PLANKS, B: [ITEM.BOOK] }, result: [BLOCK.BOOKSHELF, 1] },
   { pattern: ['WWW', 'WWW', 'WWW'], keys: { W: [ITEM.WHEAT] }, result: [BLOCK.HAY_BALE, 1] },

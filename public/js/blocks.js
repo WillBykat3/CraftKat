@@ -35,6 +35,8 @@ export const BLOCK = {
   DIRT_PATH: 1030, HAY_BALE: 1031, BOOKSHELF: 1032, COMPOSTER: 1033, LECTERN: 1034, BLAST_FURNACE: 1035, SMOKER: 1036,
   SMITHING_TABLE: 1037, GRINDSTONE: 1038, FLETCHING_TABLE: 1039, LOOM: 1040, CARTOGRAPHY_TABLE: 1041, STONECUTTER: 1042,
   CAULDRON: 1043, BARREL: 1044, BELL: 1045,
+  ENCHANTING_TABLE: 1046, ANVIL: 1047, CHIPPED_ANVIL: 1048, DAMAGED_ANVIL: 1049,
+  IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -256,6 +258,17 @@ def(1042, 'Stonecutter', { tex: ['stonecutter_top', 'stonecutter_side', 'stone']
 def(1043, 'Cauldron', { tex: ['cauldron_top', 'cauldron_side', 'cauldron_side'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'cauldron', job: 'leatherworker' });
 def(1044, 'Barrel', { tex: ['barrel_top', 'barrel_side', 'barrel_top'], hardness: 2.5, tool: 'axe', job: 'fisherman', container: true });
 def(1045, 'Bell', { tex: ['bell'], hardness: 5, tool: 'pickaxe', transparent: true, shape: 'bell', solid: false });
+// enchanting and anvils, and blocks of ingots and gems
+def(1046, 'Enchanting Table', { tex: ['enchanting_table_top', 'enchanting_table_side', 'obsidian'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'table12', emit: 7 });
+def(1047, 'Anvil', { tex: ['anvil_top', 'anvil', 'anvil'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'anvil', gravity: true });
+def(1048, 'Chipped Anvil', { tex: ['anvil_top_chipped', 'anvil', 'anvil'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'anvil', gravity: true });
+def(1049, 'Damaged Anvil', { tex: ['anvil_top_damaged', 'anvil', 'anvil'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'anvil', gravity: true });
+def(1050, 'Block of Iron', { tex: ['iron_block'], hardness: 5, tool: 'pickaxe', needsTier: 1 });
+def(1051, 'Block of Gold', { tex: ['gold_block'], hardness: 3, tool: 'pickaxe', needsTier: 2 });
+def(1052, 'Block of Diamond', { tex: ['diamond_block'], hardness: 5, tool: 'pickaxe', needsTier: 2 });
+def(1053, 'Block of Emerald', { tex: ['emerald_block'], hardness: 5, tool: 'pickaxe', needsTier: 2 });
+def(1054, 'Block of Lapis Lazuli', { tex: ['lapis_block'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
+def(1055, 'Block of Coal', { tex: ['coal_block'], hardness: 5, tool: 'pickaxe', needsTier: 0 });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
 B.forEach((b) => {
@@ -322,7 +335,7 @@ export const ITEM = {
   BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
   ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
   GLOWSTONE_DUST: 335, QUARTZ: 336, BLAZE_ROD: 337, BLAZE_POWDER: 338, EYE_OF_ENDER: 339, NETHER_BRICK: 340,
-  GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343, PAPER: 344, BOOK: 345,
+  GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343, PAPER: 344, BOOK: 345, ENCHANTED_BOOK: 346, EXPERIENCE_BOTTLE: 347,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -367,6 +380,8 @@ item(290, 'Water Bucket', { icon: 'water_bucket', stack: 1 });
 item(343, 'Lava Bucket', { icon: 'lava_bucket', stack: 1 });
 item(344, 'Paper', { icon: 'paper' });
 item(345, 'Book', { icon: 'book' });
+item(346, 'Enchanted Book', { icon: 'enchanted_book', stack: 1 });
+item(347, "Bottle o' Enchanting", { icon: 'experience_bottle' });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -486,22 +501,38 @@ export const CREATIVE_BLOCKS = B.map((_, id) => id).filter(
 export const CREATIVE_ITEMS = Object.keys(I).map(Number);
 
 // Seconds to break a block with the given held item (Minecraft's formula, simplified).
-export function breakTime(blockId, heldId) {
+// efficiency: the tool's Efficiency enchantment level (adds level² + 1 to the right tool's speed)
+export function breakTime(blockId, heldId, efficiency = 0) {
   const b = BLOCKS[blockId];
   if (b.hardness === 0) return 0;
   if (!Number.isFinite(b.hardness)) return Infinity;
   const tool = toolOf(heldId);
   const rightTool = tool && b.tool && tool.kind === b.tool;
-  const speed = rightTool ? tool.speed : 1;
+  const speed = rightTool ? tool.speed + (efficiency ? efficiency * efficiency + 1 : 0) : 1;
   const canHarvest = b.needsTier === undefined || (rightTool && tool.tier >= b.needsTier);
   return (b.hardness * (canHarvest ? 1.5 : 5)) / speed;
 }
 
+// Blocks Silk Touch picks up as themselves (instead of what they'd drop), and ores Fortune multiplies.
+const SILK = new Set();
+const FORTUNE = new Set();
 // What a block drops when broken with the given item. rand() -> [0, 1)
-export function getDrops(blockId, heldId, rand = Math.random) {
+// ench: the tool's enchantments ({silk_touch: 1} or {fortune: 1-3})
+export function getDrops(blockId, heldId, rand = Math.random, ench = null) {
   const b = BLOCKS[blockId];
   const tool = toolOf(heldId);
   if (b.needsTier !== undefined && !(tool && tool.kind === b.tool && tool.tier >= b.needsTier)) return [];
+  if (ench?.silk_touch && SILK.has(blockId)) return [[blockId, 1]];
+  const drops = baseDrops(blockId, b, tool, rand);
+  const fortune = ench?.fortune || 0;
+  if (fortune && FORTUNE.has(blockId)) {
+    // Minecraft: a bonus multiplier from 1 to fortune + 1 (with a good chance of no bonus)
+    const bonus = Math.max(0, Math.floor(rand() * (fortune + 2)) - 1);
+    return drops.map(([id, n]) => [id, n * (bonus + 1)]);
+  }
+  return drops;
+}
+function baseDrops(blockId, b, tool, rand) {
   switch (blockId) {
     case BLOCK.GRASS:
     case BLOCK.DIRT_PATH:
@@ -561,6 +592,15 @@ export function getDrops(blockId, heldId, rand = Math.random) {
   if (b.redstone === 'head' || b.shape === 'portal' || b.shape === 'end_portal') return [];
   return [[blockItem(blockId), 1]];
 }
+
+for (const name of ['GRASS', 'SNOWY_GRASS', 'DIRT_PATH', 'STONE', 'DEEPSLATE', 'COAL_ORE', 'DEEPSLATE_COAL_ORE', 'IRON_ORE', 'DEEPSLATE_IRON_ORE',
+  'GOLD_ORE', 'DEEPSLATE_GOLD_ORE', 'DIAMOND_ORE', 'DEEPSLATE_DIAMOND_ORE', 'COPPER_ORE', 'DEEPSLATE_COPPER_ORE', 'REDSTONE_ORE',
+  'DEEPSLATE_REDSTONE_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE', 'EMERALD_ORE', 'GLASS', 'ICE', 'LEAVES', 'BIRCH_LEAVES', 'SPRUCE_LEAVES',
+  'ACACIA_LEAVES', 'DARK_OAK_LEAVES', 'JUNGLE_LEAVES', 'CHERRY_LEAVES', 'BOOKSHELF', 'GLOWSTONE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE',
+  'GRAVEL', 'TALL_GRASS', 'FERN', 'DEAD_BUSH', 'CLAY', 'SNOW']) if (BLOCK[name] !== undefined) SILK.add(BLOCK[name]);
+for (const name of ['COAL_ORE', 'DEEPSLATE_COAL_ORE', 'DIAMOND_ORE', 'DEEPSLATE_DIAMOND_ORE', 'EMERALD_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE',
+  'REDSTONE_ORE', 'DEEPSLATE_REDSTONE_ORE', 'COPPER_ORE', 'DEEPSLATE_COPPER_ORE', 'IRON_ORE', 'DEEPSLATE_IRON_ORE', 'GOLD_ORE',
+  'DEEPSLATE_GOLD_ORE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE', 'GLOWSTONE']) FORTUNE.add(BLOCK[name]);
 
 // Furnace recipes: input -> output, and how many items a fuel smelts.
 export const SMELTING = {

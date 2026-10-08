@@ -598,6 +598,31 @@ function drawBlockTile(p, name) {
         else px(x, y, (x < 3 || x > 12) ? shade(C.oak, 0.8) : shade(C.oak, 0.95 + rand() * 0.1));
       }
       break;
+    case 'iron_block': case 'gold_block': case 'diamond_block': case 'emerald_block': case 'lapis_block': case 'coal_block': {
+      const base = { iron_block: [220, 220, 222], gold_block: [245, 205, 60], diamond_block: [100, 225, 215], emerald_block: [60, 200, 100], lapis_block: [40, 70, 180], coal_block: [28, 28, 30] }[name];
+      p.noisy(base, 0.06);
+      for (let i = 0; i < S; i++) { px(i, 0, shade(base, 1.18)); px(0, i, shade(base, 1.18)); px(i, 15, shade(base, 0.72)); px(15, i, shade(base, 0.72)); }
+      if (name === 'diamond_block' || name === 'emerald_block') for (let i = 3; i < 13; i += 4) for (let j = 3; j < 13; j += 4) px(i, j, shade(base, 1.3));
+      break;
+    }
+    case 'enchanting_table_top':
+      drawBlockTile(p, 'obsidian');
+      for (let y = 1; y < 15; y++) for (let x = 1; x < 15; x++) px(x, y, shade([150, 30, 30], 0.8 + rand() * 0.25));
+      for (let y = 4; y < 12; y++) for (let x = 3; x < 13; x++) px(x, y, x === 7 || x === 8 ? [140, 120, 90] : [235, 225, 200]);
+      break;
+    case 'enchanting_table_side':
+      drawBlockTile(p, 'obsidian');
+      for (let x = 0; x < S; x++) for (let y = 0; y < 4; y++) px(x, y, shade([150, 30, 30], 0.8 + rand() * 0.25));
+      for (let x = 0; x < S; x++) px(x, 4, [90, 220, 210]);
+      break;
+    case 'anvil': p.noisy([65, 65, 68], 0.1); break;
+    case 'anvil_top': case 'anvil_top_chipped': case 'anvil_top_damaged': {
+      p.noisy([70, 70, 74], 0.1);
+      for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) px(x, y, shade([95, 95, 100], 0.9 + rand() * 0.15));
+      const cracks = name === 'anvil_top' ? 0 : name === 'anvil_top_chipped' ? 2 : 5;
+      for (let c = 0; c < cracks; c++) { let x = 3 + Math.floor(rand() * 10), y = 3 + Math.floor(rand() * 3); for (let i = 0; i < 6; i++) { px(x, y, [40, 40, 42]); y++; x += rand() < 0.5 ? 1 : -1; } }
+      break;
+    }
     case 'copper_block':
       p.noisy([200, 110, 75], 0.08);
       for (let i = 0; i < S; i++) { px(i, 0, [230, 140, 100]); px(0, i, [230, 140, 100]); px(i, 15, [150, 80, 55]); px(15, i, [150, 80, 55]); }
@@ -1096,6 +1121,15 @@ function drawItem(p, icon) {
     case 'raw_copper': blob([210, 120, 80], 8, 8.5, 5, 4.5, 0.4); p.specks([90, 170, 130], 4); break;
     case 'copper_ingot':
       for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([225, 125, 85], y === 6 ? 1.1 : 0.9 + rand() * 0.1));
+      break;
+    case 'enchanted_book':
+      for (let y = 3; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, x === 4 ? [70, 20, 90] : shade([120, 40, 150], 0.9 + rand() * 0.15));
+      for (let y = 4; y < 12; y++) px(11, y, [235, 230, 210]);
+      px(7, 6, [255, 230, 120]); px(8, 7, [255, 230, 120]); px(6, 8, [255, 230, 120]);
+      break;
+    case 'experience_bottle':
+      for (let y = 5; y < 14; y++) for (let x = 5; x < 11; x++) px(x, y, shade([120, 220, 90], 0.8 + rand() * 0.3), 0.85);
+      for (let x = 6; x < 10; x++) { px(x, 4, [180, 180, 190]); px(x, 3, [150, 110, 70]); }
       break;
     case 'paper':
       for (let y = 3; y < 13; y++) for (let x = 3 + (y % 3 === 0 ? 1 : 0); x < 13; x++) px(x, y, shade([240, 240, 235], 0.92 + rand() * 0.08));

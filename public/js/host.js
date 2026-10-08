@@ -17,6 +17,7 @@ import { FluidSim, flowAt } from './fluids.js';
 import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
+import { validEnch, level as enchLevel } from './enchant.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -60,6 +61,7 @@ const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
+const UNDEAD = new Set(['zombie', 'husk', 'skeleton', 'stray', 'wither_skeleton', 'zombified_piglin']);
 const ORE_INPUTS = new Set([ITEM.RAW_IRON, ITEM.RAW_GOLD, ITEM.RAW_COPPER, BLOCK.IRON_ORE, BLOCK.GOLD_ORE, BLOCK.COPPER_ORE,
   BLOCK.DEEPSLATE_IRON_ORE, BLOCK.DEEPSLATE_GOLD_ORE, BLOCK.DEEPSLATE_COPPER_ORE, BLOCK.NETHER_GOLD_ORE, BLOCK.NETHER_QUARTZ_ORE]);
 // How readily a block catches fire and how fast it burns away ([catch, burn]), like Minecraft, or null.
@@ -151,8 +153,11 @@ function bucket(rate, burst, now) {
 
 function validStack(s) {
   return s === null || (s && typeof s === 'object' && isValidId(s.id) && isInt(s.count) &&
-    s.count > 0 && s.count <= maxStack(s.id) && (s.dur === undefined || (isInt(s.dur) && s.dur >= 0)));
+    s.count > 0 && s.count <= maxStack(s.id) && (s.dur === undefined || (isInt(s.dur) && s.dur >= 0)) &&
+    (s.ench === undefined || (validEnch(s.ench) && s.count === 1)) && (s.rc === undefined || (isInt(s.rc) && s.rc >= 0 && s.rc < 40)));
 }
+// the enchantments and anvil uses of a stack, to carry along (see inventory.js extras)
+const extrasOf = (s) => (s && (s.ench || s.rc) ? { ...(s.ench ? { ench: s.ench } : {}), ...(s.rc ? { rc: s.rc } : {}) } : undefined);
 
 export class GameHost {
   // save: from newWorldSave() or a previous serialize()
@@ -296,6 +301,7 @@ export class GameHost {
       bed: p.bed ?? prev.bed ?? null,
       xp: p.xp ?? prev.xp ?? 0,
       armor: p.armor ?? prev.armor ?? null,
+      enchSeed: p.enchSeed ?? prev.enchSeed,
       dim: p.dim,
     };
     this.dirty = true;
@@ -339,6 +345,8 @@ export class GameHost {
       case 'shoot': return this.onShoot(p, msg);
       case 'eye': return this.onEye(p);
       case 'trade': return this.onTrade(p, msg);
+      case 'thorns': return this.onThorns(p, msg);
+      case 'anvil_used': return this.onAnvilUsed(p, msg);
     }
   }
 
@@ -377,6 +385,7 @@ export class GameHost {
       bed: saved?.bed ?? null,
       xp: saved?.xp ?? 0,
       armor: saved?.armor ?? null,
+      enchSeed: saved?.enchSeed,
       isHost: !!msg.isHost && peerId === 'local',
       moved: true,
       canBuild: bucket(25, 50, this.now),
@@ -396,7 +405,7 @@ export class GameHost {
       spawn: this.save.spawn,
       time: this.time,
       mode: p.mode,
-      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor },
+      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed },
       players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
     this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, peerId);
@@ -480,11 +489,12 @@ export class GameHost {
       (current !== BLOCK.BEDROCK || creative) && this.inReach(p, x, y, z) && p.canBuild();
     if (!ok) return this.correct(peerId, x, y, z);
     const held = isValidId(msg.tool) ? msg.tool : 0;
-    this.breakBlock(x, y, z, creative ? null : held, peerId);
+    this.breakBlock(x, y, z, creative ? null : held, peerId, validEnch(msg.ench) ? msg.ench : null);
   }
 
   // Removes a block (dropping items unless tool === null) and handles what that causes.
-  breakBlock(x, y, z, tool, exceptPeer = null) {
+  // ench: the tool's enchantments (Silk Touch, Fortune)
+  breakBlock(x, y, z, tool, exceptPeer = null, ench = null) {
     const id = this.world.getBlock(x, y, z);
     let dropFrom = id;
     const pb = BLOCKS[id];
@@ -513,22 +523,22 @@ export class GameHost {
     this.setBlock(x, y, z, flood ? BLOCK.WATER : BLOCK.AIR, exceptPeer);
     if (flood && exceptPeer) this.send(exceptPeer, { t: 'set', x, y, z, id: BLOCK.WATER });
     if (tool !== null) {
-      const drops = getDrops(dropFrom, tool, this.random);
+      const drops = getDrops(dropFrom, tool, this.random, ench);
       for (const [dropId, count] of drops) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, dropId, count);
       const xp = ORE_XP[id];
-      if (xp && drops.length) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
+      if (xp && drops.length && !(ench?.silk_touch && drops[0][0] === id)) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
     }
     if (isFurnace(id)) {
       const key = `${x},${y},${z}`;
       const f = this.furnaces.get(key);
-      if (f) for (const s of f.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur);
+      if (f) for (const s of f.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur, undefined, extrasOf(s));
       this.furnaces.delete(key);
       this.furnaceViewers.delete(key);
     }
     if (isContainer(id)) {
       const key = `${x},${y},${z}`;
       const c = this.chests.get(key);
-      if (c) for (const s of c.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur);
+      if (c) for (const s of c.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur, undefined, extrasOf(s));
       for (const peer of this.chestViewers.get(key) || []) this.send(peer, { t: 'chest_gone' });
       this.chests.delete(key);
       this.chestViewers.delete(key);
@@ -617,9 +627,10 @@ export class GameHost {
   }
 
   // ---------- entities ----------
-  spawnItem(x, y, z, id, count = 1, dur, vel) {
+  // extra: {ench, rc} for enchanted items
+  spawnItem(x, y, z, id, count = 1, dur, vel, extra) {
     const e = {
-      id: this.nextEntityId++, type: 'item', item: id, count, dur,
+      id: this.nextEntityId++, type: 'item', item: id, count, dur, ...extra,
       x, y, z, halfW: 0.125, height: 0.25,
       vx: vel ? vel[0] : (this.random() - 0.5) * 2, vy: vel ? vel[1] : 3, vz: vel ? vel[2] : (this.random() - 0.5) * 2,
       age: 0, yaw: this.random() * 6.28,
@@ -680,7 +691,7 @@ export class GameHost {
     if (!e || e.type !== 'item' || e.dim !== p.dim || e.age < (e.pickupAfter ?? PICKUP_DELAY)) return;
     if (Math.hypot(e.x - p.x, e.y - (p.y + 0.9), e.z - p.z) > 3) return;
     this.entities.delete(e.id);
-    const give = { t: 'give', id: e.item, count: e.count };
+    const give = { t: 'give', id: e.item, count: e.count, ...extrasOf(e) };
     if (e.dur !== undefined) give.dur = e.dur;
     this.send(peerId, give);
   }
@@ -693,7 +704,7 @@ export class GameHost {
     const speed = 5;
     const e = this.spawnItem(p.x, p.y + 1.4, p.z, s.id, s.count, s.dur, [
       -Math.sin(dir) * Math.cos(pitch) * speed, Math.sin(pitch) * speed + 1.5, -Math.cos(dir) * Math.cos(pitch) * speed,
-    ]);
+    ], extrasOf(s));
     e.pickupAfter = 1.5;
   }
 
@@ -701,7 +712,7 @@ export class GameHost {
     p.dead = true;
     if (Array.isArray(msg.items)) {
       for (const s of msg.items.slice(0, 40)) {
-        if (validStack(s) && s) this.spawnItem(p.x, p.y + 0.5, p.z, s.id, s.count, s.dur);
+        if (validStack(s) && s) this.spawnItem(p.x, p.y + 0.5, p.z, s.id, s.count, s.dur, undefined, extrasOf(s));
       }
     }
     // like Minecraft: drop 7 points per level (at most 100) and lose the rest
@@ -726,17 +737,42 @@ export class GameHost {
     if (!e || !isMob(e) || e.dim !== p.dim || !p.canBuild()) return;
     if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
     const tool = toolOf(msg.tool);
-    const damage = tool && tool.kind !== 'bow' ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
-    this.hurtMob(e, damage, e.x - p.x, e.z - p.z, p.name);
+    let damage = tool && tool.kind !== 'bow' ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
+    const ench = validEnch(msg.ench) ? msg.ench : {};
+    // Sharpness, Smite (undead) and Bane of Arthropods (spiders), like Minecraft
+    if (ench.sharpness) damage += 0.5 * ench.sharpness + 0.5;
+    if (ench.smite && UNDEAD.has(e.type)) damage += 2.5 * ench.smite;
+    if (ench.bane_of_arthropods && e.type === 'spider') damage += 2.5 * ench.bane_of_arthropods;
+    if (ench.fire_aspect && !MOB_TYPES[e.type].fireproof) e.fireTime = Math.max(e.fireTime || 0, 4 * ench.fire_aspect);
+    e.looting = ench.looting || 0;
+    this.hurtMob(e, damage, e.x - p.x, e.z - p.z, p.name, 1 + (ench.knockback || 0) * 0.8);
+  }
+
+  // Each use of an anvil has a 12% chance to damage it (anvil, chipped, damaged, gone).
+  onAnvilUsed(p, msg) {
+    if (!this.validCoords(msg) || !this.inReach(p, msg.x, msg.y, msg.z) || p.mode === 'creative') return;
+    const id = this.world.getBlock(msg.x, msg.y, msg.z);
+    if (id !== BLOCK.ANVIL && id !== BLOCK.CHIPPED_ANVIL && id !== BLOCK.DAMAGED_ANVIL) return;
+    const broke = this.random() < 0.12;
+    if (broke) this.setBlock(msg.x, msg.y, msg.z, id === BLOCK.DAMAGED_ANVIL ? BLOCK.AIR : id + 1);
+    this.broadcastHere({ t: 'sfx', s: broke && id === BLOCK.DAMAGED_ANVIL ? 'anvilBreak' : 'anvil', x: msg.x, y: msg.y, z: msg.z });
+  }
+
+  // Thorns on a player's armor hurt the mob that hit them (the client rolls the chance).
+  onThorns(p, msg) {
+    const e = this.entities.get(msg.e);
+    if (!e || !isMob(e) || e.dim !== p.dim || !isInt(msg.amount) || msg.amount < 1 || msg.amount > 4) return;
+    if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 5) return;
+    this.hurtMob(e, msg.amount, e.x - p.x, e.z - p.z, null);
   }
 
   // Damage with knockback away from (dx, dz); by: the player's name (angers neutral mobs).
-  hurtMob(e, damage, dx, dz, by) {
+  hurtMob(e, damage, dx, dz, by, knock = 1) {
     if (MOB_TYPES[e.type].boss) return this.hurtDragon(e, damage, by);
     e.hp -= damage;
     const len = Math.hypot(dx, dz) || 1;
-    e.vx = (dx / len) * 6;
-    e.vz = (dz / len) * 6;
+    e.vx = (dx / len) * 6 * knock;
+    e.vz = (dz / len) * 6 * knock;
     e.vy = 4;
     e.panic = 4;
     e.hurtUntil = this.now() + 400;
@@ -770,7 +806,11 @@ export class GameHost {
       blaze: [[ITEM.BLAZE_ROD, Math.floor(r() * 2)]],
       wither_skeleton: [[ITEM.COAL, r() < 1 / 3 ? 1 : 0], [ITEM.BONE, Math.floor(r() * 3)]],
     }[e.type] || [];
-    for (const [id, n] of drops) if (n > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n);
+    // Looting: up to one more of each drop per level
+    for (const [id, n] of drops) {
+      const extra = e.looting && n >= 0 && id !== BLOCK.WOOL ? Math.floor(this.random() * (e.looting + 1)) : 0;
+      if (n + extra > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n + extra);
+    }
     if (e.type !== 'villager' && e.type !== 'iron_golem') this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
     if (e.type === 'villager') this.sys(`Villager died${e.angryAt ? ` (killed by ${e.angryAt})` : ''}`);
     this.broadcast({ t: 'mobdeath', e: e.id });
@@ -841,7 +881,7 @@ export class GameHost {
   }
 
   give(peerId, s) {
-    const msg = { t: 'give', id: s.id, count: s.count };
+    const msg = { t: 'give', id: s.id, count: s.count, ...extrasOf(s) };
     if (s.dur !== undefined) msg.dur = s.dur;
     this.send(peerId, msg);
   }
@@ -1052,6 +1092,11 @@ export class GameHost {
       vx: dir[0] * speed, vy: dir[1] * speed, vz: dir[2] * speed, yaw: msg.yaw, age: 0,
       player: p.name, damage: Math.ceil(power * 6) + (power >= 1 ? Math.floor(this.random() * 4) : 0), // a full draw can crit
     };
+    // Power adds 25% per level (+25%), Punch knocks back further, Flame sets the target alight
+    const ench = validEnch(msg.ench) ? msg.ench : {};
+    if (ench.power) a.damage = Math.ceil(a.damage * (1 + 0.25 * (ench.power + 1)));
+    a.punch = ench.punch || 0;
+    a.flame = !!ench.flame;
     this.addEntity(a);
   }
 
@@ -1068,7 +1113,8 @@ export class GameHost {
           if (!isMob(e) || e.id === a.id || e.dim !== this.ctx) continue;
           const t = MOB_TYPES[e.type];
           if (Math.abs(a.x - e.x) < t.halfW + 0.1 && Math.abs(a.z - e.z) < t.halfW + 0.1 && a.y > e.y && a.y < e.y + t.height) {
-            this.hurtMob(e, a.damage, a.vx, a.vz, a.player);
+            if (a.flame && !MOB_TYPES[e.type].fireproof) e.fireTime = Math.max(e.fireTime || 0, 5);
+            this.hurtMob(e, a.damage, a.vx, a.vz, a.player, 1 + (a.punch || 0));
             this.entities.delete(a.id);
             return;
           }
@@ -1174,6 +1220,7 @@ export class GameHost {
     if (isNum(msg.food)) p.food = Math.max(0, Math.min(20, msg.food));
     if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
     if (validArmor(msg.armor)) p.armor = msg.armor;
+    if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;
     this.storePlayer(p);
   }
 
@@ -1326,7 +1373,7 @@ export class GameHost {
   // Identical dropped items lying close together become one stack (like Minecraft),
   // which keeps the number of things sent to players down.
   mergeItems() {
-    const items = [...this.entities.values()].filter((e) => e.type === 'item' && e.dur === undefined);
+    const items = [...this.entities.values()].filter((e) => e.type === 'item' && e.dur === undefined && !e.ench);
     // (items in different dimensions never merge)
     for (let i = 0; i < items.length; i++) {
       const a = items[i];
@@ -1489,7 +1536,7 @@ export class GameHost {
             targetSpeed = dist > 1.2 ? t.speed : 0;
             if (dist < 1.6 && Math.abs(p.y - e.y) < 1.8 && e.attackCooldown === 0) {
               e.attackCooldown = 1;
-              this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: `was slain by ${MOB_NAMES[e.type] || 'a Zombie'}` });
+              this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: `was slain by ${MOB_NAMES[e.type] || 'a Zombie'}`, by: e.id });
             }
           }
         } else if (e.type === 'creeper' && e.fuse) {

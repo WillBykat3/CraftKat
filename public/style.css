@@ -472,6 +472,21 @@ button.danger:hover { color: #ff8080; }
 .tab { font-size: 16px; min-height: 32px; padding: 4px 10px 2px; flex: 0; }
 .tab.active { background: #4a7d2f linear-gradient(#6aa84a, #3f6d28); }
 .creative-grid { display: grid; grid-template-columns: repeat(9, 40px); max-height: 210px; overflow-y: auto; padding-right: 4px; }
+.station-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.enchant-list { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.enchant-option { display: grid; grid-template-columns: 1fr auto; text-align: left; padding: 3px 6px; background: #c8b48a; border: 2px solid #5a4a2a; font: inherit; cursor: pointer; min-height: 38px; }
+.enchant-option:hover:not(:disabled) { background: #e0cc9a; }
+.enchant-option:disabled { background: #8a7a60; color: #4a4030; cursor: default; }
+.enchant-hint { font-size: 12px; color: #4a3a6a; font-style: italic; }
+.enchant-cost { color: #2a8a1a; font-size: 18px; grid-row: span 2; align-self: center; }
+.enchant-option:disabled .enchant-cost { color: #405030; }
+.enchant-lapis { font-size: 11px; color: #3a3a7a; }
+.anvil-cost { color: #2a8a1a; min-height: 18px; margin: 0 0 6px; }
+.anvil-cost.too-much { color: #c03030; }
+.slot.disabled { opacity: 0.5; }
+.slot.glint::after { content: ''; position: absolute; inset: 2px; pointer-events: none; background: linear-gradient(115deg, transparent 30%, rgba(190, 120, 255, 0.45) 45%, transparent 60%); background-size: 250% 100%; animation: glint 2.5s linear infinite; }
+@keyframes glint { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+#tooltip { white-space: pre-line; }
 .trade-xp { height: 5px; background: #333; margin: 2px 0 6px; border: 1px solid #111; }
 .trade-xp-fill { height: 100%; background: #7cfc3f; }
 .trade-list { display: flex; flex-direction: column; gap: 3px; max-height: 230px; overflow-y: auto; margin-bottom: 6px; }
