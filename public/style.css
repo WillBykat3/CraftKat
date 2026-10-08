@@ -224,6 +224,11 @@ button.danger:hover { color: #ff8080; }
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+/* boss health bar, like Minecraft's: the name over a pink bar at the top of the screen */
+#bossbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: min(364px, 80vw); text-align: center; }
+#boss-name { color: #fff; text-shadow: 2px 2px 0 #3f3f3f; font-size: 16px; margin-bottom: 4px; }
+#boss-track { height: 10px; background: #4a1a3a; border: 2px solid #1a0612; box-sizing: border-box; }
+#boss-fill { height: 100%; width: 100%; background: linear-gradient(#ff7ae6, #d02aa8); transition: width 0.2s; }
 #hud.hidden-hud > *:not(#chat) { display: none; }
 #crosshair {
   position: fixed;

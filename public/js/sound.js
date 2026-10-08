@@ -123,6 +123,13 @@ export const sound = {
     [110, 165, 220, 330].forEach((f, i) => setTimeout(() => tone({ freq: f, endFreq: f * 1.5, duration: 2.5, gain: 0.1, type: 'sawtooth' }), i * 150));
     burst({ freq: 200, q: 0.5, duration: 2, gain: 0.4, type: 'lowpass' });
   },
+  // the Ender Dragon: a deep growl, and its long death roar
+  dragonGrowl() { tone({ freq: 90, endFreq: 60, duration: 1.2, gain: 0.35, type: 'sawtooth' }); burst({ freq: 300, q: 0.7, duration: 1, gain: 0.3, type: 'lowpass' }); },
+  dragonDeath() {
+    tone({ freq: 160, endFreq: 50, duration: 4, gain: 0.35, type: 'sawtooth' });
+    tone({ freq: 240, endFreq: 70, duration: 4, gain: 0.2, type: 'square' });
+    burst({ freq: 200, q: 0.4, duration: 4, gain: 0.5, type: 'lowpass' });
+  },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)
@@ -185,6 +192,8 @@ export const sound = {
   mobHurt(kind) {
     if (kind === 'zombie' || kind === 'husk') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });
     else if (kind === 'enderman') { tone({ freq: 900, endFreq: 300, duration: 0.6, gain: 0.25, type: 'sawtooth' }); tone({ freq: 1250, endFreq: 420, duration: 0.6, gain: 0.15, type: 'square' }); }
+    else if (kind === 'ender_dragon') { tone({ freq: 120, endFreq: 70, duration: 0.6, gain: 0.35, type: 'sawtooth' }); burst({ freq: 400, q: 0.5, duration: 0.5, gain: 0.3, type: 'lowpass' }); }
+    else if (kind === 'end_crystal') return;
     else if (kind === 'ghast') tone({ freq: 1200, endFreq: 500, duration: 0.6, gain: 0.2, type: 'sawtooth' });
     else if (kind === 'zombified_piglin') { tone({ freq: 260, endFreq: 120, duration: 0.3, gain: 0.3, type: 'sawtooth' }); burst({ freq: 700, q: 2, duration: 0.15, gain: 0.2 }); }
     else if (kind === 'blaze') { burst({ freq: 300, q: 0.5, duration: 0.4, gain: 0.3, type: 'lowpass' }); tone({ freq: 180, endFreq: 120, duration: 0.3, gain: 0.15, type: 'square' }); }

@@ -152,6 +152,13 @@ export class Game {
         return;
       }
       case 'mobdeath': return;
+      case 'boss':
+        $('bossbar').classList.toggle('hidden', !(msg.hp > 0));
+        if (msg.hp > 0) {
+          $('boss-name').textContent = msg.name || 'Ender Dragon';
+          $('boss-fill').style.width = `${(msg.hp / (msg.max || 200)) * 100}%`;
+        }
+        return;
       case 'sfx':
         if ((msg.everywhere || Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 64) && typeof sound[msg.s] === 'function') sound[msg.s]();
         return;
@@ -237,6 +244,7 @@ export class Game {
     this.r.startWorld(seed, msg.edits, gen, msg.dim);
     this.r.setRenderDistance(this.settings.renderDistance);
     this.portalGlow = 0;
+    $('bossbar').classList.add('hidden');
     sound.portal(true);
     // "Loading terrain..." until the ground under us is drawn
     this.loadingTerrain = performance.now();

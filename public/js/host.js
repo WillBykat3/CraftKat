@@ -13,7 +13,7 @@ import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
 import { BIOME, FROZEN } from './biomes.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { RedstoneSim } from './redstone-sim.js';
-import { END_PLATFORM } from './terrain-end.js';
+import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 
 export const DAY_TICKS = 24000;     // one full day
@@ -39,7 +39,12 @@ const MOB_TYPES = {
   ghast: { hp: 10, halfW: 2, height: 4, speed: 1.6, hostile: true, flies: true, fireproof: true },
   blaze: { hp: 20, halfW: 0.3, height: 1.8, speed: 1.8, hostile: true, flies: true, fireproof: true, damage: 6 },
   wither_skeleton: { hp: 20, halfW: 0.35, height: 2.4, speed: 2.4, hostile: true, damage: 8, fireproof: true },
+  // the End
+  ender_dragon: { hp: 200, halfW: 3.5, height: 3, speed: 14, hostile: true, boss: true, fireproof: true, damage: 10 },
+  end_crystal: { hp: 1, halfW: 1, height: 2, speed: 0, hostile: false, still: true, fireproof: true },
 };
+const DRAGON_HOME = [0, FOUNTAIN_Y + 22, 0]; // the dragon circles around (and above) the exit fountain
+const SOLID_IN_END = new Set([BLOCK.END_STONE, BLOCK.OBSIDIAN, BLOCK.BEDROCK, BLOCK.END_PORTAL, BLOCK.END_PORTAL_FRAME, BLOCK.END_PORTAL_FRAME + 1]);
 const MOB_NAMES = {
   zombie: 'a Zombie', husk: 'a Husk', spider: 'a Spider', enderman: 'an Enderman', skeleton: 'a Skeleton', stray: 'a Stray',
   zombified_piglin: 'a Zombified Piglin', blaze: 'a Blaze', wither_skeleton: 'a Wither Skeleton',
@@ -158,6 +163,8 @@ export class GameHost {
       };
       this.dims[dim].redstone = new RedstoneSim(this, world);
     }
+    const end = saved.end || {};
+    this.endState = { dragonKilled: !!end.dragonKilled, crystalsGone: Array.isArray(end.crystalsGone) ? end.crystalsGone.filter(isInt) : [] };
     this.portals = Array.isArray(save.portals) ? save.portals.filter((q) => Array.isArray(q) && DIMENSIONS.includes(q[0])) : []; // [dim, x, y, z, axis]
     this.players = new Map();   // peerId -> player
     this.entities = new Map();  // id -> entity
@@ -689,6 +696,7 @@ export class GameHost {
 
   // Damage with knockback away from (dx, dz); by: the player's name (angers neutral mobs).
   hurtMob(e, damage, dx, dz, by) {
+    if (MOB_TYPES[e.type].boss) return this.hurtDragon(e, damage, by);
     e.hp -= damage;
     const len = Math.hypot(dx, dz) || 1;
     e.vx = (dx / len) * 6;
@@ -703,6 +711,8 @@ export class GameHost {
   }
 
   killMob(e) {
+    if (e.type === 'ender_dragon') return this.dragonDied(e);
+    if (e.type === 'end_crystal') return this.crystalBroken(e);
     this.entities.delete(e.id);
     const r = this.random;
     const drops = {
@@ -1222,6 +1232,7 @@ export class GameHost {
     }
     this.tickEntities(dt);
     this.tickPortals(dt);
+    this.tickEndFight();
     this.ctx = 'overworld';
     this.tickSleep(dt);
 
@@ -1302,6 +1313,8 @@ export class GameHost {
       e.age += dt;
       const near = this.nearestPlayer(e, 128);
       if (e.type === 'tnt') { this.tickTnt(e, dt); continue; } // lit TNT always goes off
+      if (e.type === 'end_crystal') continue;                  // crystals just sit there
+      if (e.type === 'ender_dragon') { if (near) this.tickDragon(e, dt); continue; } // waits for you to come back
       if (!near) {
         // nobody around: items keep ageing, mobs vanish
         if (e.type !== 'item' || e.age > ITEM_LIFETIME) this.entities.delete(e.id);
@@ -1310,7 +1323,8 @@ export class GameHost {
       // don't simulate in unloaded areas far from everyone
       if (near[1] > 96) continue;
       if (e.type === 'arrow') { this.tickArrow(e, dt); continue; }
-      if (e.type === 'fireball' || e.type === 'small_fireball') { this.tickFireball(e, dt); continue; }
+      if (e.type === 'fireball' || e.type === 'small_fireball' || e.type === 'dragon_fireball') { this.tickFireball(e, dt); continue; }
+      if (e.type === 'breath') { this.tickBreath(e, dt); continue; }
       if (e.type === 'eye') { this.tickEye(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
@@ -1661,11 +1675,17 @@ export class GameHost {
   tickFireball(f, dt) {
     f.age += dt;
     if (f.age > 10) { this.entities.delete(f.id); return; }
-    const big = f.type === 'fireball';
+    const big = f.type !== 'small_fireball';
+    const breath = f.type === 'dragon_fireball';
     const steps = Math.max(1, Math.ceil(Math.hypot(f.vx, f.vy, f.vz) * dt / 0.25));
     const hit = (by) => {
       this.entities.delete(f.id);
-      if (big) this.explode(f.x, f.y + 0.5, f.z, 1, f.cause);
+      if (breath) {
+        // leaves a cloud of dragon's breath on the ground
+        let y = Math.floor(f.y);
+        while (y > 1 && !BLOCKS[this.world.getBlock(Math.floor(f.x), y - 1, Math.floor(f.z))].solid && y > f.y - 8) y--;
+        this.addEntity({ id: this.nextEntityId++, type: 'breath', x: f.x, y, z: f.z, halfW: 3, height: 1, vx: 0, vy: 0, vz: 0, yaw: 0, age: 0 });
+      } else if (big) this.explode(f.x, f.y + 0.5, f.z, 1, f.cause);
       return by;
     };
     for (let i = 0; i < steps; i++) {
@@ -1968,9 +1988,197 @@ export class GameHost {
     return false;
   }
 
+  // ---------- the End fight ----------
+  // When someone is in the End and the dragon is still alive, it's there, with an
+  // end crystal on top of every obsidian pillar (until they're broken).
+  tickEndFight() {
+    this.ctx = 'end';
+    const here = this.here();
+    const dragon = [...this.entities.values()].find((e) => e.type === 'ender_dragon');
+    if (!here.length || this.endState.dragonKilled) {
+      if (this.bossShown && !here.length) this.bossShown = false;
+      return;
+    }
+    if (!dragon) {
+      const d = this.spawnMob('ender_dragon', DRAGON_HOME[0] + 40, DRAGON_HOME[1], DRAGON_HOME[2]);
+      d.phase = 'circle'; d.phaseTime = 0; d.angle = 0;
+      this.dims.end.world.other.pillars.forEach((pl, i) => {
+        if (this.endState.crystalsGone.includes(i)) return;
+        const c = this.spawnMob('end_crystal', pl.x + 0.5, pl.top + 2, pl.z + 0.5);
+        c.pillar = i;
+        c.yaw = 0;
+      });
+      return;
+    }
+    // the boss bar, for everyone in the End
+    const hp = Math.max(0, Math.round(dragon.hp));
+    if (hp !== this.bossHp || !this.bossShown) {
+      this.bossHp = hp;
+      this.bossShown = true;
+      this.broadcastHere({ t: 'boss', name: 'Ender Dragon', hp, max: MOB_TYPES.ender_dragon.hp });
+    }
+  }
+
+  // The dragon circles the island, now and then dives at a player or swoops down to
+  // perch on the exit fountain (that's when it's easiest to hit), and smashes through
+  // anything but end stone and obsidian.
+  tickDragon(e, dt) {
+    const t = MOB_TYPES.ender_dragon;
+    e.phaseTime += dt;
+    const target = this.nearestPlayer(e, 150, true);
+    let goal, speed = t.speed;
+    if (e.phase === 'circle') {
+      e.angle += dt * 0.28;
+      goal = [DRAGON_HOME[0] + Math.cos(e.angle) * 50, DRAGON_HOME[1] + Math.sin(e.angle * 2) * 6, DRAGON_HOME[2] + Math.sin(e.angle) * 50];
+      if (e.phaseTime > 12 && target) {
+        const r = this.random();
+        e.phase = r < 0.45 ? 'charge' : r < 0.75 ? 'strafe' : 'perch';
+        e.phaseTime = 0;
+      }
+    } else if (e.phase === 'charge') {
+      if (!target || e.phaseTime > 6) { e.phase = 'circle'; e.phaseTime = 0; }
+      else goal = [target[0].x, target[0].y + 1, target[0].z];
+      speed *= 1.3;
+    } else if (e.phase === 'strafe') {
+      // fly past and spit a fireball of dragon's breath
+      if (!target || e.phaseTime > 8) { e.phase = 'circle'; e.phaseTime = 0; }
+      else {
+        const [p, dist] = target;
+        goal = [p.x, p.y + 18, p.z];
+        if (dist < 48 && !e.shot && this.canSee(e.x, e.y + 1.5, e.z, p.x, p.y + 1.5, p.z)) {
+          e.shot = true;
+          const f = this.shootFireball(e, p, true);
+          f.type = 'dragon_fireball';
+          f.cause = "was killed by dragon's breath";
+          this.broadcastHere({ t: 'sfx', s: 'dragonGrowl', x: e.x, y: e.y, z: e.z });
+        }
+        if (dist < 20 && e.shot) { e.phase = 'circle'; e.phaseTime = 0; e.shot = false; }
+      }
+    } else if (e.phase === 'perch') {
+      goal = [0.5, FOUNTAIN_Y + 4, 0.5];
+      const d = Math.hypot(e.x - goal[0], e.y - goal[1], e.z - goal[2]);
+      if (d < 2 && !e.perched) { e.perched = true; e.phaseTime = 0; }
+      if (e.perched) {
+        goal = [e.x, e.y, e.z];
+        if (target) e.yaw = Math.atan2(-(target[0].x - e.x), -(target[0].z - e.z));
+        if (e.phaseTime > 9) { e.perched = false; e.phase = 'circle'; e.phaseTime = 0; e.angle = Math.atan2(e.z, e.x); }
+      }
+      speed *= 0.7;
+    }
+    if (goal) {
+      const dx = goal[0] - e.x, dy = goal[1] - e.y, dz = goal[2] - e.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const k = Math.min(1, dt * 1.5);
+      const want = Math.min(speed, len * 2);
+      e.vx += (dx / len * want - e.vx) * k;
+      e.vy += (dy / len * want - e.vy) * k;
+      e.vz += (dz / len * want - e.vz) * k;
+      e.x += e.vx * dt; e.y += e.vy * dt; e.z += e.vz * dt;
+      if (!e.perched && Math.hypot(e.vx, e.vz) > 0.5) e.yaw = Math.atan2(-e.vx, -e.vz);
+    }
+    // crystals heal it
+    e.healTimer = (e.healTimer || 0) + dt;
+    let healer = null, hd = 32;
+    for (const c of this.entities.values()) {
+      if (c.type !== 'end_crystal') continue;
+      const d = Math.hypot(c.x - e.x, c.y - e.y, c.z - e.z);
+      c.charge = 0;
+      if (d < hd) { hd = d; healer = c; }
+    }
+    e.healer = healer?.id ?? null;
+    if (healer) {
+      healer.charge = 2; // the beam shows
+      if (e.healTimer >= 0.5) { e.healTimer = 0; e.hp = Math.min(t.hp, e.hp + 1); }
+    }
+    // running into it hurts and throws you back
+    for (const p of this.here()) {
+      if (p.dead || p.mode !== 'survival') continue;
+      const dx = p.x - e.x, dz = p.z - e.z;
+      if (Math.hypot(dx, dz) < t.halfW + 0.5 && p.y + 1.8 > e.y - 0.5 && p.y < e.y + t.height) {
+        if ((p.dragonHit || 0) > this.now()) continue;
+        p.dragonHit = this.now() + 1000;
+        this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: 'was slain by Ender Dragon', knock: 3 });
+      }
+    }
+    // smash blocks it flies through
+    e.smash = (e.smash || 0) + dt;
+    if (e.smash >= 0.25) {
+      e.smash = 0;
+      const bx = Math.floor(e.x), by = Math.floor(e.y), bz = Math.floor(e.z);
+      for (let dx = -2; dx <= 2; dx++) for (let dy = 0; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+        const id = this.world.getBlock(bx + dx, by + dy, bz + dz);
+        if (id !== BLOCK.AIR && !BLOCKS[id].liquid && !SOLID_IN_END.has(id)) this.setBlock(bx + dx, by + dy, bz + dz, BLOCK.AIR);
+      }
+    }
+  }
+
+  // Hits on the dragon: full damage while it's perched, otherwise like hitting its body (a quarter, plus 1).
+  hurtDragon(e, damage, by) {
+    if (e.hp <= 0) return;
+    e.hp -= e.perched || damage >= 100 ? damage : damage / 4 + 1;
+    if (by) e.angryAt = by;
+    this.broadcastHere({ t: 'mobhurt', e: e.id });
+    if (e.hp <= 0) this.killMob(e);
+  }
+
+  crystalBroken(e) {
+    this.entities.delete(e.id);
+    this.broadcastHere({ t: 'mobdeath', e: e.id });
+    if (Number.isInteger(e.pillar) && !this.endState.crystalsGone.includes(e.pillar)) this.endState.crystalsGone.push(e.pillar);
+    this.dirty = true;
+    // a dragon being healed by it gets hurt
+    const dragon = [...this.entities.values()].find((d) => d.type === 'ender_dragon');
+    if (dragon && dragon.healer === e.id) this.hurtDragon(dragon, 10, null);
+    this.explode(e.x, e.y, e.z, 6, 'was blown up by an End Crystal');
+  }
+
+  // The dragon is dead: experience rains down, the exit portal opens and the egg appears on top.
+  dragonDied(e) {
+    this.entities.delete(e.id);
+    this.broadcastHere({ t: 'mobdeath', e: e.id });
+    const first = !this.endState.dragonKilled;
+    this.endState.dragonKilled = true;
+    this.dirty = true;
+    this.inDim('end', () => {
+      this.broadcastHere({ t: 'boss', hp: 0 });
+      this.broadcastHere({ t: 'sfx', s: 'dragonDeath', x: e.x, y: e.y, z: e.z });
+      this.spawnXP(0.5, FOUNTAIN_Y + 6, 0.5, first ? 12000 : 500);
+      for (const [x, y, z] of EndTerrain.portalCells()) this.setBlock(x, y, z, BLOCK.END_PORTAL);
+      if (first) this.setBlock(0, FOUNTAIN_Y + 4, 0, BLOCK.DRAGON_EGG);
+    });
+    this.bossShown = false;
+    this.sys(`${e.angryAt ? `${e.angryAt} defeated the Ender Dragon!` : 'The Ender Dragon is dead!'} The way home is open.`);
+  }
+
+  // Dragon's breath: a lingering purple cloud where a dragon fireball lands.
+  tickBreath(e, dt) {
+    e.age += dt;
+    if (e.age > 5) { this.entities.delete(e.id); return; }
+    e.tick = (e.tick || 0) + dt;
+    if (e.tick < 0.5) return;
+    e.tick = 0;
+    for (const p of this.here()) {
+      if (p.dead || p.mode !== 'survival') continue;
+      if (Math.hypot(p.x - e.x, p.z - e.z) < 3 && p.y >= e.y - 1 && p.y < e.y + 2) {
+        this.send(p.peerId, { t: 'hurt', amount: 3, cause: "was killed by dragon's breath" });
+      }
+    }
+  }
+
   // Monsters of the Nether and the End (see spawnMobs). Nether mobs don't care about light;
-  // blazes and wither skeletons only spawn in fortresses.
+  // blazes and wither skeletons only spawn in fortresses. The End is full of endermen.
   spawnOther(p, counts) {
+    if (p.dim === 'end') {
+      if (counts.hostile >= 10 || this.random() < 0.5) return;
+      const a = this.random() * Math.PI * 2, dist = 16 + this.random() * 32;
+      const x = Math.floor(p.x + Math.cos(a) * dist), z = Math.floor(p.z + Math.sin(a) * dist);
+      const y = this.world.topBlockY(x, z);
+      if (y > 0 && this.world.getBlock(x, y, z) === BLOCK.END_STONE) {
+        const e = this.spawnMob('enderman', x + 0.5, y + 1, z + 0.5);
+        if (collides(this.world, e)) this.entities.delete(e.id);
+      }
+      return;
+    }
     if (p.dim !== 'nether' || counts.hostile >= 12 || this.random() < 0.4) return;
     const angle = this.random() * Math.PI * 2;
     const dist = 20 + this.random() * 28;
@@ -2046,6 +2254,7 @@ export class GameHost {
       const d = this.dims[dim];
       dims[dim] = { ...dims[dim], edits: d.world.exportEdits(), furnaces: Object.fromEntries(d.furnaces), chests: Object.fromEntries(d.chests) };
     }
+    Object.assign(dims.end, this.endState);
     this.save.dims = dims;
     this.save.portals = this.portals;
     this.save.lastPlayed = Date.now();

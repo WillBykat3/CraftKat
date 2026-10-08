@@ -312,6 +312,62 @@ const MOB_BUILDERS = {
     const sword = box(0.05, 0.75, 0.05, 0x8a8a8a); sword.position.set(0.3, 1.45, -0.85); sword.rotation.x = Math.PI / 2.4; m.group.add(sword);
     return m;
   },
+  // the End
+  ender_dragon: () => {
+    const g = new THREE.Group();
+    const black = 0x1b1b1b, dark = 0x2a2a2a;
+    const body = box(3, 2.4, 6, black); body.position.y = 1.8;
+    g.add(body);
+    for (let i = 0; i < 4; i++) { const sp = box(0.3, 0.6, 0.6, 0x3a3a3a); sp.position.set(0, 3.2, -2 + i * 1.4); g.add(sp); }
+    // neck and head, reaching forwards (-z)
+    const neck = [];
+    for (let i = 0; i < 3; i++) { const n = box(1.2, 1.2, 1.5, black); n.position.set(0, 2.3 + i * 0.15, -3.75 - i * 1.5); g.add(n); neck.push(n); }
+    const head = new THREE.Group();
+    head.position.set(0, 2.7, -8.4);
+    const skull = box(2, 1.4, 2.4, black); head.add(skull);
+    const snout = box(1.4, 0.7, 1.8, dark); snout.position.set(0, -0.2, -2); head.add(snout);
+    const jaw = box(1.3, 0.35, 1.8, dark); jaw.position.set(0, -0.75, -1.9); head.add(jaw);
+    for (const ex of [-0.75, 0.75]) {
+      const eye = box(0.1, 0.25, 0.6, 0xe070ff); eye.position.set(ex * 1.35, 0.25, -0.6); head.add(eye);
+      const horn = box(0.25, 0.25, 0.9, 0x555555); horn.position.set(ex * 0.8, 0.85, 0.6); horn.rotation.x = 0.5; head.add(horn);
+    }
+    g.add(head);
+    // a long tail with little spikes
+    const tail = [];
+    for (let i = 0; i < 8; i++) {
+      const tl = box(1, 1, 1.4, black); tl.position.set(0, 1.8 - i * 0.08, 3.7 + i * 1.4); g.add(tl); tail.push(tl);
+      const sp = box(0.2, 0.4, 0.4, 0x3a3a3a); sp.position.set(0, 2.4 - i * 0.08, 3.7 + i * 1.4); g.add(sp); tail.push(sp);
+    }
+    // huge wings that flap
+    const wings = [];
+    for (const side of [-1, 1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 1.5, 2.8, -1);
+      const bone = box(8, 0.35, 0.35, black); bone.position.set(side * 4, 0, -1.8); pivot.add(bone);
+      const skin = box(8, 0.12, 4.6, 0x353535); skin.position.set(side * 4, 0, 0.5); pivot.add(skin);
+      pivot.userData.side = side;
+      g.add(pivot);
+      wings.push(pivot);
+    }
+    const legs = [];
+    for (const [lx, lz] of [[-1, -1.8], [1, -1.8], [-1, 2], [1, 2]]) { const l = limb(0.6, 1.4, 0.6, black, lx * 1.1, 1.1, lz); g.add(l); legs.push(l); }
+    return { group: g, head, legs: [], arms: [], wings, tail };
+  },
+  end_crystal: () => {
+    const g = new THREE.Group();
+    const base = box(1.6, 0.3, 1.6, 0x3a3a3a); base.position.y = 0.15;
+    const spin = new THREE.Group();
+    spin.position.y = 1.3;
+    const core = box(0.55, 0.55, 0.55, 0xff7ae6);
+    const glass = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.1, 1.1, 1.1)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+    const glass2 = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(0.85, 0.85, 0.85)), new THREE.LineBasicMaterial({ color: 0xe0c8ff }));
+    spin.add(core, glass, glass2);
+    // the healing beam to the dragon (shown while it's in use)
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1), new THREE.MeshBasicMaterial({ color: 0xf0b0ff, transparent: true, opacity: 0.8 }));
+    beam.visible = false;
+    g.add(base, spin, beam);
+    return { group: g, head: new THREE.Group(), legs: [], arms: [], spin, glass2, beam };
+  },
   skeleton: (boneColor = 0xc8c8c0, clothes = null) => {
     const g = new THREE.Group();
     const bone = boneColor;
@@ -337,7 +393,7 @@ const HITBOX = {
   zombie: [0.35, 1.95], skeleton: [0.35, 1.95], creeper: [0.35, 1.7], spider: [0.75, 0.95],
   husk: [0.35, 1.95], stray: [0.35, 1.95], enderman: [0.35, 2.9],
   zombified_piglin: [0.35, 1.95], ghast: [2, 4.2], blaze: [0.35, 1.8], wither_skeleton: [0.42, 2.4],
-  fireball: [0.5, 1],
+  fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
 };
 
 function itemMesh(id, textures) {
@@ -523,16 +579,28 @@ export class EntityViews {
       group.add(sprite);
       return { xp: true, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
     }
-    if (kind === 'fireball' || kind === 'small_fireball') {
+    if (kind === 'breath') {
+      // a lingering purple cloud of dragon's breath
+      const group = new THREE.Group();
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.6, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xb040ff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+      mesh.position.y = 0.3;
+      const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 20), new THREE.MeshBasicMaterial({ color: 0xc060ff, transparent: true, opacity: 0.3, depthWrite: false }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0.05;
+      group.add(mesh, floor);
+      return { breath: true, group, mesh, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
+    }
+    if (kind === 'fireball' || kind === 'small_fireball' || kind === 'dragon_fireball') {
       // a glowing ball of fire, always facing you
-      const big = kind === 'fireball';
+      const big = kind !== 'small_fireball';
       const group = new THREE.Group();
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireballTexture(), transparent: true, depthWrite: false, fog: false }));
       sprite.scale.set(big ? 1 : 0.35, big ? 1 : 0.35, 1);
+      if (kind === 'dragon_fireball') sprite.material.color.setRGB(0.75, 0.35, 1);
       sprite.position.y = big ? 0.5 : 0.16;
       group.add(sprite);
       // only a ghast's fireball can be punched back
-      return { fireball: true, mob: big ? 'fireball' : undefined, hittable: big, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
+      return { fireball: true, mob: kind === 'fireball' ? 'fireball' : undefined, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
     if (kind === 'eye') {
       // a thrown eye of ender, with a trail of purple sparks
@@ -596,6 +664,8 @@ export class EntityViews {
 
   update(dt) {
     const k = 1 - Math.exp(-dt * 12);
+    let dragon = null;
+    for (const v of this.entities.values()) if (v.mob === 'ender_dragon') dragon = v;
     for (const v of this.players.values()) {
       const g = v.model.group;
       const bx = g.position.x, bz = g.position.z;
@@ -645,6 +715,28 @@ export class EntityViews {
         });
         continue;
       }
+      if (v.breath) {
+        v.spin += dt;
+        v.mesh.material.opacity = 0.25 + Math.sin(v.spin * 4) * 0.1;
+        continue;
+      }
+      if (v.mob === 'end_crystal') {
+        // the crystal bobs and spins; its beam reaches the dragon while it heals it
+        v.spin = (v.spin || 0) + dt;
+        v.model.spin.rotation.set(v.spin * 1.3, v.spin * 2, 0);
+        v.model.glass2.rotation.set(-v.spin * 2, 0, v.spin);
+        v.model.spin.position.y = 1.3 + Math.sin(v.spin * 2) * 0.25;
+        const beam = v.model.beam;
+        beam.visible = !!dragon && (v.flags & 2) !== 0;
+        if (beam.visible) {
+          const from = new THREE.Vector3(0, v.model.spin.position.y, 0);
+          const to = dragon.group.position.clone().sub(g.position).add(new THREE.Vector3(0, 1.8, 0));
+          beam.position.copy(from).add(to).multiplyScalar(0.5);
+          beam.scale.set(1, 1, from.distanceTo(to));
+          beam.lookAt(to.clone().add(g.position));
+        }
+        continue;
+      }
       if (v.fireball) {
         v.spin += dt * 8;
         v.sprite.material.rotation = v.spin;
@@ -662,6 +754,11 @@ export class EntityViews {
       animateLimbs(v, moved, dt);
       if (v.model.spiderLegs) {
         v.model.spiderLegs.forEach((leg, i) => { leg.rotation.x = Math.sin(v.walk * 1.5 + i) * 0.35 * Math.min(1, moved / Math.max(dt, 1e-3) / 2); });
+      }
+      if (v.model.wings) {
+        const t = performance.now() / 1000;
+        for (const w of v.model.wings) w.rotation.z = Math.sin(t * 2.6) * 0.55 * w.userData.side;
+        v.model.tail.forEach((s, i) => { s.position.x = Math.sin(t * 1.5 - i * 0.25) * 0.15 * i; });
       }
       if (v.model.faces) {
         v.model.faces.open.visible = (v.flags & 2) !== 0;

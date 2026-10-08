@@ -303,3 +303,63 @@ test('strongholds have a portal room; eyes of ender lead there and open the End 
   assert.equal(last('a', 'dimension').dim, 'end');
   host.message('a', { t: 'chat', msg: '/locate stronghold' });
 });
+
+test('the End: the dragon and its crystals, the boss bar, and the way home', async () => {
+  const { EndTerrain, FOUNTAIN_Y } = await import('../public/js/terrain-end.js');
+  const { host, join, last, all } = setup();
+  const p = join('a', 'Steve');
+  host.changeDim(p, 'end', [100.5, 49, 0.5]);
+  p.mode = 'survival';
+  host.tick(0.05);
+  const dragon = () => [...host.entities.values()].find((e) => e.type === 'ender_dragon');
+  const crystals = () => [...host.entities.values()].filter((e) => e.type === 'end_crystal');
+  assert.ok(dragon(), 'the dragon is there');
+  assert.equal(crystals().length, 10, 'a crystal on every pillar');
+  host.tick(0.05);
+  assert.deepEqual([last('a', 'boss').hp, last('a', 'boss').max], [200, 200]);
+  // it flies around
+  const d = dragon();
+  const start = [d.x, d.z];
+  for (let i = 0; i < 20; i++) host.tick(0.05);
+  assert.ok(Math.hypot(d.x - start[0], d.z - start[1]) > 3, 'it moved');
+  // hitting it in flight does a quarter of the damage (plus 1)
+  host.hurtMob(d, 8, 0, 0, 'Steve');
+  assert.equal(d.hp, 200 - 3);
+  // breaking a crystal blows it up and remembers it
+  const c = crystals()[0];
+  host.inDim('end', () => host.hurtMob(c, 1, 0, 0, 'Steve'));
+  assert.equal(crystals().length, 9);
+  assert.deepEqual(host.endState.crystalsGone, [c.pillar]);
+  assert.ok(all('a', 'boom').length > 0);
+  // the kill: experience, the exit portal and the egg
+  d.perched = true;
+  host.inDim('end', () => host.hurtMob(d, 1000, 0, 0, 'Steve'));
+  assert.ok(!dragon());
+  assert.equal(last('a', 'boss').hp, 0);
+  const end = host.dims.end.world;
+  for (const [x, y, z] of EndTerrain.portalCells()) assert.equal(end.getBlock(x, y, z), BLOCK.END_PORTAL);
+  assert.equal(end.getBlock(0, FOUNTAIN_Y + 4, 0), BLOCK.DRAGON_EGG);
+  const xp = [...host.entities.values()].filter((e) => e.type === 'xp').reduce((n, e) => n + e.value, 0);
+  assert.equal(xp, 12000);
+  // it stays dead (also after saving and loading)
+  for (let i = 0; i < 10; i++) host.tick(0.05);
+  assert.ok(!dragon());
+  const data = structuredClone(host.serialize());
+  assert.equal(data.dims.end.dragonKilled, true);
+  const host2 = new GameHost(data, () => {}, {});
+  assert.equal(host2.endState.dragonKilled, true);
+  // the exit portal leads home
+  host.message('a', { t: 'pos', p: [2.5, FOUNTAIN_Y + 0.8, 0.5], r: [0, 0], ds: p.ds });
+  host.tick(0.05);
+  assert.equal(p.dim, 'overworld');
+});
+
+test('endermen spawn on the end stone island', () => {
+  const { host, join } = setup();
+  const p = join('a', 'Steve');
+  host.changeDim(p, 'end', [30.5, 61, 0.5]);
+  host.endState.dragonKilled = true;
+  for (let i = 0; i < 100; i++) host.spawnMobs();
+  const types = new Set([...host.entities.values()].filter((e) => e.dim === 'end').map((e) => e.type));
+  assert.deepEqual([...types], ['enderman']);
+});
