@@ -14,6 +14,7 @@ import { BIOME, FROZEN } from './biomes.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { RedstoneSim } from './redstone-sim.js';
 import { END_PLATFORM } from './terrain-end.js';
+import { portalCenter } from './stronghold.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -293,6 +294,7 @@ export class GameHost {
       case 'interact': return this.onInteract(p, msg);
       case 'use': return this.onUse(peerId, p, msg);
       case 'shoot': return this.onShoot(p, msg);
+      case 'eye': return this.onEye(p);
     }
   }
 
@@ -858,6 +860,12 @@ export class GameHost {
     const id = this.world.getBlock(x, y, z);
     const def = BLOCKS[id];
     if (this.redstone.use(x, y, z, msg.item)) return;
+    if (msg.item === ITEM.EYE_OF_ENDER && id === BLOCK.END_PORTAL_FRAME) {
+      // an eye in every frame around the 3 x 3 opens the portal
+      this.setBlock(x, y, z, BLOCK.END_PORTAL_FRAME + 1);
+      this.checkEndPortal(x, y, z);
+      return;
+    }
     if (msg.item === ITEM.FLINT_AND_STEEL) {
       // flint and steel lights the inside of an obsidian frame (there's no fire, so nothing else happens)
       const f = msg.face;
@@ -1037,7 +1045,7 @@ export class GameHost {
     const findPlayer = (name) => [...this.players.values()].find((q) => q.name.toLowerCase() === String(name).toLowerCase());
     switch (cmd.toLowerCase()) {
       case 'help':
-        return reply('Commands: /list, /seed, /spawn, /gamemode survival|creative [player], /time set day|night, /tp <player>, /kill');
+        return reply('Commands: /list, /seed, /spawn, /gamemode survival|creative [player], /time set day|night, /tp <player>, /locate stronghold, /kill');
       case 'list':
         return reply(`Online (${this.players.size}): ${[...this.players.values()].map((q) => q.name).join(', ')}`);
       case 'seed':
@@ -1045,6 +1053,13 @@ export class GameHost {
       case 'spawn':
         if (p.dim !== 'overworld') return this.changeDim(p, 'overworld', this.save.spawn);
         return this.send(peerId, { t: 'teleport', p: this.save.spawn });
+      case 'locate': {
+        if (!allowed) return reply('Only the host can use /locate in this world.');
+        if (String(args[0]).toLowerCase().replace('minecraft:', '') !== 'stronghold') return reply('Usage: /locate stronghold');
+        const c = p.dim === 'overworld' && this.nearestStronghold(p.x, p.z);
+        if (!c) return reply(p.dim === 'overworld' ? 'This world has no strongholds (it was made before they existed).' : 'Strongholds are in the Overworld.');
+        return reply(`The nearest stronghold is at ${c[0]}, ${c[1] - this.world.yOffset}, ${c[2]} (${Math.round(Math.hypot(c[0] - p.x, c[2] - p.z))} blocks away)`);
+      }
       case 'kill':
         return this.send(peerId, { t: 'hurt', amount: 1000, cause: 'died' });
       case 'gamemode': case 'gm': {
@@ -1296,6 +1311,7 @@ export class GameHost {
       if (near[1] > 96) continue;
       if (e.type === 'arrow') { this.tickArrow(e, dt); continue; }
       if (e.type === 'fireball' || e.type === 'small_fireball') { this.tickFireball(e, dt); continue; }
+      if (e.type === 'eye') { this.tickEye(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
@@ -1887,6 +1903,69 @@ export class GameHost {
       this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, p.peerId);
     });
     this.storePlayer(p);
+  }
+
+  // ---------- strongholds & the End portal ----------
+  // A thrown eye of ender flies towards the nearest stronghold, then drops (or, one time in five, breaks).
+  onEye(p) {
+    if (p.dead || p.dim !== 'overworld') return;
+    const target = this.nearestStronghold(p.x, p.z);
+    if (!target) return;
+    const [tx, ty, tz] = target;
+    const d = Math.hypot(tx - p.x, tz - p.z);
+    // more than 12 blocks away: fly 12 blocks that way and up; closer: towards the portal room
+    const goal = d > 12 ? [p.x + (tx - p.x) / d * 12, p.y + 8, p.z + (tz - p.z) / d * 12] : [tx + 0.5, Math.min(p.y + 8, ty + 1), tz + 0.5];
+    this.addEntity({
+      id: this.nextEntityId++, type: 'eye', x: p.x, y: p.y + 1.5, z: p.z, halfW: 0.125, height: 0.25,
+      vx: 0, vy: 0, vz: 0, yaw: 0, age: 0, goal, start: [p.x, p.y + 1.5, p.z],
+    });
+    this.broadcastHere({ t: 'sfx', s: 'eye', x: p.x, y: p.y, z: p.z });
+  }
+
+  tickEye(e, dt) {
+    const T = 2; // seconds of flight, then it hovers a moment
+    const f = Math.min(1, e.age / T);
+    const ease = 1 - (1 - f) * (1 - f);
+    e.x = e.start[0] + (e.goal[0] - e.start[0]) * ease;
+    e.y = e.start[1] + (e.goal[1] - e.start[1]) * ease + Math.sin(e.age * 6) * 0.05;
+    e.z = e.start[2] + (e.goal[2] - e.start[2]) * ease;
+    if (e.age < T + 0.8) return;
+    this.entities.delete(e.id);
+    if (this.random() < 0.8) {
+      const item = this.spawnItem(e.x, e.y, e.z, ITEM.EYE_OF_ENDER, 1, undefined, [0, 0, 0]);
+      item.age = 0;
+    } else {
+      this.broadcastHere({ t: 'sfx', s: 'shatter', x: e.x, y: e.y, z: e.z });
+    }
+  }
+
+  // The middle of the nearest stronghold's portal, or null (worlds older than generator 3 have none).
+  nearestStronghold(x, z) {
+    let best = null, bestD = Infinity;
+    for (const spot of this.dims.overworld.world.strongholds()) {
+      const c = portalCenter(spot);
+      const d = Math.hypot(c[0] - x, c[2] - z);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    return best;
+  }
+
+  // After an eye goes into the frame at (x, y, z): if all 12 frames around a 3 x 3 opening
+  // have eyes, the opening becomes an End portal.
+  checkEndPortal(x, y, z) {
+    for (let cx = x - 2; cx <= x + 2; cx++) for (let cz = z - 2; cz <= z + 2; cz++) {
+      let ok = true;
+      for (let i = -1; ok && i <= 1; i++) {
+        for (const [fx, fz] of [[cx + i, cz - 2], [cx + i, cz + 2], [cx - 2, cz + i], [cx + 2, cz + i]]) {
+          if (this.world.getBlock(fx, y, fz) !== BLOCK.END_PORTAL_FRAME + 1) { ok = false; break; }
+        }
+      }
+      if (!ok) continue;
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.setBlock(cx + dx, y, cz + dz, BLOCK.END_PORTAL);
+      this.broadcast({ t: 'sfx', s: 'endPortal', x: cx, y, z: cz, everywhere: true });
+      return true;
+    }
+    return false;
   }
 
   // Monsters of the Nether and the End (see spawnMobs). Nether mobs don't care about light;

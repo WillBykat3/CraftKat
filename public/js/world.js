@@ -8,6 +8,7 @@ import { Terrain3, SEA, Y_OFFSET } from './terrain.js';
 import { BIOME } from './biomes.js';
 import { NetherTerrain, NETHER_LAVA } from './terrain-nether.js';
 import { EndTerrain } from './terrain-end.js';
+import { applyStrongholds, strongholdSpots } from './stronghold.js';
 
 export const DIMENSIONS = ['overworld', 'nether', 'end'];
 
@@ -53,6 +54,12 @@ export class World {
     this.seaLevel = this.terrain ? SEA : dim === 'nether' ? NETHER_LAVA : SEA_LEVEL;
     this.yOffset = this.terrain ? Y_OFFSET : 0; // shown y = y - yOffset
     this.hasSky = dim === 'overworld'; // the Nether and the End have no sunlight
+  }
+
+  // The strongholds' [x, z] (Overworld, generator 3 and later), else none.
+  strongholds() {
+    if (!this.terrain) return [];
+    return (this.shSpots ??= strongholdSpots(this.seed));
   }
 
   // Nether biome (see terrain-nether.js), or -1 elsewhere.
@@ -205,6 +212,7 @@ export class World {
       const out = this.terrain.generate(cx, cz);
       this.biomes.set(chunkKey(cx, cz), out.biomes);
       data = out.data;
+      applyStrongholds(data, cx, cz, this.seed, this.strongholds());
     } else {
       data = this.generateLegacy(cx, cz);
     }

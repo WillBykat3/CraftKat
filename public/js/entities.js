@@ -2,7 +2,9 @@
 // host ~10 times a second and are smoothed here.
 
 import * as THREE from 'three';
-import { BLOCKS, isBlockId, armorOf } from './blocks.js';
+import { BLOCKS, isBlockId, armorOf, ITEM } from './blocks.js';
+
+const EYE_OF_ENDER = ITEM.EYE_OF_ENDER;
 import { blockGeometry, hasBlockModel } from './textures.js';
 
 const SHIRTS = [0x3b82f6, 0xef4444, 0x22c55e, 0xf59e0b, 0xa855f7, 0x14b8a6, 0xec4899, 0xf97316];
@@ -403,7 +405,7 @@ function disposeTree(obj) {
   obj.traverse((o) => {
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
-      if (o.material.map && o.isSprite && o.material.map !== orbTexture && o.material.map !== fireTexture) o.material.map.dispose();
+      if (o.material.map && o.isSprite && o.material.map !== orbTexture && o.material.map !== fireTexture && !o.material.map.userData.shared) o.material.map.dispose();
       o.material.dispose();
     }
   });
@@ -532,6 +534,22 @@ export class EntityViews {
       // only a ghast's fireball can be punched back
       return { fireball: true, mob: big ? 'fireball' : undefined, hittable: big, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
+    if (kind === 'eye') {
+      // a thrown eye of ender, with a trail of purple sparks
+      const group = new THREE.Group();
+      const map = this.textures.itemTexture(EYE_OF_ENDER);
+      map.userData.shared = true; // cached by the texture code, so not disposed with the eye
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, alphaTest: 0.5 }));
+      sprite.scale.set(0.35, 0.35, 1);
+      group.add(sprite);
+      const sparks = [];
+      for (let i = 0; i < 6; i++) {
+        const sp = box(0.05, 0.05, 0.05, 0xc070ff);
+        group.add(sp);
+        sparks.push(sp);
+      }
+      return { eye: true, group, sprite, sparks, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
+    }
     if (kind === 'arrow') {
       const group = new THREE.Group();
       const shaft = box(0.04, 0.04, 0.5, 0x8a6a40);
@@ -617,6 +635,14 @@ export class EntityViews {
         v.sprite.position.y = 0.15 + Math.sin(v.spin) * 0.04;
         const t = (Math.sin(v.spin * 1.3) + 1) / 2;
         v.sprite.material.color.setRGB(0.6 + 0.4 * t, 1, 0.25 * (1 - t));
+        continue;
+      }
+      if (v.eye) {
+        v.spin += dt;
+        v.sparks.forEach((sp, i) => {
+          const t = (v.spin * 2 + i / 6) % 1;
+          sp.position.set(Math.sin(i * 2.4 + v.spin * 3) * 0.2 * t, -t * 0.4, Math.cos(i * 2.4 + v.spin * 3) * 0.2 * t);
+        });
         continue;
       }
       if (v.fireball) {

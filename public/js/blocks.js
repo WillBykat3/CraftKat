@@ -27,7 +27,7 @@ export const BLOCK = {
   PISTON: 198, STICKY_PISTON: 210, PISTON_HEAD: 222,
   NETHERRACK: 234, NETHER_QUARTZ_ORE: 235, SOUL_SAND: 236, GLOWSTONE: 237, NETHER_BRICKS: 238, NETHER_PORTAL: 239,
   MAGMA_BLOCK: 241, NETHER_GOLD_ORE: 242, BASALT: 243, END_STONE: 244, END_PORTAL_FRAME: 245, END_PORTAL: 247,
-  DRAGON_EGG: 248, NETHER_BRICK_FENCE: 249,
+  DRAGON_EGG: 248, NETHER_BRICK_FENCE: 249, MOSSY_STONE_BRICKS: 250, CRACKED_STONE_BRICKS: 251,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -223,6 +223,8 @@ def(246, 'End Portal Frame', { tex: ['end_portal_frame_top', 'end_portal_frame_s
 def(247, 'End Portal', { tex: ['end_portal'], hardness: Infinity, transparent: true, solid: false, shape: 'end_portal', emit: 15, hidden: true, item: 0 });
 def(248, 'Dragon Egg', { tex: ['dragon_egg'], hardness: 3, transparent: true, shape: 'egg', emit: 1 });
 def(249, 'Nether Brick Fence', { tex: ['nether_bricks'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'fence' });
+def(250, 'Mossy Stone Bricks', { tex: ['mossy_stone_bricks'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
+def(251, 'Cracked Stone Bricks', { tex: ['cracked_stone_bricks'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
 
 for (const b of B) {
   b.render ??= 'cube';
@@ -515,6 +517,7 @@ export const SMELTING = {
   [ITEM.RAW_IRON]: ITEM.IRON_INGOT,
   [ITEM.RAW_GOLD]: ITEM.GOLD_INGOT,
   [BLOCK.SAND]: BLOCK.GLASS,
+  [BLOCK.STONE_BRICKS]: BLOCK.CRACKED_STONE_BRICKS,
   [BLOCK.COBBLE]: BLOCK.STONE,
   [ITEM.RAW_PORKCHOP]: ITEM.COOKED_PORKCHOP,
   [ITEM.RAW_BEEF]: ITEM.STEAK,

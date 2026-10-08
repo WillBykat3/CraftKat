@@ -272,6 +272,20 @@ function drawBlockTile(p, name) {
         }
       }
       break;
+    case 'mossy_stone_bricks':
+      drawBlockTile(p, 'stone_bricks');
+      for (let i = 0; i < 70; i++) {
+        const x = Math.floor(rand() * S), y = Math.floor(rand() * S);
+        if ((x + y * 3) % 5 < 3) px(x, y, shade([84, 110, 52], 0.8 + rand() * 0.35));
+      }
+      break;
+    case 'cracked_stone_bricks':
+      drawBlockTile(p, 'stone_bricks');
+      for (const [x0, y0, len] of [[3, 1, 6], [11, 9, 5], [6, 10, 4]]) {
+        let x = x0, y = y0;
+        for (let i = 0; i < len; i++) { px(x, y, [70, 70, 70]); x += rand() < 0.5 ? 1 : 0; y += 1; }
+      }
+      break;
     case 'coal_ore': drawBlockTile(p, 'stone'); p.ore([30, 30, 30]); break;
     case 'iron_ore': drawBlockTile(p, 'stone'); p.ore([216, 175, 147]); break;
     case 'gold_ore': drawBlockTile(p, 'stone'); p.ore([250, 220, 60]); break;

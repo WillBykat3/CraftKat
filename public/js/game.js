@@ -153,7 +153,7 @@ export class Game {
       }
       case 'mobdeath': return;
       case 'sfx':
-        if (Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 64 && typeof sound[msg.s] === 'function') sound[msg.s]();
+        if ((msg.everywhere || Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 64) && typeof sound[msg.s] === 'function') sound[msg.s]();
         return;
       case 'furnace': return this.screen.setFurnaceState(msg);
       case 'chest': return this.screen.setChestState(msg);
@@ -627,6 +627,7 @@ export class Game {
     }
     if (hit && !this.player.sneaking && this.useRedstone(hit, held)) return;
     if (held?.id === ITEM.BOW) return; // drawn while the button is held (see update)
+    if (held?.id === ITEM.EYE_OF_ENDER) { this.useEye(hit); return; }
     // seeds, carrots and potatoes go on farmland (before eating them)
     if (hit && held && ITEMS[held.id]?.plants && (hit.id === BLOCK.FARMLAND || !ITEMS[held.id].food)) { this.placeBlock(hit, held, ITEMS[held.id].plants); return; }
     if (hit && held && this.useOnBlock(hit, held)) return;
@@ -661,6 +662,25 @@ export class Game {
     this.swing = 1;
     this.useCooldown = 0.25;
     return true;
+  }
+
+  // An eye of ender goes into an empty End portal frame, or is thrown to find a stronghold.
+  useEye(hit) {
+    if (this.useCooldown > 0) return;
+    if (hit && hit.id === BLOCK.END_PORTAL_FRAME) {
+      this.applyBlock(hit.x, hit.y, hit.z, BLOCK.END_PORTAL_FRAME + 1);
+      this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z, item: ITEM.EYE_OF_ENDER });
+      sound.place(BLOCK.STONE);
+    } else if (hit && hit.id === BLOCK.END_PORTAL_FRAME + 1) {
+      return; // already has one
+    } else if (this.dim === 'overworld' && this.world.strongholds().length) {
+      this.send({ t: 'eye' });
+    } else {
+      return; // eyes only show the way in the Overworld
+    }
+    if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
+    this.swing = 1;
+    this.useCooldown = 0.5;
   }
 
   // Hoes till soil, bone meal grows crops. Returns true if the item was used.

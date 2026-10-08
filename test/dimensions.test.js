@@ -259,3 +259,47 @@ test('monsters spawn in the Nether: blazes and wither skeletons in fortresses', 
   assert.ok(fort.has('blaze') || fort.has('wither_skeleton'));
   for (const t of fort) assert.ok(['blaze', 'wither_skeleton'].includes(t), t);
 });
+
+test('strongholds have a portal room; eyes of ender lead there and open the End portal', async () => {
+  const { strongholdSpots, portalCenter, SH_FLOOR } = await import('../public/js/stronghold.js');
+  const { host, join, all, last } = setup();
+  const p = join('a', 'Steve');
+  const spots = strongholdSpots(1234);
+  assert.equal(spots.length, 3);
+  for (const [x, z] of spots) { const d = Math.hypot(x, z); assert.ok(d >= 1280 && d <= 2816, `distance ${d}`); }
+  const world = host.dims.overworld.world;
+  const [cx, cy, cz] = portalCenter(spots[0]);
+  assert.equal(world.getBlock(cx, cy - 1, cz), BLOCK.LAVA, 'lava under the portal');
+  let frames = 0;
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    if (BLOCKS[world.getBlock(cx + dx, cy, cz + dz)].shape === 'frame') frames++;
+  }
+  assert.equal(frames, 12);
+  assert.ok([BLOCK.STONE_BRICKS, BLOCK.MOSSY_STONE_BRICKS, BLOCK.CRACKED_STONE_BRICKS].includes(world.getBlock(spots[0][0] + 5, SH_FLOOR + 2, spots[0][1])), 'brick walls');
+  // older worlds have none
+  assert.deepEqual(new World(1234, 2).strongholds(), []);
+  // a thrown eye flies towards the nearest one
+  host.message('a', { t: 'pos', p: [0.5, 150, 0.5], r: [0, 0] });
+  host.message('a', { t: 'eye' });
+  const eye = [...host.entities.values()].find((e) => e.type === 'eye');
+  assert.ok(eye);
+  const near = host.nearestStronghold(0, 0);
+  for (let i = 0; i < 20; i++) host.tick(0.1);
+  const dir = (near[0] * (eye.x - 0.5) + near[2] * (eye.z - 0.5)) / Math.hypot(near[0], near[2]);
+  assert.ok(dir > 10, `went the right way: ${dir}`);
+  for (let i = 0; i < 20; i++) host.tick(0.1);
+  assert.ok(!host.entities.has(eye.id), 'it dropped or broke');
+  assert.ok(all('a', 'sfx').some((m) => m.s === 'eye'));
+  // fill every frame with an eye: the portal opens and leads to the End
+  p.x = cx + 0.5; p.y = cy + 1; p.z = cz - 3.5;
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    if (world.getBlock(cx + dx, cy, cz + dz) === BLOCK.END_PORTAL_FRAME) host.message('a', { t: 'use', x: cx + dx, y: cy, z: cz + dz, item: ITEM.EYE_OF_ENDER });
+  }
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) assert.equal(world.getBlock(cx + dx, cy, cz + dz), BLOCK.END_PORTAL);
+  assert.ok(all('a', 'sfx').some((m) => m.s === 'endPortal'));
+  host.message('a', { t: 'pos', p: [cx + 0.5, cy + 0.8, cz + 0.5], r: [0, 0] });
+  host.tick(0.05);
+  assert.equal(p.dim, 'end');
+  assert.equal(last('a', 'dimension').dim, 'end');
+  host.message('a', { t: 'chat', msg: '/locate stronghold' });
+});

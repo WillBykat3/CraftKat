@@ -115,6 +115,14 @@ export const sound = {
     tone({ freq: 1050, endFreq: 1900, duration: 0.45, gain: 0.1, type: 'square' });
     setTimeout(() => burst({ freq: 500, q: 0.6, duration: 0.4, gain: 0.35, type: 'lowpass' }), 450);
   },
+  // an eye of ender: thrown with a whoosh, or breaking like glass
+  eye() { burst({ freq: 1800, q: 1, duration: 0.3, gain: 0.25 }); tone({ freq: 400, endFreq: 900, duration: 0.3, gain: 0.08, type: 'triangle' }); },
+  shatter() { burst({ freq: 4500, q: 8, duration: 0.25, gain: 0.3 }); burst({ freq: 3000, q: 4, duration: 0.3, gain: 0.2 }); },
+  // the End portal opening: a deep, rising chord heard everywhere
+  endPortal() {
+    [110, 165, 220, 330].forEach((f, i) => setTimeout(() => tone({ freq: f, endFreq: f * 1.5, duration: 2.5, gain: 0.1, type: 'sawtooth' }), i * 150));
+    burst({ freq: 200, q: 0.5, duration: 2, gain: 0.4, type: 'lowpass' });
+  },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)
