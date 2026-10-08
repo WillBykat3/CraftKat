@@ -21,7 +21,7 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': (TYPES[path.extname(file)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-cache' });
     res.end(data);
   });
-}).listen(port, () => console.log(`BlockCraft running at http://localhost:${port}`));
+}).listen(port, () => console.log(`CraftKat running at http://localhost:${port}`));
 
 if (process.argv.includes('--relay')) {
   const { createWsRelayServer } = await import('@trystero-p2p/ws-relay/server');

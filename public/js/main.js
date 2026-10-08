@@ -16,9 +16,9 @@ const RELAY = query.get('relay') || params.get('relay') || ''; // only for testi
 
 // ---------- settings ----------
 const settings = { renderDistance: 6, fov: 70, sensitivity: 1, volume: 50, brightness: 50 };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('blockcraft-settings') || '{}')); } catch { /* ignore */ }
+try { Object.assign(settings, JSON.parse(localStorage.getItem('craftkat-settings') || '{}')); } catch { /* ignore */ }
 function saveSettings() {
-  try { localStorage.setItem('blockcraft-settings', JSON.stringify(settings)); } catch { /* ignore */ }
+  try { localStorage.setItem('craftkat-settings', JSON.stringify(settings)); } catch { /* ignore */ }
 }
 
 const textures = createTextures();
@@ -60,9 +60,9 @@ function playerName() {
 function rememberName(value) {
   if (!DEV_MODE) return;
   $('name').value = cleanName(value);
-  try { localStorage.setItem('blockcraft-name', $('name').value); } catch { /* ignore */ }
+  try { localStorage.setItem('craftkat-name', $('name').value); } catch { /* ignore */ }
 }
-try { if (DEV_MODE) $('name').value = localStorage.getItem('blockcraft-name') || ''; } catch { /* ignore */ }
+try { if (DEV_MODE) $('name').value = localStorage.getItem('craftkat-name') || ''; } catch { /* ignore */ }
 $('name').addEventListener('change', () => rememberName($('name').value));
 
 function homeScreen() {
@@ -214,7 +214,7 @@ async function exportWorld(id) {
   const blob = new Blob([JSON.stringify(save)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${save.name.replace(/[^\w\- ]/g, '') || 'world'}.blockcraft.json`;
+  a.download = `${save.name.replace(/[^\w\- ]/g, '') || 'world'}.craftkat.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -226,7 +226,7 @@ $('import-file').addEventListener('change', async (e) => {
   if (!file) return;
   try {
     const save = JSON.parse(await file.text());
-    if (!Number.isInteger(save.seed) || !Array.isArray(save.edits)) throw new Error('this is not a BlockCraft world file');
+    if (!Number.isInteger(save.seed) || !Array.isArray(save.edits)) throw new Error('this is not a CraftKat world file');
     save.id = newId();
     delete save.roomId;
     save.players ||= {};
@@ -492,4 +492,4 @@ function frame(now) {
 startTitleBackground();
 requestAnimationFrame(frame);
 startAccounts();
-if (query.has('debug')) window.blockcraft = { get game() { return game; }, get host() { return host; }, renderer };
+if (query.has('debug')) window.craftkat = { get game() { return game; }, get host() { return host; }, renderer };

@@ -9,7 +9,7 @@
 
 import { joinNostr, joinWsRelay, selfId } from '../vendor/trystero.js';
 
-export const APP_ID = 'blockcraft-p2p-v1';
+export const APP_ID = 'craftkat-p2p-v1';
 
 function trysteroRoom(roomId, password, relay, onJoinError) {
   const config = { appId: APP_ID };

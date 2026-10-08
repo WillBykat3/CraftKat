@@ -1,4 +1,4 @@
-// BlockCraft account management. Only the owner (ADMIN_EMAIL) can use it.
+// CraftKat account management. Only the owner (ADMIN_EMAIL) can use it.
 //
 // Deploy: Supabase dashboard -> Edge Functions -> Deploy a new function -> Via Editor,
 // name it "admin-users", paste this whole file, deploy. Then set the secret

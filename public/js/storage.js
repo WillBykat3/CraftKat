@@ -1,6 +1,6 @@
 // Saved worlds live in the host's browser (IndexedDB), like singleplayer saves.
 
-const DB_NAME = 'blockcraft';
+const DB_NAME = 'craftkat';
 const STORE = 'worlds';
 
 function openDB() {

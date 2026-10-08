@@ -1,6 +1,6 @@
 # Setting up logins (one time, about 10 minutes)
 
-BlockCraft uses [Supabase](https://supabase.com) (free) for accounts, because GitHub Pages
+CraftKat uses [Supabase](https://supabase.com) (free) for accounts, because GitHub Pages
 can't store passwords safely. When you're done:
 
 - **The game asks everyone to log in.** Friends use the username and password you give them.
@@ -15,8 +15,8 @@ Until you finish these steps the live game shows "Almost ready" instead of the t
 ## 1. Create a Supabase project
 
 1. Go to <https://supabase.com>, click **Start your project**, and sign up (free).
-2. Click **New project**. Name it `blockcraft`, pick a region near you, and choose a database password.
-   Save that password somewhere, though BlockCraft never needs it. Click **Create new project** and wait a minute.
+2. Click **New project**. Name it `craftkat`, pick a region near you, and choose a database password.
+   Save that password somewhere, though CraftKat never needs it. Click **Create new project** and wait a minute.
 
 ## 2. Turn off public sign-ups
 
