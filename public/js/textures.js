@@ -1287,6 +1287,31 @@ function drawItem(p, icon) {
     case 'brick_item':
       for (let y = 6; y < 11; y++) for (let x = 3; x < 13; x++) px(x, y, shade([150, 75, 55], y === 6 ? 1.15 : y === 10 ? 0.75 : 0.9 + rand() * 0.2));
       break;
+    case 'fishing_rod':
+      for (let i = 0; i < 11; i++) { px(3 + i, 13 - i, shade([120, 80, 40], 0.9 + rand() * 0.2)); px(4 + i, 13 - i, [90, 60, 30]); }
+      for (let y = 3; y < 12; y++) px(14, y, [220, 220, 220]);
+      px(13, 12, [150, 150, 150]); px(14, 12, [150, 150, 150]); px(13, 11, [150, 150, 150]);
+      break;
+    case 'raw_cod': case 'cooked_cod': case 'raw_salmon': case 'cooked_salmon': case 'tropical_fish': {
+      const body = { raw_cod: [190, 170, 130], cooked_cod: [200, 160, 100], raw_salmon: [200, 80, 70], cooked_salmon: [190, 110, 70], tropical_fish: [240, 120, 40] }[icon];
+      blob(body, 7.5, 8, 5, 3, 0.2);
+      for (let y = 5; y < 12; y++) if (Math.abs(y - 8) <= (y < 8 ? 8 - y : y - 8) + 0) px(13, y, shade(body, 0.8));
+      px(12, 6, shade(body, 0.8)); px(12, 10, shade(body, 0.8)); px(13, 5, shade(body, 0.8)); px(13, 11, shade(body, 0.8));
+      px(4, 7, [20, 20, 20]);
+      if (icon === 'tropical_fish') for (let y = 6; y < 11; y++) px(8, y, [250, 250, 250]);
+      if (icon.startsWith('cooked')) p.specks(shade(body, 0.7), 5);
+      break;
+    }
+    case 'name_tag':
+      for (let y = 5; y < 11; y++) for (let x = 4; x < 13; x++) if (!(x === 4 && (y === 5 || y === 10))) px(x, y, shade([210, 180, 130], 0.9 + rand() * 0.15));
+      px(5, 7, [60, 50, 40]); px(5, 8, [60, 50, 40]);
+      for (let i = 0; i < 4; i++) px(3 - (i % 2), 4 - i, [230, 230, 230]);
+      break;
+    case 'saddle':
+      for (let y = 4; y < 10; y++) for (let x = 3; x < 13; x++) if ((x - 8) ** 2 / 30 + (y - 7) ** 2 / 9 < 1) px(x, y, shade([140, 80, 40], 0.85 + rand() * 0.2));
+      for (let y = 9; y < 14; y++) { px(4, y, [90, 55, 30]); px(11, y, [90, 55, 30]); }
+      px(4, 13, [180, 180, 180]); px(11, 13, [180, 180, 180]);
+      break;
     case 'string':
       for (let i = 0; i < 12; i++) px(2 + i, 8 + Math.round(Math.sin(i * 0.9) * 2), [235, 235, 235]);
       break;

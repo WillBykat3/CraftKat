@@ -362,6 +362,8 @@ export const ITEM = {
   MELON_SLICE: 355, GLISTERING_MELON_SLICE: 356, GOLDEN_CARROT: 357, MAGMA_CREAM: 358, RABBIT_FOOT: 359, PUFFERFISH: 360,
   PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363, EGG: 364, SLIMEBALL: 365, INK_SAC: 366, RAW_RABBIT: 367,
   COOKED_RABBIT: 368, RABBIT_HIDE: 369, DYE: 370, COCOA_BEANS: 386, CLAY_BALL: 398, BRICK: 399, // (dyes are 370 + colour)
+  FISHING_ROD: 387, RAW_COD: 388, COOKED_COD: 389, RAW_SALMON: 390, COOKED_SALMON: 391, TROPICAL_FISH: 392,
+  SHIELD: 393, COMPASS: 394, CLOCK: 395, NAME_TAG: 396, SADDLE: 397,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -434,6 +436,14 @@ COLORS.forEach((c, i) => item(370 + i, `${COLOR_NAMES[i]} Dye`, { icon: 'dye_' +
 item(386, 'Cocoa Beans', { icon: 'cocoa_beans' });
 item(398, 'Clay Ball', { icon: 'clay_ball' });
 item(399, 'Brick', { icon: 'brick_item' });
+item(387, 'Fishing Rod', { icon: 'fishing_rod', stack: 1, tool: { kind: 'fishing_rod', tier: 0, speed: 1, damage: 1, durability: 64 } });
+item(388, 'Raw Cod', { icon: 'raw_cod', food: 2 });
+item(389, 'Cooked Cod', { icon: 'cooked_cod', food: 5 });
+item(390, 'Raw Salmon', { icon: 'raw_salmon', food: 2 });
+item(391, 'Cooked Salmon', { icon: 'cooked_salmon', food: 6 });
+item(392, 'Tropical Fish', { icon: 'tropical_fish', food: 1 });
+item(396, 'Name Tag', { icon: 'name_tag' });
+item(397, 'Saddle', { icon: 'saddle', stack: 1 });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -665,6 +675,8 @@ export const SMELTING = {
   [BLOCK.SAND]: BLOCK.GLASS,
   [BLOCK.STONE_BRICKS]: BLOCK.CRACKED_STONE_BRICKS,
   [ITEM.RAW_RABBIT]: ITEM.COOKED_RABBIT,
+  [ITEM.RAW_COD]: ITEM.COOKED_COD,
+  [ITEM.RAW_SALMON]: ITEM.COOKED_SALMON,
   [BLOCK.COBBLE]: BLOCK.STONE,
   [ITEM.RAW_PORKCHOP]: ITEM.COOKED_PORKCHOP,
   [ITEM.RAW_BEEF]: ITEM.STEAK,

@@ -93,6 +93,13 @@ export class Game {
     this.showDebug = false;
 
     this.entities = new EntityViews(renderer.scene, textures);
+    // where your own fishing line starts: the tip of the rod, top right of the view
+    this.entities.selfRodTip = () => {
+      const p = this.player, f = new THREE.Vector3(-Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch));
+      const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+      if (this.perspective !== 0) return new THREE.Vector3(p.x, p.y + 1.9, p.z).addScaledVector(f, 0.9).addScaledVector(right, 0.35);
+      return new THREE.Vector3(p.x, p.y + this.eyeHeight(), p.z).addScaledVector(f, 1).addScaledVector(right, 0.42).add(new THREE.Vector3(0, 0.3, 0));
+    };
     this.particles = new Particles(renderer.scene, textures);
     this.perspective = 0; // 0 first person, 1 third person behind, 2 third person in front (F5)
     this.bobAmount = 0;
@@ -169,6 +176,9 @@ export class Game {
         else if (!this.screen.isOpen) this.openScreen('trade', msg);
         return;
       case 'traded': return this.finishTrade(msg);
+      case 'reeled':
+        if (msg.caught && this.held()?.id === ITEM.FISHING_ROD) { this.useTool(1); this.invDirty = true; }
+        return;
       case 'consume':
         if (this.mode === 'survival' && this.inv[this.selected]) { takeOne(this.inv, this.selected); this.invDirty = true; }
         return;
@@ -207,6 +217,7 @@ export class Game {
 
   welcome(msg) {
     this.myId = msg.id;
+    this.entities.selfId = msg.id;
     this.name = msg.name;
     this.dim = msg.dim || 'overworld';
     this.ds = 0;
@@ -716,6 +727,13 @@ export class Game {
       return;
     }
     if (held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET)) { this.eating = 0.001; return; }
+    if (held && held.id === ITEM.FISHING_ROD) {
+      // cast, or reel in (the host knows which)
+      this.send({ t: 'fish', yaw: this.player.yaw, pitch: this.player.pitch, lure: enchLevel(held, 'lure'), luck: enchLevel(held, 'luck_of_the_sea') });
+      this.swing = 1;
+      this.useCooldown = 0.3;
+      return;
+    }
     if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE || held.id === ITEM.EGG)) {
       // throw it
       this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : held.id === ITEM.EGG ? 'egg' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });

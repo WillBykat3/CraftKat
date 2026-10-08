@@ -33,6 +33,8 @@ export const ENCHANTS = {
   infinity: E('Infinity', 1, 1, () => 20, 30, ['bow']),
   unbreaking: E('Unbreaking', 3, 5, lin(5, 8), 50, ['any']),
   mending: E('Mending', 1, 2, () => 25, 50, ['any'], true), // only from trading (and anvils)
+  lure: E('Lure', 3, 2, lin(15, 9), 50, ['fishing_rod']),
+  luck_of_the_sea: E('Luck of the Sea', 3, 2, lin(15, 9), 50, ['fishing_rod']),
 };
 const CONFLICTS = [
   ['protection', 'fire_protection', 'blast_protection', 'projectile_protection'],
@@ -55,6 +57,7 @@ function kindsOf(id) {
   if (tool.kind === 'axe') return ['axe', 'digger', 'any'];
   if (tool.kind === 'pickaxe' || tool.kind === 'shovel' || tool.kind === 'hoe') return ['digger', 'any'];
   if (tool.kind === 'bow') return ['bow', 'any'];
+  if (tool.kind === 'fishing_rod') return ['fishing_rod', 'any'];
   if (tool.kind === 'shears' || tool.kind === 'lighter') return ['any'];
   return [];
 }
@@ -71,7 +74,7 @@ export function enchantability(id) {
   if (armor) return { leather: 15, iron: 9, gold: 25, diamond: 10 }[armor.material] ?? 1;
   const tool = toolOf(id);
   if (!tool) return 0;
-  if (tool.kind === 'bow') return 1;
+  if (tool.kind === 'bow' || tool.kind === 'fishing_rod') return 1;
   return [15, 5, 14, 10][tool.tier] ?? 1; // wood, stone, iron, diamond
 }
 

@@ -57,6 +57,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Anvils** combine enchantments and repair items (each use costs more), and wear out; the **grindstone** takes
   enchantments off for experience; librarians sell enchanted books
 - **Blocks of iron, gold, diamond, emerald, lapis and coal**
+- **Fishing**: craft a fishing rod, cast it into water and reel in when the bobber dips. Mostly cod, salmon,
+  tropical fish and pufferfish (cook the cod and salmon; pufferfish poison you but brew Water Breathing), sometimes
+  junk, and now and then treasure: enchanted bows, rods and books, name tags and saddles. Lure and Luck of the Sea
+  enchant rods
 - **Dyes and colours**: all 16 of Minecraft's dyes, from flowers (dandelions, poppies, cornflowers), ink sacs, lapis,
   bone meal, cactus (smelted) and cocoa beans, and mixed from each other. Dye wool, sheep (shear them for coloured
   wool), glass (stained glass you can see through) and terracotta (smelt a clay block). Clay drops clay balls, which
@@ -64,7 +68,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Brewing and potions**: a brewing stand (blaze rod + cobblestone, fuelled by blaze powder) brews Minecraft's
   potions from water bottles and nether wart: Swiftness, Slowness, Strength, Healing, Harming, Poison,
   Regeneration, Fire Resistance, Night Vision, Invisibility, Weakness, Leaping (rabbit's foot) and Slow Falling
-  (phantom membrane) (Water Breathing needs a pufferfish, which arrives with fishing), with redstone to make them last longer, glowstone to make them stronger
+  (phantom membrane) and Water Breathing (pufferfish, from fishing), with redstone to make them last longer, glowstone to make them stronger
   and gunpowder for splash potions to throw. Nether wart grows in fortresses and on soul sand; spiders drop eyes;
   melons grow in jungles and mushrooms in dark forests, swamps, taigas and the Nether
 - **Status effects** with icons and timers: speed, haste, strength, jump boost, regeneration, resistance, fire
@@ -106,7 +110,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts, fishing, weather and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts, weather and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no hoglins, piglin brutes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
@@ -128,6 +132,9 @@ enchantments; anvils can't rename items.
 **Colour differences from Minecraft:** no concrete, carpets, banners, glazed terracotta, glass panes or coloured
 beds, candles or shulker boxes; cocoa beans drop from jungle leaves (there are no cocoa pods); lambs take a parent's
 colour rather than mixing; only the poppy, dandelion and cornflower exist among the flowers.
+
+**Fishing differences from Minecraft:** there are no fish swimming in the water and no fishing particles to watch
+for, the bobber can't hook mobs or items, rain doesn't speed up bites, and name tags and saddles don't do anything yet.
 
 **Mob differences from Minecraft:** mobs don't find paths around obstacles (they hop up single blocks); slimes don't
 follow the moon's phases in swamps; witches only throw a few kinds of potion; piglins don't remember or share gold,

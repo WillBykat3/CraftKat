@@ -99,6 +99,7 @@ export const FOOD_EFFECTS = {
   [ITEM.ROTTEN_FLESH]: [['hunger', 0, 30, 0.8]],
   [ITEM.SPIDER_EYE]: [['poison', 0, 5]],
   [ITEM.RAW_CHICKEN]: [['hunger', 0, 30, 0.3]],
+  [ITEM.PUFFERFISH]: [['poison', 1, 60], ['hunger', 2, 15], ['nausea', 0, 15]],
 };
 export const ATTACK_EFFECTS = {
   wither_skeleton: [['wither', 0, 10]],

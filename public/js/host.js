@@ -4,7 +4,7 @@
 
 import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
-  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS, woolOf,
+  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS, woolOf, maxDurability,
 } from './blocks.js';
 import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
@@ -17,7 +17,7 @@ import { FluidSim, flowAt } from './fluids.js';
 import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
-import { validEnch, level as enchLevel } from './enchant.js';
+import { validEnch, level as enchLevel, rollEnchants, randomBook } from './enchant.js';
 import { mobAI, BREED_FOOD, SLIME_SIZES } from './mob-ai.js';
 import { hash2 } from './noise.js';
 import { brewResult, validPotion, BREW_SECONDS, POTIONS, UNDEAD as POTION_UNDEAD, ATTACK_EFFECTS } from './effects.js';
@@ -367,6 +367,7 @@ export class GameHost {
       case 'brew_close': return this.validCoords(msg) && this.brewViewers.get(this.keyOf(msg))?.delete(peerId);
       case 'brew_click': return this.onBrewClick(peerId, p, msg);
       case 'throw': return this.onThrow(p, msg);
+      case 'fish': return this.onFish(p, msg);
       case 'chest_open': return this.onChestOpen(peerId, p, msg);
       case 'chest_close': return this.chestViewers.get(this.keyOf(msg))?.delete(peerId);
       case 'chest_click': return this.onChestClick(peerId, p, msg);
@@ -1303,6 +1304,96 @@ export class GameHost {
     this.storePlayer(p);
   }
 
+  // ---------- fishing ----------
+  // Right-click with a rod casts the bobber; right-click again reels it in. A fish bites after
+  // 5-30 seconds (5 less per level of Lure) and has to be reeled in within a second or two.
+  onFish(p, msg) {
+    const old = [...this.entities.values()].find((e) => e.type === 'bobber' && e.owner === p.id);
+    if (old) return this.reelIn(p, old);
+    if (!isNum(msg.yaw) || !isNum(msg.pitch) || p.dead) return;
+    const lvl = (n) => (isInt(n) && n >= 0 && n <= 3 ? n : 0);
+    p.held = ITEM.FISHING_ROD;
+    const dx = -Math.sin(msg.yaw) * Math.cos(msg.pitch), dy = Math.sin(msg.pitch), dz = -Math.cos(msg.yaw) * Math.cos(msg.pitch);
+    const speed = 11;
+    this.addEntity({
+      id: this.nextEntityId++, type: 'bobber', owner: p.id, x: p.x + dx * 0.6, y: p.y + 1.5 + dy * 0.6, z: p.z + dz * 0.6,
+      vx: dx * speed, vy: dy * speed + 2, vz: dz * speed, halfW: 0.125, height: 0.25, yaw: msg.yaw, age: 0,
+      lure: lvl(msg.lure), luck: lvl(msg.luck), wait: null, bite: 0,
+    });
+    this.broadcastHere({ t: 'sfx', s: 'cast', x: p.x, y: p.y, z: p.z });
+  }
+
+  tickBobber(e, dt) {
+    const owner = [...this.players.values()].find((q) => q.id === e.owner);
+    if (!owner || owner.dead || owner.dim !== e.dim || owner.held !== ITEM.FISHING_ROD || Math.hypot(owner.x - e.x, owner.y - e.y, owner.z - e.z) > 32) {
+      this.entities.delete(e.id);
+      return;
+    }
+    const inWater = fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.1), Math.floor(e.z))) === 'water';
+    if (inWater) {
+      // float at the surface, and wait for a bite
+      const under = fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.3), Math.floor(e.z))) === 'water';
+      e.vy = under ? Math.min(e.vy + 20 * dt, 1.5) : Math.max(e.vy - 10 * dt, -1);
+      const drag = Math.exp(-4 * dt);
+      e.vx *= drag; e.vz *= drag;
+      if (e.wait === null) e.wait = Math.max(1, 5 + this.random() * 25 - 5 * e.lure);
+      if (e.bite > 0) {
+        e.bite -= dt;
+        if (e.bite <= 0) e.wait = null; // it got away
+      } else if ((e.wait -= dt) <= 0) {
+        e.bite = 1 + this.random();
+        e.vy = -3; // the bobber dips under
+        this.broadcastHere({ t: 'sfx', s: 'splash', x: e.x, y: e.y, z: e.z });
+      }
+    } else {
+      e.vy = Math.max(-30, e.vy - 18 * dt);
+      e.wait = null;
+      e.bite = 0;
+    }
+    const res = moveBody(this.world, e, dt, 0);
+    if (res.onGround) { e.vx *= 0.5; e.vz *= 0.5; }
+    if (e.y < -20) this.entities.delete(e.id);
+  }
+
+  reelIn(p, e) {
+    this.entities.delete(e.id);
+    if (!(e.bite > 0)) return this.send(p.peerId, { t: 'reeled', caught: false });
+    const [id, count, extra] = this.fishLoot(e.luck);
+    // the catch flies out of the water to the player
+    const dx = p.x - e.x, dy = p.y + 1 - e.y, dz = p.z - e.z;
+    const { dur, ...rest } = extra;
+    this.spawnItem(e.x, e.y + 0.3, e.z, id, count, dur, [dx, dy + 10, dz], rest);
+    this.spawnXP(p.x, p.y + 0.5, p.z, 1 + Math.floor(this.random() * 6));
+    this.send(p.peerId, { t: 'reeled', caught: true });
+  }
+
+  // Minecraft's fishing loot: fish, junk or treasure (Luck of the Sea makes treasure likelier).
+  // Returns [id, count, {dur?, ench?, potion?}].
+  fishLoot(luck = 0) {
+    const r = this.random;
+    const pick = (table) => {
+      let total = 0;
+      for (const row of table) total += row[1];
+      let x = r() * total;
+      for (const row of table) { x -= row[1]; if (x <= 0) return row[0]; }
+      return table[0][0];
+    };
+    const kind = pick([['fish', 85 - luck], ['junk', 10 - 2 * luck], ['treasure', 5 + 2 * luck]]);
+    const worn = (id) => ({ dur: Math.max(1, Math.floor(maxDurability(id) * (0.1 + r() * 0.8))) });
+    if (kind === 'fish') return [pick([[ITEM.RAW_COD, 60], [ITEM.RAW_SALMON, 25], [ITEM.TROPICAL_FISH, 2], [ITEM.PUFFERFISH, 13]]), 1, {}];
+    if (kind === 'junk') {
+      const id = pick([[ITEM.LEATHER_BOOTS, 10], [ITEM.LEATHER, 10], [ITEM.BONE, 10], [ITEM.POTION, 10], [ITEM.STRING, 5],
+        [ITEM.FISHING_ROD, 2], [ITEM.STICK, 5], [ITEM.INK_SAC, 1], [ITEM.ROTTEN_FLESH, 10]]);
+      if (id === ITEM.POTION) return [id, 1, { potion: 'water' }];
+      if (id === ITEM.LEATHER_BOOTS || id === ITEM.FISHING_ROD) return [id, 1, worn(id)];
+      return [id, id === ITEM.INK_SAC ? 10 : 1, {}];
+    }
+    const id = pick([[ITEM.BOW, 1], [ITEM.ENCHANTED_BOOK, 1], [ITEM.FISHING_ROD, 1], [ITEM.NAME_TAG, 1], [ITEM.SADDLE, 1]]);
+    if (id === ITEM.ENCHANTED_BOOK) return [id, 1, { ench: randomBook(r) }];
+    if (id === ITEM.BOW || id === ITEM.FISHING_ROD) return [id, 1, { ...worn(id), ench: rollEnchants(id, 30, r) }];
+    return [id, 1, {}];
+  }
+
   // ---------- brewing stands ----------
   // slots: 0-2 bottles, 3 ingredient, 4 fuel (blaze powder: 20 brews)
   brewerAt(p, msg) {
@@ -1671,6 +1762,7 @@ export class GameHost {
       if (e.type === 'breath') { this.tickBreath(e, dt); continue; }
       if (e.type === 'eye') { this.tickEye(e, dt); continue; }
       if (e.type === 'potion' || e.type === 'xp_bottle' || e.type === 'egg') { this.tickThrown(e, dt); continue; }
+      if (e.type === 'bobber') { this.tickBobber(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
@@ -2879,6 +2971,7 @@ export class GameHost {
         // flags: 1 = sheared sheep, 2 = creeper about to explode
         // (and for ghasts and blazes, 2 = about to shoot)
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
+          : e.type === 'bobber' ? (e.owner << 2) | (e.bite > 0 ? 2 : 0)
           : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
             (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
             (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);

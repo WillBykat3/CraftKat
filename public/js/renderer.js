@@ -202,13 +202,19 @@ export class Renderer {
 
   onMesh({ cx, cz, version, solid, water }) {
     const key = chunkKey(cx, cz);
-    if (version !== this.versions.get(key)) return; // a newer version is on its way
-    this.pending.delete(key);
+    // Show any mesh newer than the one on screen, even if a newer one is still on its way:
+    // while blocks keep changing (flowing water), waiting for the latest would never show anything.
+    const latest = this.versions.get(key);
+    if (latest === undefined || version > latest) return; // from before the chunks were cleared
+    if (version === latest) this.pending.delete(key);
     if (!this.wanted(cx, cz)) return;
+    const shown = this.meshes.get(key);
+    if (shown && shown.version > version) return;
     this.disposeChunk(key);
     this.meshes.set(key, {
       solid: this.makeMesh(solid, this.solidMaterial, cx, cz),
       water: this.makeMesh(water, this.waterMaterial, cx, cz),
+      version,
     });
   }
 

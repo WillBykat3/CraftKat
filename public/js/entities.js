@@ -802,6 +802,17 @@ export class EntityViews {
       }
       return { eye: true, group, sprite, sparks, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
+    if (kind === 'bobber') {
+      // a red and white float on a fishing line, which runs back to the rod
+      const group = new THREE.Group();
+      const top = box(0.12, 0.08, 0.12, 0xd02020); top.position.y = 0.12;
+      const bottom = box(0.12, 0.08, 0.12, 0xf0f0f0); bottom.position.y = 0.04;
+      group.add(top, bottom);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x202020 }));
+      line.frustumCulled = false;
+      this.scene.add(line);
+      return { bobber: true, group, line, target: new THREE.Vector3(), yaw: 0, tYaw: 0 };
+    }
     if (kind === 'arrow') {
       const group = new THREE.Group();
       const shaft = box(0.04, 0.04, 0.5, 0x8a6a40);
@@ -819,6 +830,7 @@ export class EntityViews {
     if (!v) return;
     this.scene.remove(v.group);
     disposeTree(v.group);
+    if (v.line) { this.scene.remove(v.line); v.line.geometry.dispose(); v.line.material.dispose(); }
     this.entities.delete(id);
   }
 
@@ -926,6 +938,24 @@ export class EntityViews {
       if (v.fireball) {
         v.spin += dt * 8;
         v.sprite.material.rotation = v.spin;
+        continue;
+      }
+      if (v.bobber) {
+        // dips under when a fish bites; the line goes to the owner's rod
+        g.children.forEach((c, i) => { c.position.y = (i ? 0.04 : 0.12) - ((v.flags & 2) ? 0.15 : 0); });
+        const owner = v.flags >> 2;
+        let from = null;
+        if (owner === this.selfId && this.selfRodTip) from = this.selfRodTip();
+        else {
+          const pv = this.players.get(owner);
+          if (pv) {
+            const q = pv.model.group.position, yaw = pv.yaw;
+            from = new THREE.Vector3(q.x - Math.sin(yaw) * 0.9 + Math.cos(yaw) * 0.35, q.y + 1.9, q.z - Math.cos(yaw) * 0.9 - Math.sin(yaw) * 0.35);
+          }
+        }
+        const pos = v.line.geometry.attributes.position;
+        if (from) { pos.setXYZ(0, from.x, from.y, from.z); pos.setXYZ(1, g.position.x, g.position.y + 0.1, g.position.z); pos.needsUpdate = true; }
+        v.line.visible = !!from;
         continue;
       }
       if (v.arrow) {

@@ -436,3 +436,6 @@ for (let c = 0; c < 16; c++) {
 // clay and bricks
 RECIPES.push({ pattern: ['CC', 'CC'], keys: { C: [ITEM.CLAY_BALL] }, result: [BLOCK.CLAY, 1] });
 RECIPES.push({ pattern: ['BB', 'BB'], keys: { B: [ITEM.BRICK] }, result: [BLOCK.BRICK, 1] });
+
+// fishing
+RECIPES.push({ pattern: ['..S', '.ST', 'S.T'], keys: { S: [ITEM.STICK], T: [ITEM.STRING] }, result: [ITEM.FISHING_ROD, 1] });
