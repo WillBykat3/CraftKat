@@ -239,11 +239,37 @@ function itemMesh(id, textures) {
     new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide }));
 }
 
+let orbTexture = null;
+function xpOrbTexture() {
+  if (orbTexture) return orbTexture;
+  const rows = [
+    '..oooo..',
+    '.oyyyyo.',
+    'oywyyyyo',
+    'oyyyyggo',
+    'oyyyyggo',
+    'oyygggyo',
+    '.oyyyyo.',
+    '..oooo..',
+  ];
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const ctx = c.getContext('2d');
+  const pal = { o: '#3a5a00', y: '#d8ff60', g: '#9be03a', w: '#ffffff' };
+  rows.forEach((row, y) => { for (let x = 0; x < 8; x++) if (pal[row[x]]) { ctx.fillStyle = pal[row[x]]; ctx.fillRect(x, y, 1, 1); } });
+  orbTexture = new THREE.CanvasTexture(c);
+  orbTexture.magFilter = THREE.NearestFilter;
+  orbTexture.minFilter = THREE.NearestFilter;
+  orbTexture.generateMipmaps = false;
+  orbTexture.colorSpace = THREE.SRGBColorSpace;
+  return orbTexture;
+}
+
 function disposeTree(obj) {
   obj.traverse((o) => {
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
-      if (o.material.map && o.isSprite) o.material.map.dispose();
+      if (o.material.map && o.isSprite && o.material.map !== orbTexture) o.material.map.dispose();
       o.material.dispose();
     }
   });
@@ -286,6 +312,29 @@ export class EntityViews {
     v.tPitch = r[1];
   }
 
+  // The player's own body, seen in third person (F5).
+  setSelf(visible, p, name, dt = 0) {
+    if (!visible) {
+      if (this.self) this.self.model.group.visible = false;
+      return;
+    }
+    if (!this.self) {
+      const model = humanoid(0xd8a47f, SHIRTS[0], 0x2c3e7a, false);
+      this.scene.add(model.group);
+      this.self = { model, walk: 0, last: [p.x, p.z] };
+    }
+    const v = this.self;
+    const g = v.model.group;
+    g.visible = true;
+    g.position.set(p.x, p.y, p.z);
+    g.rotation.y = p.yaw;
+    v.model.head.rotation.x = p.pitch;
+    animateLimbs(v, Math.hypot(p.x - v.last[0], p.z - v.last[1]), Math.max(dt, 1e-3));
+    v.last = [p.x, p.z];
+    const l = this.lightAt(p.x, p.y + 1.6, p.z);
+    this.setMaterialTint(g, l, l, l);
+  }
+
   // ----- mobs & items -----
   // list: [[id, typeOrItemId, x, y, z, yaw], ...] = everything near us right now
   syncEntities(list) {
@@ -313,6 +362,12 @@ export class EntityViews {
       const mesh = itemMesh(kind, this.textures);
       group.add(mesh);
       return { item: kind, group, mesh, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
+    }
+    if (kind === 'xp') {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: xpOrbTexture(), transparent: true, depthWrite: false }));
+      const group = new THREE.Group();
+      group.add(sprite);
+      return { xp: true, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
     }
     if (kind === 'arrow') {
       const group = new THREE.Group();
@@ -382,6 +437,16 @@ export class EntityViews {
         v.mesh.position.y = 0.2 + Math.sin(v.spin * 1.3) * 0.06;
         const li = this.lightAt(g.position.x, g.position.y + 0.3, g.position.z);
         this.setMaterialTint(g, li, li, li);
+        continue;
+      }
+      if (v.xp) {
+        // orbs glow, pulse between green and yellow, and are bigger for more experience
+        v.spin += dt * 4;
+        const size = 0.18 + Math.min(0.22, Math.log2((v.flags || 1) + 1) * 0.04);
+        v.sprite.scale.set(size, size, 1);
+        v.sprite.position.y = 0.15 + Math.sin(v.spin) * 0.04;
+        const t = (Math.sin(v.spin * 1.3) + 1) / 2;
+        v.sprite.material.color.setRGB(0.6 + 0.4 * t, 1, 0.25 * (1 - t));
         continue;
       }
       if (v.arrow) {

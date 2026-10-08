@@ -333,6 +333,76 @@ export class Renderer {
     }));
     this.clouds.rotation.x = -Math.PI / 2;
     this.scene.add(this.clouds);
+    this.buildFancyClouds(c);
+    this.setClouds('fancy');
+  }
+
+  // 3D clouds: every cloud pixel of the pattern becomes a 12 x 4 x 12 box, with
+  // the faces between neighbouring boxes left out. The 768-block pattern repeats,
+  // so 3 x 3 copies follow the camera.
+  buildFancyClouds(patternCanvas) {
+    const N = 64, CELL = 12, H = 4;
+    const data = patternCanvas.getContext('2d').getImageData(0, 0, N, N).data;
+    const cloud = (x, z) => data[((((z % N) + N) % N) * N + (((x % N) + N) % N)) * 4 + 3] > 127;
+    const pos = [], shade = [];
+    const quad = (corners, b) => {
+      // corners in counter-clockwise order seen from outside
+      const [a, b1, c, d] = corners;
+      for (const v of [a, b1, c, a, c, d]) { pos.push(...v); shade.push(b); }
+    };
+    for (let z = 0; z < N; z++) {
+      for (let x = 0; x < N; x++) {
+        if (!cloud(x, z)) continue;
+        const x0 = x * CELL, x1 = x0 + CELL, z0 = z * CELL, z1 = z0 + CELL;
+        quad([[x0, H, z1], [x1, H, z1], [x1, H, z0], [x0, H, z0]], 1.0);           // top
+        quad([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 0.7);           // bottom
+        if (!cloud(x + 1, z)) quad([[x1, 0, z1], [x1, 0, z0], [x1, H, z0], [x1, H, z1]], 0.9);
+        if (!cloud(x - 1, z)) quad([[x0, 0, z0], [x0, 0, z1], [x0, H, z1], [x0, H, z0]], 0.9);
+        if (!cloud(x, z + 1)) quad([[x0, 0, z1], [x1, 0, z1], [x1, H, z1], [x0, H, z1]], 0.8);
+        if (!cloud(x, z - 1)) quad([[x1, 0, z0], [x0, 0, z0], [x0, H, z0], [x1, H, z0]], 0.8);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('shade', new THREE.Float32BufferAttribute(shade, 1));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(384, 2, 384), 560);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.cloudUniforms,
+      vertexShader: /* glsl */ `
+        attribute float shade;
+        varying float vShade;
+        varying vec3 vWorld;
+        void main() {
+          vShade = shade;
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vWorld = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float brightness;
+        varying float vShade;
+        varying vec3 vWorld;
+        void main() {
+          float d = length(vWorld.xz - cameraPosition.xz);
+          float alpha = 0.8 * (1.0 - smoothstep(200.0, 600.0, d));
+          if (alpha < 0.01) discard;
+          gl_FragColor = vec4(vec3(brightness * vShade), alpha);
+        }`,
+      transparent: true,
+    });
+    this.fancyClouds = new THREE.Group();
+    for (let i = 0; i < 9; i++) {
+      const m = new THREE.Mesh(geo, mat);
+      m.userData.tile = [(i % 3) - 1, Math.floor(i / 3) - 1];
+      this.fancyClouds.add(m);
+    }
+    this.scene.add(this.fancyClouds);
+  }
+
+  setClouds(mode) {
+    this.cloudMode = mode;
+    if (this.clouds) this.clouds.visible = mode === 'fast';
+    if (this.fancyClouds) this.fancyClouds.visible = mode === 'fancy';
   }
 
   squareTexture(inner, outer) {
@@ -409,8 +479,16 @@ export class Renderer {
     this.stars.position.copy(cam);
     this.stars.rotation.z = angle;
     this.stars.material.opacity = Math.max(0, 1 - day * 1.5);
+    const drift = performance.now() / 1000 * 0.6; // blocks; clouds drift slowly west to east
     this.clouds.position.set(cam.x, this.cloudY, cam.z);
-    this.cloudUniforms.offset.value.set(performance.now() / 768000, 0); // slow drift
+    this.cloudUniforms.offset.value.set(drift / 768, 0);
+    if (this.fancyClouds?.visible) {
+      const baseX = Math.floor((cam.x - drift) / 768) * 768 + drift;
+      const baseZ = Math.floor(cam.z / 768) * 768;
+      for (const m of this.fancyClouds.children) {
+        m.position.set(baseX + m.userData.tile[0] * 768, this.cloudY, baseZ + m.userData.tile[1] * 768);
+      }
+    }
     this.cloudUniforms.brightness.value = 0.25 + day * 0.75;
 
     const fov = this.fov + (sprintFov ? 8 : 0);

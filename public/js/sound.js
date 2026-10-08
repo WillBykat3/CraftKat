@@ -1,6 +1,6 @@
 // Tiny synthesized sound effects (no audio files needed).
 
-import { BLOCK } from './blocks.js';
+import { BLOCK, BLOCKS } from './blocks.js';
 
 let ctx = null;
 let noise = null;
@@ -17,6 +17,10 @@ function audio() {
   }
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   return ctx;
+}
+
+export function audioContext() {
+  return audio();
 }
 
 export function setVolume(v) {
@@ -58,25 +62,16 @@ function tone({ freq, endFreq = freq, duration, gain, type = 'sine' }) {
   osc.stop(t + duration + 0.02);
 }
 
+// What a block sounds like, from its properties.
 function material(id) {
-  switch (id) {
-    case BLOCK.STONE: case BLOCK.COBBLE: case BLOCK.BRICK: case BLOCK.STONE_BRICKS: case BLOCK.COAL_ORE:
-    case BLOCK.IRON_ORE: case BLOCK.GOLD_ORE: case BLOCK.DIAMOND_ORE: case BLOCK.FURNACE: case BLOCK.SANDSTONE:
-    case BLOCK.OBSIDIAN: case BLOCK.BEDROCK:
-      return { freq: 1800, q: 1.5, duration: 0.12, gain: 0.35 };
-    case BLOCK.LOG: case BLOCK.PLANKS: case BLOCK.BIRCH_LOG: case BLOCK.BIRCH_PLANKS: case BLOCK.CRAFTING_TABLE:
-      return { freq: 700, q: 3, duration: 0.14, gain: 0.5 };
-    case BLOCK.SAND: case BLOCK.SNOW: case BLOCK.SNOWY_GRASS:
-      return { freq: 3500, q: 0.5, duration: 0.16, gain: 0.2, type: 'highpass' };
-    case BLOCK.GLASS:
-      return { freq: 4500, q: 8, duration: 0.25, gain: 0.3 };
-    case BLOCK.LEAVES: case BLOCK.BIRCH_LEAVES: case BLOCK.TALL_GRASS: case BLOCK.DANDELION: case BLOCK.POPPY:
-      return { freq: 2500, q: 0.7, duration: 0.15, gain: 0.25 };
-    case BLOCK.WOOL:
-      return { freq: 600, q: 0.5, duration: 0.12, gain: 0.25, type: 'lowpass' };
-    default: // dirt, grass, gravel, clay
-      return { freq: 1000, q: 0.8, duration: 0.15, gain: 0.35, type: 'lowpass' };
-  }
+  const b = BLOCKS[id] || BLOCKS[0];
+  if (id === BLOCK.GLASS || id === BLOCK.ICE) return { freq: 4500, q: 8, duration: 0.25, gain: 0.3 };
+  if (id === BLOCK.WOOL) return { freq: 600, q: 0.5, duration: 0.12, gain: 0.25, type: 'lowpass' };
+  if (id === BLOCK.SAND || id === BLOCK.SNOW || id === BLOCK.SNOWY_GRASS) return { freq: 3500, q: 0.5, duration: 0.16, gain: 0.2, type: 'highpass' };
+  if (b.tool === 'pickaxe' || id === BLOCK.BEDROCK) return { freq: 1800, q: 1.5, duration: 0.12, gain: 0.35 };
+  if (b.tool === 'axe') return { freq: 700, q: 3, duration: 0.14, gain: 0.5 };
+  if (b.render === 'cross' || /Leaves/.test(b.name || '')) return { freq: 2500, q: 0.7, duration: 0.15, gain: 0.25 };
+  return { freq: 1000, q: 0.8, duration: 0.15, gain: 0.35, type: 'lowpass' }; // dirt, grass, gravel, clay
 }
 
 export const sound = {
@@ -94,6 +89,49 @@ export const sound = {
     burst({ freq: 400, q: 0.5, duration: 0.6, gain: 0.5, type: 'lowpass' });
   },
   click() { tone({ freq: 900, duration: 0.04, gain: 0.08, type: 'triangle' }); },
+  // menu button: a short wooden "tock"
+  button() { burst({ freq: 1400, q: 4, duration: 0.05, gain: 0.35 }); tone({ freq: 700, endFreq: 500, duration: 0.05, gain: 0.08, type: 'triangle' }); },
+  // experience orb: a bright ding at a random pitch
+  xp() {
+    const f = 1500 * (0.7 + Math.random() * 0.6);
+    tone({ freq: f, duration: 0.25, gain: 0.12 });
+    tone({ freq: f * 2.01, duration: 0.15, gain: 0.04 });
+  },
+  levelUp() {
+    [0, 0.12, 0.24].forEach((delay, i) => setTimeout(() => tone({ freq: [660, 880, 1320][i], duration: 0.5, gain: 0.12, type: 'triangle' }), delay * 1000));
+  },
+  // a distant, eerie rumble deep in caves
+  cave() {
+    const a = audio();
+    if (!a || volume === 0) return;
+    const t = a.currentTime;
+    const src = a.createBufferSource();
+    src.buffer = noise;
+    src.loop = true;
+    const f = a.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 6;
+    f.frequency.setValueAtTime(260 + Math.random() * 200, t);
+    f.frequency.exponentialRampToValueAtTime(60, t + 4);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5 * volume, t + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+    src.connect(f).connect(g).connect(a.destination);
+    src.start(t);
+    src.stop(t + 4.6);
+    const osc = a.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(110 + Math.random() * 40, t);
+    osc.frequency.exponentialRampToValueAtTime(55, t + 4);
+    const og = a.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.12 * volume, t + 1.5);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+    osc.connect(og).connect(a.destination);
+    osc.start(t);
+    osc.stop(t + 4.6);
+  },
   mobHurt(kind) {
     if (kind === 'zombie') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });
     else if (kind === 'cow') tone({ freq: 220, endFreq: 160, duration: 0.35, gain: 0.3, type: 'sawtooth' });

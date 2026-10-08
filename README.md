@@ -9,16 +9,24 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 ## What's in it
 
 - **Logins**: everyone needs an account to play, and only you can create them, on your private admin page (see below)
-- **Endless worlds**: hills, mountains with snow, deserts, oceans, oak, birch and cherry forests, flowers, tall grass
-- **Caves and ores**: tunnels and caverns, coal, iron, copper, gold and diamond ore, a deepslate layer deep down,
-  granite, diorite and andesite, bedrock at the bottom
+- **Big, tall worlds** (y −64 to 191, sea level 63, like Minecraft): oceans, rivers, beaches, rolling hills and
+  snowy mountain peaks, with 27 biomes: plains, forests, birch and dark forests, taiga, snowy plains, desert, savanna,
+  jungle, swamp, cherry groves, meadows and more. Grass, leaves and water change colour from biome to biome.
+- **Trees and plants**: oak, birch, spruce, acacia, dark oak, jungle and cherry trees; cactus, sugar cane, ferns,
+  dead bushes, flowers, tall grass, and ice on frozen water
+- **Caves and ores**: winding tunnels and big caverns with lava lakes at the bottom, coal, iron, copper, gold,
+  redstone, lapis, diamond and (in mountains) emerald ore, deepslate below y 0, granite, diorite and andesite
 - **Survival mode**: health, hunger, fall damage, drowning, death and respawning (you drop your items)
-- **Mining and tools**: blocks take time to break, the right tool is faster, wooden → stone → iron → diamond tools with durability, some ores need a better pickaxe
+- **Mining and tools**: blocks take time to break (with flying bits of block), the right tool is faster,
+  wooden → stone → iron → diamond tools with durability, some ores need a better pickaxe
+- **Experience**: orbs from mobs, ores and smelting, an XP bar and levels; dying drops some of it
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
 - **Chests** for storage, **beds** to sleep through the night and set your respawn point, **buckets** for water, **shears** for wool
-- **Day and night**: a 20-minute day with sunrise, sunset, stars and moving clouds
+- **Day and night**: a 20-minute day with sunrise, sunset, stars and drifting 3D clouds
+- **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
+  screen, view bobbing, third-person view (F5), calm generated piano music and cave sounds
 - **Real lighting**: caves are dark, torches light them up, smooth shading
 - **Mobs**: pigs, cows, sheep and chickens; at night zombies and skeletons (both burn in sunlight), spiders that climb walls,
   and creepers that explode
@@ -27,9 +35,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
 **Not included (yet):** redstone, the Nether and End, villages, enchanting, armor, bows for players, doors, farming,
-flowing water/lava, and many of Minecraft's mobs. It needs a keyboard and mouse, so phones and tablets aren't supported.
+flowing water/lava, and many of Minecraft's mobs. (Redstone dust, lapis and emeralds can be mined but don't do
+anything yet.) It needs a keyboard and mouse, so phones and tablets aren't supported.
 
-Worlds created before an update keep their original terrain; new features like deepslate and cherry trees appear in
+Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
 
 ---
@@ -57,11 +66,11 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 
 ## Play with friends
 
-1. Open the game, log in and click **Play** → **Create new world**.
+1. Open the game, log in and click **Singleplayer** → **Create New World**.
 2. In the game press **Esc** → **Invite friends**.
 3. Optionally set a password, then click **Open to friends**.
 4. **Copy** the link and send it to your friends (with the password, if you set one).
-5. Friends open the link, log in, and click **Join**. That's it!
+5. Friends open the link, log in, and click **Join** (or paste the link under **Multiplayer**). That's it!
 
 **Good to know**
 - **You are the server.** Your browser runs the world. Keep the game tab open while friends play.
@@ -96,6 +105,7 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 | T or Enter | Chat |
 | / | Command |
 | F3 | Coordinates and debug info |
+| F5 | Switch between first and third person |
 | F1 | Hide the HUD |
 | Esc | Game menu (invite friends, options, save and quit) |
 
@@ -105,8 +115,8 @@ Click **📖 Recipe Book** in a crafting screen to see every recipe; click one t
 **Commands:** `/help`, `/list`, `/seed`, `/spawn`, `/kill`, and for the host (or everyone, if the world allows it):
 `/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/tp <player>`.
 
-**Options** (title screen or Esc menu): view distance, field of view, brightness, mouse sensitivity, volume.
-If the game is slow, lower the view distance.
+**Options** (title screen or Esc menu): render distance, FOV, brightness, sensitivity, master volume, music,
+view bobbing, and clouds (Fancy, Fast or off). If the game is slow, lower the render distance or set clouds to Fast.
 
 ## Getting started in survival
 
@@ -150,8 +160,14 @@ public/
   js/inventory.js         inventory clicks and crafting recipes
   js/ui.js                inventory screens and HUD
   js/entities.js          other players, mobs and dropped items
+  js/terrain.js           terrain generator 3: biomes, rivers, mountains, trees (world.js keeps versions 1-2)
+  js/biomes.js            biomes and their grass/foliage/water colours
   js/textures.js          all pixel art, drawn with code
-  js/sound.js             synthesized sound effects
+  js/ui-art.js            interface art: hearts, hotbar, buttons, logo
+  js/pixel-glyphs.js      the pixel font's letters (scripts/pixel-font.mjs turns them into a font file)
+  js/particles.js         block-breaking particles
+  js/xp.js                experience levels and rewards
+  js/sound.js, js/music.js  synthesized sound effects and generated music
   js/auth.js, js/config.js  logins (Supabase)
   admin.html, js/admin.js   the owner's account manager
 supabase/functions/admin-users/index.ts   server-side, owner-only account management
@@ -159,4 +175,4 @@ scripts/                  build and dev server
 test/                     node:test unit tests
 ```
 
-Built with [three.js](https://threejs.org), [Trystero](https://github.com/dmotz/trystero) and [supabase-js](https://github.com/supabase/supabase-js) (all MIT licensed).
+Built with [three.js](https://threejs.org), [Trystero](https://github.com/dmotz/trystero) and [supabase-js](https://github.com/supabase/supabase-js); the font file is built with [opentype.js](https://opentype.js.org) (all MIT licensed).

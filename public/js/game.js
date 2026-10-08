@@ -15,6 +15,8 @@ import { sound } from './sound.js';
 import { uvOf } from './atlas-layout.js';
 import { BIOMES } from './biomes.js';
 import { VERSION } from './version.js';
+import { Particles } from './particles.js';
+import { levelInfo } from './xp.js';
 import { lightCurve, toLinear } from './renderer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -50,7 +52,7 @@ export class Game {
       yaw: 0, pitch: 0, onGround: false, flying: false, sneaking: false, sprinting: false,
       inWater: false, headInWater: false, fallStart: null,
     };
-    this.stats = { health: 20, food: 20, air: MAX_AIR, exhaustion: 0, regen: 0, starve: 0, invuln: 0, hurtFlash: false };
+    this.stats = { health: 20, food: 20, air: MAX_AIR, exhaustion: 0, regen: 0, starve: 0, invuln: 0, hurtFlash: false, xpTotal: 0, xpLevel: 0, xpProgress: 0 };
     this.mode = 'survival';
     this.inv = new Array(INVENTORY_SIZE).fill(null);
     this.selected = 0;
@@ -81,6 +83,10 @@ export class Game {
     this.showDebug = false;
 
     this.entities = new EntityViews(renderer.scene, textures);
+    this.particles = new Particles(renderer.scene, textures);
+    this.perspective = 0; // 0 first person, 1 third person behind, 2 third person in front (F5)
+    this.bobAmount = 0;
+    this.caveTimer = 60;
     this.screen = new InventoryScreen(this);
     this.hud = new HUD(this.iconURL);
     this.buildHand();
@@ -129,6 +135,7 @@ export class Game {
         return;
       }
       case 'hurt': return this.damage(msg.amount, msg.cause, msg.from);
+      case 'xp': return this.addXP(msg.amount);
       case 'mobhurt': {
         const v = this.entities.entities.get(msg.e);
         this.entities.hurt(msg.e);
@@ -174,6 +181,8 @@ export class Game {
     else this.giveCreativeStarter();
     this.stats.health = me.health ?? 20;
     this.stats.food = me.food ?? 20;
+    this.stats.xpTotal = Number.isInteger(me.xp) ? me.xp : 0;
+    this.addXP(0);
     if (this.stats.health <= 0) this.stats.health = 20;
     this.unstick();
     for (const p of msg.players) this.entities.addPlayer(p.id, p.name, p.p, p.r);
@@ -200,7 +209,13 @@ export class Game {
 
   // ---------- world changes ----------
   applyBlock(x, y, z, id) {
+    const old = this.world ? this.world.getBlock(x, y, z) : 0;
     if (!this.world.setBlock(x, y, z, id)) return;
+    // broken (or replaced, like ice melting): pieces fly off, if it's near enough to see
+    if (old !== id && old !== BLOCK.AIR && !BLOCKS[old].liquid && (id === BLOCK.AIR || BLOCKS[id].liquid)) {
+      const p = this.player;
+      if (Math.abs(p.x - x) + Math.abs(p.y - y) + Math.abs(p.z - z) < 48) this.particles.breakBlock(x, y, z, old, this.lightAt(x + 0.5, y + 0.5, z + 0.5));
+    }
     this.r.blockChanged(x, y, z, id);
     // light can change up to 15 blocks away: forget cached light for nearby chunks
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
@@ -330,6 +345,7 @@ export class Game {
     if (e.code === 'KeyQ') this.dropSelected(e.shiftKey);
     if (e.code === 'F3') { this.showDebug = !this.showDebug; e.preventDefault(); }
     if (e.code === 'F1') { $('hud').classList.toggle('hidden-hud'); e.preventDefault(); }
+    if (e.code === 'F5') { this.perspective = (this.perspective + 1) % 3; e.preventDefault(); }
     const now = performance.now();
     if (!e.repeat && (e.code === 'KeyW' || e.code === 'Space')) {
       if (now - this.lastTap[e.code] < 280) {
@@ -641,6 +657,21 @@ export class Game {
     }
   }
 
+  // ---------- experience ----------
+  addXP(amount) {
+    const s = this.stats;
+    const before = s.xpLevel;
+    s.xpTotal = Math.max(0, s.xpTotal + amount);
+    const { level, progress } = levelInfo(s.xpTotal);
+    s.xpLevel = level;
+    s.xpProgress = progress;
+    if (amount > 0) {
+      sound.xp();
+      if (level > before && level % 5 === 0) sound.levelUp();
+      this.invDirty = true;
+    }
+  }
+
   // ---------- survival ----------
   damage(amount, cause = 'died', from = null) {
     if (this.mode !== 'survival' || this.dead || this.stats.invuln > 0) return;
@@ -666,11 +697,13 @@ export class Game {
     this.dead = true;
     const items = this.inv.filter(Boolean);
     this.inv = new Array(INVENTORY_SIZE).fill(null);
-    this.send({ t: 'died', items, cause });
+    this.send({ t: 'died', items, cause, xp: this.stats.xpTotal });
+    $('death-score').textContent = this.stats.xpTotal;
+    this.stats.xpTotal = 0;
+    this.addXP(0);
     this.screen.close();
     document.exitPointerLock();
     $('death-cause').textContent = `${this.name} ${cause}`;
-    $('death-score').textContent = this.stats.xpTotal || 0;
     $('death').classList.remove('hidden');
     this.invDirty = true;
   }
@@ -937,6 +970,32 @@ export class Game {
     const cam = this.r.camera;
     cam.position.set(p.x, p.y + (p.sleeping ? 0.3 : this.eyeHeight()), p.z);
     cam.rotation.set(p.pitch, p.yaw, 0);
+    // view bobbing: the camera sways a little with each step, like Minecraft's
+    const speed = Math.hypot(p.vx, p.vz);
+    const bobTarget = this.settings.bobbing !== false && p.onGround && !p.flying && !p.inWater ? Math.min(1, speed / 4.3) : 0;
+    this.bobAmount += (bobTarget - this.bobAmount) * Math.min(1, dt * 10);
+    if (this.bobAmount > 0.001 && this.perspective === 0) {
+      const phase = this.bob * 0.7;
+      const a = this.bobAmount * 0.06;
+      const right = new THREE.Vector3(Math.cos(p.yaw), 0, -Math.sin(p.yaw));
+      cam.position.addScaledVector(right, Math.sin(phase) * a);
+      cam.position.y -= Math.abs(Math.cos(phase)) * a * 1.6 - a * 0.8;
+      cam.rotation.z = Math.sin(phase) * this.bobAmount * 0.012;
+      cam.rotation.x += Math.abs(Math.cos(phase - 0.2)) * this.bobAmount * 0.015;
+    }
+    // F5: third person, behind or in front of the player, pulled in so it never goes into walls
+    if (this.perspective > 0) {
+      const dir = new THREE.Vector3(0, 0, -1).applyEuler(cam.rotation);
+      if (this.perspective === 1) dir.negate();
+      let dist = 4;
+      for (let t = 0.2; t <= 4; t += 0.1) {
+        const q = cam.position.clone().addScaledVector(dir, t);
+        if (BLOCKS[this.world.getBlock(Math.floor(q.x), Math.floor(q.y), Math.floor(q.z))].solid) { dist = Math.max(0, t - 0.3); break; }
+      }
+      cam.position.addScaledVector(dir, dist);
+      if (this.perspective === 2) cam.rotation.set(-p.pitch, p.yaw + Math.PI, 0);
+    }
+    this.entities.setSelf(this.perspective > 0 && !this.dead, p, this.name, dt);
     if (this.shake > 0) { // explosion camera shake
       cam.position.x += (Math.random() - 0.5) * this.shake * 0.4;
       cam.position.y += (Math.random() - 0.5) * this.shake * 0.4;
@@ -956,7 +1015,12 @@ export class Game {
         const t = breakTime(hit.id, this.heldId()) * (p.onGround || p.flying ? 1 : 5) * (p.headInWater ? 5 : 1);
         this.breaking.progress += t === 0 ? 1 : dt / t;
         this.breaking.sound -= dt;
-        if (this.breaking.sound <= 0) { sound.dig(hit.id); this.breaking.sound = 0.25; this.swing = 1; }
+        if (this.breaking.sound <= 0) {
+          sound.dig(hit.id);
+          this.particles.hitBlock(hit, this.lightAt(hit.x + 0.5 + hit.normal[0], hit.y + 0.5 + hit.normal[1], hit.z + 0.5 + hit.normal[2]));
+          this.breaking.sound = 0.25;
+          this.swing = 1;
+        }
         progress = this.breaking.progress;
         if (progress >= 1) {
           this.breakBlockAt(hit);
@@ -995,6 +1059,19 @@ export class Game {
     this.time += dt * 20;
     this.entities.lightAt = (x, y, z) => this.lightAt(x, y, z);
     this.entities.update(dt);
+    this.particles.update(dt, this.world, (x, y, z) => this.lightAt(x, y, z));
+    this.particles.setViewportHeight(window.innerHeight / Math.tan(this.r.camera.fov * Math.PI / 360) / 2);
+    // now and then, a distant rumble in dark caves
+    this.caveTimer -= dt;
+    if (this.caveTimer <= 0) {
+      this.caveTimer = 60 + Math.random() * 120;
+      const light = this.lightCache.get(chunkKey(Math.floor(p.x / CHUNK), Math.floor(p.z / CHUNK)));
+      const by = Math.floor(p.y + 1);
+      if (light && by > 0 && by < HEIGHT && p.y < this.world.seaLevel - 8) {
+        const i = regionIndex(Math.floor(p.x) - Math.floor(p.x / CHUNK) * CHUNK, by, Math.floor(p.z) - Math.floor(p.z / CHUNK) * CHUNK);
+        if (light.sky[i] === 0 && light.block[i] < 8) sound.cave();
+      }
+    }
     this.updateHand(dt, this.lightAt(p.x, p.y + this.eyeHeight(), p.z));
     $('water-overlay').classList.toggle('hidden', !p.headInWater);
 
@@ -1019,7 +1096,7 @@ export class Game {
     if (this.invDirty && this.saveTimer > 2) {
       this.saveTimer = 0;
       this.invDirty = false;
-      this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food });
+      this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
     }
 
     // HUD
@@ -1124,17 +1201,21 @@ export class Game {
   }
 
   render() {
-    this.r.render(this.handScene, this.handCamera);
+    // the held item is only drawn in first person
+    if (this.perspective === 0) this.r.render(this.handScene, this.handCamera);
+    else this.r.render();
   }
 
   // Leaving the world: tell the host our final state.
   quit() {
-    if (this.playing) this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food });
+    if (this.playing) this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
     this.playing = false;
     this.closed = true;
     this.screen.close();
     this.unbind();
     this.entities.clear();
+    this.entities.setSelf(false);
+    this.particles.clear();
     this.r.clearChunks();
     document.exitPointerLock?.();
   }

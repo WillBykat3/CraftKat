@@ -389,3 +389,66 @@ test('worlds saved by the previous version still load (no generator version, che
   assert.deepEqual(saved.chests, {});
   assert.equal(host.world.getBlock(1, 40, 1), 12);
 });
+
+test('experience: orbs from mobs and ores fly to the player, and levels follow Minecraft', async () => {
+  const { levelInfo, pointsForLevel } = await import('../public/js/xp.js');
+  assert.deepEqual([0, 1, 2, 15, 16, 30, 31].map(pointsForLevel), [7, 9, 11, 37, 42, 112, 121]);
+  assert.equal(levelInfo(7).level, 1);
+  assert.equal(levelInfo(315).level, 15);   // Minecraft: 315 points = level 15
+  assert.equal(levelInfo(352).level, 16);
+  assert.equal(levelInfo(1395).level, 30);  // and 1395 points = level 30
+
+  const { host, join, all } = setup();
+  join('a', 'A');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  const pig = host.spawnMob('pig', x + 2.5, y, z + 0.5);
+  pig.hp = 1;
+  host.message('a', { t: 'attack', e: pig.id, tool: 0 });
+  const orbs = [...host.entities.values()].filter((e) => e.type === 'xp');
+  assert.ok(orbs.length >= 1, 'a killed pig drops experience');
+  const total = orbs.reduce((n, e) => n + e.value, 0);
+  for (let i = 0; i < 100; i++) host.tick(0.05);
+  assert.equal(all('a', 'xp').reduce((n, m) => n + m.amount, 0), total, 'all of it reaches the player');
+  assert.equal([...host.entities.values()].filter((e) => e.type === 'xp').length, 0);
+
+  // diamond ore with an iron pickaxe gives 3-7 points
+  host.world.setBlock(x + 1, y, z, BLOCK.DIAMOND_ORE);
+  host.message('a', { t: 'dig', x: x + 1, y, z, tool: ITEM.IRON_PICKAXE });
+  const ore = [...host.entities.values()].filter((e) => e.type === 'xp').reduce((n, e) => n + e.value, 0);
+  assert.ok(ore >= 3 && ore <= 7, `ore xp ${ore}`);
+  // ...but nothing without the right tool
+  host.world.setBlock(x + 1, y, z, BLOCK.DIAMOND_ORE);
+  const before = host.entities.size;
+  host.message('a', { t: 'dig', x: x + 1, y, z, tool: 0 });
+  assert.equal(host.entities.size, before);
+});
+
+test('experience is saved, and dying drops 7 points per level', () => {
+  const { host, join, last } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  host.message('a', { t: 'save', inv: new Array(36).fill(null), health: 20, food: 20, xp: 160 }); // level 10
+  const key = Object.keys(host.serialize().players)[0];
+  assert.equal(host.save.players[key].xp, 160);
+  host.message('a', { t: 'died', items: [], cause: 'fell', xp: 160 });
+  const dropped = [...host.entities.values()].filter((e) => e.type === 'xp').reduce((n, e) => n + e.value, 0);
+  assert.equal(dropped, 70);
+  host.serialize();
+  assert.equal(host.save.players[key].xp, 0);
+  assert.equal(last('a', 'welcome').me.xp, 0);
+});
+
+test('the host frees terrain far from every player, keeping edits', () => {
+  const { host, join } = setup();
+  join('a', 'A');
+  standAtSpawn(host, 'a');
+  host.world.setBlock(2000, 150, 2000, BLOCK.BRICK);
+  for (let cx = 100; cx < 127; cx++) for (let cz = 100; cz < 127; cz++) host.world.getChunk(cx, cz);
+  const p = [...host.players.values()][0];
+  host.world.getChunk(Math.floor(p.x / 16), Math.floor(p.z / 16));
+  assert.ok(host.world.chunks.size > 600);
+  host.trimMemory();
+  assert.ok(host.world.chunks.size < 300, `${host.world.chunks.size} chunks left`);
+  assert.ok(host.world.hasChunk(Math.floor(p.x / 16), Math.floor(p.z / 16)), 'chunks near the player stay');
+  assert.equal(host.world.getBlock(2000, 150, 2000), BLOCK.BRICK, 'edits survive');
+});

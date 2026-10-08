@@ -8,6 +8,7 @@ import { World, LATEST_GEN } from './world.js';
 import { HostNetwork, joinFriend, randomRoomId } from './net.js';
 import { listWorlds, loadWorld, saveWorld, deleteWorld, requestPersistence } from './storage.js';
 import { setVolume, sound } from './sound.js';
+import { music, setMusicVolume } from './music.js';
 import { createUIArt, applyUIArt, drawLogo } from './ui-art.js';
 import { VERSION } from './version.js';
 import { configured, currentUser, signIn, signOut, displayName, accessToken, verifyToken } from './auth.js';
@@ -18,7 +19,7 @@ const query = new URLSearchParams(location.search);
 const RELAY = query.get('relay') || params.get('relay') || ''; // only for testing with a local relay
 
 // ---------- settings ----------
-const settings = { renderDistance: 6, fov: 70, sensitivity: 1, volume: 50, brightness: 50 };
+const settings = { renderDistance: 6, fov: 70, sensitivity: 1, volume: 50, brightness: 50, music: 50, bobbing: true, clouds: 'fancy' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('craftkat-settings') || '{}')); } catch { /* ignore */ }
 function saveSettings() {
   try { localStorage.setItem('craftkat-settings', JSON.stringify(settings)); } catch { /* ignore */ }
@@ -462,6 +463,28 @@ bindRange('opt-bright', 'brightness', brightLabel, (v) => renderer.setBrightness
 renderer.setBrightness(settings.brightness / 100);
 bindRange('opt-volume', 'volume', (v) => v, (v) => setVolume(v / 100));
 setVolume(settings.volume / 100);
+bindRange('opt-music', 'music', (v) => v, (v) => setMusicVolume(v / 100));
+setMusicVolume(settings.music / 100);
+// on/off options are buttons, like Minecraft's
+function bindToggle(id, label, values, names, apply = () => {}) {
+  const button = $(id);
+  const paint = () => { button.textContent = `${label}: ${names[values.indexOf(settings[id.slice(4)])] ?? names[0]}`; };
+  paint();
+  button.addEventListener('click', () => {
+    const key = id.slice(4);
+    settings[key] = values[(values.indexOf(settings[key]) + 1) % values.length];
+    paint();
+    apply(settings[key]);
+    saveSettings();
+  });
+  apply(settings[id.slice(4)]);
+}
+bindToggle('opt-bobbing', 'View Bobbing', [true, false], ['ON', 'OFF']);
+bindToggle('opt-clouds', 'Clouds', ['fancy', 'fast', 'off'], ['Fancy', 'Fast', 'OFF'], (v) => renderer.setClouds(v));
+
+// every button clicks, and the music starts after the first click anywhere
+document.addEventListener('click', (e) => { if (e.target.closest('button')) sound.button(); }, true);
+document.addEventListener('pointerdown', () => { sound.unlock(); music.start(); }, { once: true });
 
 $('btn-options').addEventListener('click', () => show('options-screen'));
 $('btn-pause-options').addEventListener('click', () => {

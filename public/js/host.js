@@ -9,6 +9,7 @@ import {
 import { World, LATEST_GEN } from './world.js';
 import { moveBody, collides } from './physics.js';
 import { clickSlot, quickMove } from './inventory.js';
+import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -176,6 +177,7 @@ export class GameHost {
       health: p.health ?? prev.health ?? 20,
       food: p.food ?? prev.food ?? 20,
       bed: p.bed ?? prev.bed ?? null,
+      xp: p.xp ?? prev.xp ?? 0,
     };
     this.dirty = true;
   }
@@ -243,6 +245,7 @@ export class GameHost {
       health: saved?.health ?? 20,
       food: saved?.food ?? 20,
       bed: saved?.bed ?? null,
+      xp: saved?.xp ?? 0,
       isHost: !!msg.isHost && peerId === 'local',
       moved: true,
       canBuild: bucket(25, 50, this.now),
@@ -260,7 +263,7 @@ export class GameHost {
       spawn: this.save.spawn,
       time: this.time,
       mode: p.mode,
-      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed },
+      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp },
       players: [...this.players.values()].filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
     this.broadcast({ t: 'join', ...this.playerInfo(p) }, peerId);
@@ -347,7 +350,10 @@ export class GameHost {
     this.setBlock(x, y, z, flood ? BLOCK.WATER : BLOCK.AIR, exceptPeer);
     if (flood && exceptPeer) this.send(exceptPeer, { t: 'set', x, y, z, id: BLOCK.WATER });
     if (tool !== null) {
-      for (const [dropId, count] of getDrops(id, tool, this.random)) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, dropId, count);
+      const drops = getDrops(id, tool, this.random);
+      for (const [dropId, count] of drops) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, dropId, count);
+      const xp = ORE_XP[id];
+      if (xp && drops.length) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
     }
     if (id === BLOCK.FURNACE) {
       const key = `${x},${y},${z}`;
@@ -406,6 +412,45 @@ export class GameHost {
     return e;
   }
 
+  // Experience orbs, split into Minecraft's orb sizes.
+  spawnXP(x, y, z, amount) {
+    while (amount > 0) {
+      const value = XP_SIZES.find((v) => v <= amount);
+      amount -= value;
+      this.entities.set(this.nextEntityId, {
+        id: this.nextEntityId++, type: 'xp', value, x, y, z, halfW: 0.125, height: 0.25,
+        vx: (this.random() - 0.5) * 2, vy: 2 + this.random() * 2, vz: (this.random() - 0.5) * 2, age: 0, yaw: 0,
+      });
+    }
+  }
+
+  tickXP(e, dt) {
+    if (e.age > ITEM_LIFETIME) { this.entities.delete(e.id); return; }
+    // fly towards the nearest living player within 8 blocks
+    let best = null, bestD = 8;
+    for (const p of this.players.values()) {
+      if (p.dead) continue;
+      const d = Math.hypot(p.x - e.x, p.y + 0.9 - e.y, p.z - e.z);
+      if (d < bestD) { best = p; bestD = d; }
+    }
+    if (best && e.age > 0.5) {
+      if (bestD < 1.3) {
+        this.entities.delete(e.id);
+        this.send(best.peerId, { t: 'xp', amount: e.value });
+        return;
+      }
+      const pull = (1 - bestD / 8) ** 2 * 60 * dt;
+      e.vx += (best.x - e.x) / bestD * pull;
+      e.vy += (best.y + 0.9 - e.y) / bestD * pull;
+      e.vz += (best.z - e.z) / bestD * pull;
+    }
+    e.vy -= 10 * dt;
+    const res = moveBody(this.world, e, dt);
+    const drag = res.onGround ? 0.85 : 0.98;
+    e.vx *= drag; e.vz *= drag;
+    if (e.y < -20) this.entities.delete(e.id);
+  }
+
   spawnMob(type, x, y, z) {
     const t = MOB_TYPES[type];
     const e = {
@@ -445,6 +490,10 @@ export class GameHost {
         if (validStack(s) && s) this.spawnItem(p.x, p.y + 0.5, p.z, s.id, s.count, s.dur);
       }
     }
+    // like Minecraft: drop 7 points per level (at most 100) and lose the rest
+    if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
+    if (p.mode === 'survival') this.spawnXP(p.x, p.y + 0.5, p.z, Math.min(100, 7 * levelOf(p.xp || 0)));
+    p.xp = 0;
     this.sys(`${p.name} ${typeof msg.cause === 'string' ? msg.cause.slice(0, 40) : 'died'}`);
   }
 
@@ -479,6 +528,7 @@ export class GameHost {
       creeper: [[ITEM.GUNPOWDER, Math.floor(r() * 3)]],
     }[e.type] || [];
     for (const [id, n] of drops) if (n > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n);
+    this.spawnXP(e.x, e.y + 0.5, e.z, MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
     this.broadcast({ t: 'mobdeath', e: e.id });
   }
 
@@ -736,6 +786,7 @@ export class GameHost {
     if (Array.isArray(msg.inv) && msg.inv.length === 36 && msg.inv.every(validStack)) p.inv = msg.inv;
     if (isNum(msg.health)) p.health = Math.max(0, Math.min(20, msg.health));
     if (isNum(msg.food)) p.food = Math.max(0, Math.min(20, msg.food));
+    if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
     this.storePlayer(p);
   }
 
@@ -781,6 +832,10 @@ export class GameHost {
       if (out && (!cursor || (cursor.id === out.id && cursor.dur === undefined && cursor.count + out.count <= maxStack(out.id)))) {
         next = cursor ? { ...cursor, count: cursor.count + out.count } : out;
         f.slots[2] = null;
+        // smelting experience is collected when the output is taken
+        const xp = Math.floor(f.xp || 0) + (this.random() < (f.xp || 0) % 1 ? 1 : 0);
+        f.xp = 0;
+        if (xp > 0) this.spawnXP(p.x, p.y + 1, p.z, xp);
       } else {
         next = cursor;
       }
@@ -820,6 +875,7 @@ export class GameHost {
             if (input.count <= 0) f.slots[0] = null;
             if (output) output.count++;
             else f.slots[2] = { id: result, count: 1 };
+            f.xp = (f.xp || 0) + (SMELT_XP[result] ?? 0.1);
           }
         } else {
           f.progress = 0;
@@ -922,6 +978,7 @@ export class GameHost {
       // don't simulate in unloaded areas far from everyone
       if (near[1] > 96) continue;
       if (e.type === 'arrow') { this.tickArrow(e, dt); continue; }
+      if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
         if (e.age > ITEM_LIFETIME) { this.entities.delete(e.id); continue; }
@@ -1076,7 +1133,7 @@ export class GameHost {
       for (const e of this.entities.values()) {
         if (Math.abs(e.x - p.x) > VIEW || Math.abs(e.z - p.z) > VIEW) continue;
         // flags: 1 = sheared sheep, 2 = creeper about to explode
-        const flags = (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
+        const flags = e.type === 'xp' ? e.value : (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
@@ -1099,6 +1156,15 @@ export class GameHost {
 
   // Server-side chunk memory cap: terrain regenerates on demand, edits are kept.
   trimMemory() {
-    if (this.world.chunks.size > 2048) this.world.chunks.clear();
+    // chunks are 64 KB each in tall worlds, so keep at most ~40 MB of terrain
+    if (this.world.chunks.size <= 600) return;
+    const near = [...this.players.values()].map((p) => [Math.floor(p.x / 16), Math.floor(p.z / 16)]);
+    for (const key of [...this.world.chunks.keys()]) {
+      const [cx, cz] = key.split(',').map(Number);
+      if (!near.some(([px, pz]) => Math.abs(cx - px) <= 8 && Math.abs(cz - pz) <= 8)) {
+        this.world.chunks.delete(key);
+        this.world.biomes.delete(key);
+      }
+    }
   }
 }

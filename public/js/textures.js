@@ -670,6 +670,12 @@ export function createTextures() {
   atlas.generateMipmaps = false;
   atlas.colorSpace = THREE.NoColorSpace; // shaders treat colors as already display-ready
   // the same pixels for regular three.js materials (held and dropped blocks)
+  // tinted pixels as they are, for shaders that output colours directly (particles)
+  const atlasTinted = new THREE.CanvasTexture(tintedCanvas);
+  atlasTinted.magFilter = THREE.NearestFilter;
+  atlasTinted.minFilter = THREE.NearestFilter;
+  atlasTinted.generateMipmaps = false;
+  atlasTinted.colorSpace = THREE.NoColorSpace;
   const atlasSRGB = new THREE.CanvasTexture(tintedCanvas);
   atlasSRGB.magFilter = THREE.NearestFilter;
   atlasSRGB.minFilter = THREE.NearestFilter;
@@ -794,5 +800,5 @@ export function createTextures() {
     cracks.push(tex);
   }
 
-  return { atlas, atlasSRGB, atlasCanvas, iconURL, itemTexture, tileTexture, cracks };
+  return { atlas, atlasSRGB, atlasTinted, atlasCanvas, iconURL, itemTexture, tileTexture, cracks };
 }
