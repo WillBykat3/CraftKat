@@ -1,6 +1,7 @@
 // Visuals for other players, mobs and dropped items. Positions arrive from the
 // host ~10 times a second and are smoothed here.
 
+import { DYE_RGB } from './colors.js';
 import * as THREE from 'three';
 import { BLOCKS, isBlockId, armorOf, ITEM } from './blocks.js';
 
@@ -991,6 +992,13 @@ export class EntityViews {
         }
       }
       if (v.model.wool) {
+        const woolColor = (v.flags >> 14) & 15;
+        if (v.woolColor !== woolColor) {
+          v.woolColor = woolColor;
+          const [r, g, b] = DYE_RGB[woolColor];
+          recolor(v.model.wool, (r << 16) | (g << 8) | b);
+          recolor(v.model.headWool, (r << 16) | (g << 8) | b);
+        }
         const sheared = (v.flags & 1) !== 0;
         v.model.wool.visible = !sheared;
         v.model.headWool.visible = !sheared;

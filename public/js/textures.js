@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
 import { TILE as S, ATLAS_TILES, TILE_NAMES, tileIndex, uvOf } from './atlas-layout.js';
+import { COLORS, DYE_RGB, TERRACOTTA_RGB, PLAIN_TERRACOTTA_RGB } from './colors.js';
 import { FACES } from './mesher.js';
 import { BLOCKS, ITEMS, ITEM, isBlockId } from './blocks.js';
 import { potionColor } from './effects.js';
@@ -520,7 +521,7 @@ function drawBlockTile(p, name) {
       p.noisy(C.sandstone, 0.05);
       for (let x = 0; x < S; x++) { px(x, 3, shade(C.sandstone, 0.85)); px(x, 11, shade(C.sandstone, 0.85)); }
       break;
-    case 'wool': p.noisy([235, 235, 235], 0.06); break;
+    case 'wool': drawWool(p, DYE_RGB[0]); break;
     case 'obsidian':
       p.noisy([20, 16, 30], 0.3);
       p.specks([70, 50, 110], 12);
@@ -898,8 +899,28 @@ function drawBlockTile(p, name) {
       break;
     default:
       if (/^(wheat|carrots|potatoes)_\d$/.test(name)) { drawCrop(p, name); break; }
+      if (name.startsWith('wool_')) { drawWool(p, DYE_RGB[COLORS.indexOf(name.slice(5))]); break; }
+      if (name.startsWith('stained_glass_')) {
+        // a pane of tinted glass: see-through, with a darker frame
+        const c = DYE_RGB[COLORS.indexOf(name.slice(14))];
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+          const edge = x === 0 || y === 0 || x === S - 1 || y === S - 1;
+          px(x, y, shade(c, edge ? 0.8 : 1), edge ? 0.9 : 0.5);
+        }
+        for (let i = 0; i < 4; i++) px(3 + i, 6 - i, shade(c, 1.4), 0.7);
+        break;
+      }
+      if (name === 'terracotta' || name.startsWith('terracotta_')) {
+        p.noisy(name === 'terracotta' ? PLAIN_TERRACOTTA_RGB : TERRACOTTA_RGB[COLORS.indexOf(name.slice(11))], 0.05);
+        break;
+      }
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, (x < 8) === (y < 8) ? [255, 0, 255] : [0, 0, 0]);
   }
+}
+
+// Wool: soft noise with a faint woven pattern.
+function drawWool(p, c) {
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) p.px(x, y, shade(c, 0.92 + p.rand() * 0.12 - ((x + y * 3) % 4 === 0 ? 0.06 : 0)));
 }
 
 // Growing crops: stalks that get taller with each stage; wheat ripens to gold,
@@ -1261,10 +1282,25 @@ function drawItem(p, icon) {
       }
       px(6, 6, [200, 255, 220]); px(7, 5, [200, 255, 220]);
       break;
+    case 'cocoa_beans': blob([110, 65, 35], 8, 8.5, 3.5, 4.5, 0.25); for (let y = 5; y < 12; y++) px(8, y, [80, 45, 25]); break;
+    case 'clay_ball': blob([160, 166, 179], 8, 8.5, 4, 3.5, 0.15); break;
+    case 'brick_item':
+      for (let y = 6; y < 11; y++) for (let x = 3; x < 13; x++) px(x, y, shade([150, 75, 55], y === 6 ? 1.15 : y === 10 ? 0.75 : 0.9 + rand() * 0.2));
+      break;
     case 'string':
       for (let i = 0; i < 12; i++) px(2 + i, 8 + Math.round(Math.sin(i * 0.9) * 2), [235, 235, 235]);
       break;
-    default: px(8, 8, [255, 0, 255]);
+    default:
+      if (icon.startsWith('dye_')) {
+        // a little pile of powder in the dye's colour
+        const c = DYE_RGB[COLORS.indexOf(icon.slice(4))];
+        for (let y = 5; y < 14; y++) for (let x = 3; x < 13; x++) {
+          const d = ((x - 8) / 5) ** 2 + ((y - 13) / 7.5) ** 2;
+          if (d < 1 && y > 5 + Math.abs(x - 8) * 0.9) px(x, y, shade(c, 1.15 - d * 0.35 + rand() * 0.1));
+        }
+        break;
+      }
+      px(8, 8, [255, 0, 255]);
   }
 }
 

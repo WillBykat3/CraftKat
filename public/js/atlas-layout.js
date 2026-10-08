@@ -1,8 +1,10 @@
-// Where each block texture sits in the 16x16-tile atlas. Pure data, so the
+// Where each block texture sits in the 32x32-tile atlas. Pure data, so the
 // mesh worker can compute texture coordinates without drawing anything.
 
+import { COLORS } from './colors.js';
+
 export const TILE = 16;      // pixels per tile
-export const ATLAS_TILES = 16; // tiles per row/column
+export const ATLAS_TILES = 32; // tiles per row/column
 
 export const TILE_NAMES = [
   'grass_top', 'grass_side', 'dirt', 'stone', 'cobble', 'sand', 'gravel', 'log_top',
@@ -34,6 +36,8 @@ export const TILE_NAMES = [
   'iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'coal_block',
   'brewing_stand_base', 'brewing_stand', 'brewing_stand_rod', 'nether_wart_0', 'nether_wart_1', 'nether_wart_2', 'nether_wart_3',
   'brown_mushroom', 'red_mushroom', 'melon_top', 'melon_side', 'slime_block',
+  ...COLORS.slice(1).map((c) => 'wool_' + c), ...COLORS.map((c) => 'stained_glass_' + c),
+  'terracotta', ...COLORS.map((c) => 'terracotta_' + c),
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

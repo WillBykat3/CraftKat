@@ -8,6 +8,7 @@ export const ITEM_BASE = 256; // ids below this are blocks, from here on items (
 export const HIGH_BLOCKS = 1000; // later blocks: ids 1000 to MAX_BLOCK - 1 (chunks store 16-bit ids)
 export const MAX_BLOCK = 4096;
 const ITEM_NETHER_WART = 351; // (ITEM is defined below)
+import { COLORS, COLOR_NAMES } from './colors.js';
 
 export const BLOCK = {
   AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, COBBLE: 4, SAND: 5, GRAVEL: 6, LOG: 7, LEAVES: 8,
@@ -39,6 +40,7 @@ export const BLOCK = {
   ENCHANTING_TABLE: 1046, ANVIL: 1047, CHIPPED_ANVIL: 1048, DAMAGED_ANVIL: 1049,
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
   BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066, SLIME_BLOCK: 1067,
+  STAINED_GLASS: 1085, TERRACOTTA: 1101, // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -279,6 +281,13 @@ for (let i = 0; i < 4; i++) {
 def(1064, 'Brown Mushroom', { tex: ['brown_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, emit: 1 });
 def(1065, 'Red Mushroom', { tex: ['red_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
 def(1066, 'Melon', { tex: ['melon_top', 'melon_side', 'melon_top'], hardness: 1, tool: 'axe' });
+// the sixteen colours (white wool is block 29)
+COLORS.forEach((c, i) => {
+  if (i > 0) def(1069 + i, `${COLOR_NAMES[i]} Wool`, { tex: ['wool_' + c], hardness: 0.8, color: i });
+  def(1085 + i, `${COLOR_NAMES[i]} Stained Glass`, { tex: ['stained_glass_' + c], hardness: 0.3, transparent: true, translucent: true, cullSame: true, color: i });
+  def(1102 + i, `${COLOR_NAMES[i]} Terracotta`, { tex: ['terracotta_' + c], hardness: 1.25, tool: 'pickaxe', needsTier: 0, color: i });
+});
+def(1101, 'Terracotta', { tex: ['terracotta'], hardness: 1.25, tool: 'pickaxe', needsTier: 0 });
 def(1067, 'Slime Block', { tex: ['slime_block'], hardness: 0, transparent: true, translucent: true, bouncy: true });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
@@ -352,7 +361,7 @@ export const ITEM = {
   GLASS_BOTTLE: 348, POTION: 349, SPLASH_POTION: 350, NETHER_WART: 351, SPIDER_EYE: 352, FERMENTED_SPIDER_EYE: 353, SUGAR: 354,
   MELON_SLICE: 355, GLISTERING_MELON_SLICE: 356, GOLDEN_CARROT: 357, MAGMA_CREAM: 358, RABBIT_FOOT: 359, PUFFERFISH: 360,
   PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363, EGG: 364, SLIMEBALL: 365, INK_SAC: 366, RAW_RABBIT: 367,
-  COOKED_RABBIT: 368, RABBIT_HIDE: 369,
+  COOKED_RABBIT: 368, RABBIT_HIDE: 369, DYE: 370, COCOA_BEANS: 386, CLAY_BALL: 398, BRICK: 399, // (dyes are 370 + colour)
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -421,6 +430,10 @@ item(366, 'Ink Sac', { icon: 'ink_sac' });
 item(367, 'Raw Rabbit', { icon: 'raw_rabbit', food: 3 });
 item(368, 'Cooked Rabbit', { icon: 'cooked_rabbit', food: 5 });
 item(369, 'Rabbit Hide', { icon: 'rabbit_hide' });
+COLORS.forEach((c, i) => item(370 + i, `${COLOR_NAMES[i]} Dye`, { icon: 'dye_' + c, dye: i }));
+item(386, 'Cocoa Beans', { icon: 'cocoa_beans' });
+item(398, 'Clay Ball', { icon: 'clay_ball' });
+item(399, 'Brick', { icon: 'brick_item' });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -601,7 +614,7 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.CHERRY_LEAVES:
     case BLOCK.SPRUCE_LEAVES:
     case BLOCK.ACACIA_LEAVES:
-    case BLOCK.JUNGLE_LEAVES:
+    case BLOCK.JUNGLE_LEAVES: if (blockId === BLOCK.JUNGLE_LEAVES && rand() < 0.03) return [[ITEM.COCOA_BEANS, 1]]; // falls through
     case BLOCK.TALL_GRASS: return rand() < 0.125 ? [[ITEM.WHEAT_SEEDS, 1]] : [];
     case BLOCK.GRAVEL: return rand() < 0.1 ? [[ITEM.FLINT, 1]] : [[BLOCK.GRAVEL, 1]];
     case BLOCK.FARMLAND: return [[BLOCK.DIRT, 1]];
@@ -617,10 +630,11 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.GLASS:
     case BLOCK.WATER:
     case BLOCK.BEDROCK: return [];
-    case BLOCK.CLAY: return [[BLOCK.CLAY, 1]];
+    case BLOCK.CLAY: return [[ITEM.CLAY_BALL, 4]];
     case BLOCK.SNOW: return [[BLOCK.SNOW, 1]];
     default: break;
   }
+  if (b.translucent && b.color !== undefined) return []; // stained glass breaks (unless Silk Touch)
   if (b.wart !== undefined) return [[ITEM.NETHER_WART, b.wart === 3 ? 2 + Math.floor(rand() * 3) : 1]];
   if (b.crop) {
     const { kind, stage, max } = b.crop;
@@ -639,6 +653,7 @@ for (const name of ['GRASS', 'SNOWY_GRASS', 'DIRT_PATH', 'STONE', 'DEEPSLATE', '
   'DEEPSLATE_REDSTONE_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE', 'EMERALD_ORE', 'GLASS', 'ICE', 'LEAVES', 'BIRCH_LEAVES', 'SPRUCE_LEAVES',
   'ACACIA_LEAVES', 'DARK_OAK_LEAVES', 'JUNGLE_LEAVES', 'CHERRY_LEAVES', 'BOOKSHELF', 'GLOWSTONE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE',
   'GRAVEL', 'TALL_GRASS', 'FERN', 'DEAD_BUSH', 'CLAY', 'SNOW']) if (BLOCK[name] !== undefined) SILK.add(BLOCK[name]);
+for (let c = 0; c < 16; c++) SILK.add(1085 + c);
 for (const name of ['COAL_ORE', 'DEEPSLATE_COAL_ORE', 'DIAMOND_ORE', 'DEEPSLATE_DIAMOND_ORE', 'EMERALD_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE',
   'REDSTONE_ORE', 'DEEPSLATE_REDSTONE_ORE', 'COPPER_ORE', 'DEEPSLATE_COPPER_ORE', 'IRON_ORE', 'DEEPSLATE_IRON_ORE', 'GOLD_ORE',
   'DEEPSLATE_GOLD_ORE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE', 'GLOWSTONE']) FORTUNE.add(BLOCK[name]);
@@ -655,7 +670,9 @@ export const SMELTING = {
   [ITEM.RAW_BEEF]: ITEM.STEAK,
   [BLOCK.LOG]: ITEM.COAL,
   [BLOCK.BIRCH_LOG]: ITEM.COAL,
-  [BLOCK.CLAY]: BLOCK.BRICK,
+  [BLOCK.CLAY]: BLOCK.TERRACOTTA,
+  [ITEM.CLAY_BALL]: ITEM.BRICK,
+  [BLOCK.CACTUS]: ITEM.DYE + 13,
   [BLOCK.CHERRY_LOG]: ITEM.COAL,
   [BLOCK.SPRUCE_LOG]: ITEM.COAL,
   [BLOCK.ACACIA_LOG]: ITEM.COAL,
@@ -692,3 +709,8 @@ for (const id of Object.keys(I).map(Number)) {
   if (I[id].tool && I[id].tool.tier === 0) FUEL[id] = 1;
 }
 export const SMELT_SECONDS = 10;
+
+// Colours: wool of a colour, and the colour of a dye or coloured block (or -1).
+export const woolOf = (c) => (c === 0 ? BLOCK.WOOL : 1069 + c);
+export const colorOf = (id) => (id === BLOCK.WOOL ? 0 : ITEMS[id]?.dye ?? BLOCKS[id]?.color ?? -1);
+export const isWool = (id) => id === BLOCK.WOOL || (id >= 1070 && id <= 1084);

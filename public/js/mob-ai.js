@@ -67,6 +67,7 @@ export const mobAI = {
       e.breedCooldown = mate.breedCooldown = BREED_COOLDOWN;
       const baby = this.spawnBaby(e.type, (e.x + mate.x) / 2, e.y, (e.z + mate.z) / 2);
       if (e.type === 'wolf' && e.owner) Object.assign(baby, { owner: e.owner, tamed: true, hp: 20, persist: true });
+      if (e.type === 'sheep') baby.color = (this.random() < 0.5 ? e : mate).color || 0; // (Minecraft mixes the colours when it can)
       this.spawnXP(e.x, e.y + 0.5, e.z, 1 + Math.floor(this.random() * 7));
       return 0;
     }

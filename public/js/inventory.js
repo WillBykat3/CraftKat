@@ -1,7 +1,7 @@
 // Inventory slots, Minecraft-style click handling and crafting recipes.
 // A slot is null or {id, count, dur?} (dur = remaining tool durability).
 
-import { BLOCK, ITEM, ITEMS, maxStack, maxDurability } from './blocks.js';
+import { BLOCK, ITEM, ITEMS, maxStack, maxDurability, woolOf } from './blocks.js';
 
 export const HOTBAR_SIZE = 9;
 export const INVENTORY_SIZE = 36; // 0-8 hotbar, 9-35 backpack
@@ -155,6 +155,8 @@ const TOOL_MATERIALS = [
 
 // pattern rows use keys; '.' or ' ' is empty. key -> list of accepted ids
 // shapeless: the items can go anywhere in the grid (the pattern is how the recipe book shows it)
+const ALL_WOOL = Array.from({ length: 16 }, (_, c) => woolOf(c));
+const DYE = (c) => ITEM.DYE + c;
 export const RECIPES = [
   { pattern: ['L'], keys: { L: [BLOCK.LOG] }, result: [BLOCK.PLANKS, 4] },
   { pattern: ['L'], keys: { L: [BLOCK.BIRCH_LOG] }, result: [BLOCK.BIRCH_PLANKS, 4] },
@@ -168,7 +170,7 @@ export const RECIPES = [
   { pattern: ['L'], keys: { L: [BLOCK.JUNGLE_LOG] }, result: [BLOCK.JUNGLE_PLANKS, 4] },
   { pattern: ['CCC', 'C.C', 'CCC'], keys: { C: STONES }, result: [BLOCK.FURNACE, 1] },
   { pattern: ['PPP', 'P.P', 'PPP'], keys: { P: PLANKS }, result: [BLOCK.CHEST, 1] },
-  { pattern: ['WWW', 'PPP'], keys: { W: [BLOCK.WOOL], P: PLANKS }, result: [BLOCK.BED, 1] },
+  { pattern: ['WWW', 'PPP'], keys: { W: ALL_WOOL, P: PLANKS }, result: [BLOCK.BED, 1] },
   { pattern: ['I.I', '.I.'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.BUCKET, 1] },
   { pattern: ['.I', 'I.'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.SHEARS, 1] },
   { pattern: ['SS', 'SS'], keys: { S: [ITEM.STRING] }, result: [BLOCK.WOOL, 1] },
@@ -414,3 +416,23 @@ export function fillGrid(r, inv, grid, size, times = 1) {
 export function recipeResult(r) {
   return makeStack(r.result[0], r.result[1]);
 }
+
+// dyes: from flowers and other things, and mixed from other dyes (colour numbers: see colors.js)
+for (const [from, c, n] of [[BLOCK.DANDELION, 4, 1], [BLOCK.POPPY, 14, 1], [BLOCK.CORNFLOWER, 11, 1], [ITEM.INK_SAC, 15, 1],
+  [ITEM.LAPIS_LAZULI, 11, 1], [ITEM.BONE_MEAL, 0, 1], [ITEM.COCOA_BEANS, 12, 1]]) {
+  RECIPES.push({ pattern: ['X'], keys: { X: [from] }, result: [DYE(c), n], shapeless: true });
+}
+for (const [parts, c] of [[[14, 4], 1], [[11, 0], 3], [[14, 0], 6], [[13, 0], 5], [[15, 0], 7], [[7, 0], 8], [[15, 0, 0], 8],
+  [[11, 13], 9], [[14, 11], 10], [[10, 6], 2], [[11, 14, 6], 2], [[11, 14, 14, 0], 2]]) {
+  const keys = {}, letters = 'ABCD';
+  parts.forEach((d, i) => { keys[letters[i]] = [DYE(d)]; });
+  RECIPES.push({ pattern: [letters.slice(0, parts.length)], keys, result: [DYE(c), parts.length], shapeless: true });
+}
+for (let c = 0; c < 16; c++) {
+  RECIPES.push({ pattern: ['DW'], keys: { D: [DYE(c)], W: ALL_WOOL.filter((w) => w !== woolOf(c)) }, result: [woolOf(c), 1], shapeless: true });
+  RECIPES.push({ pattern: ['GGG', 'GDG', 'GGG'], keys: { G: [BLOCK.GLASS], D: [DYE(c)] }, result: [BLOCK.STAINED_GLASS + c, 8] });
+  RECIPES.push({ pattern: ['TTT', 'TDT', 'TTT'], keys: { T: [BLOCK.TERRACOTTA], D: [DYE(c)] }, result: [BLOCK.TERRACOTTA + 1 + c, 8] });
+}
+// clay and bricks
+RECIPES.push({ pattern: ['CC', 'CC'], keys: { C: [ITEM.CLAY_BALL] }, result: [BLOCK.CLAY, 1] });
+RECIPES.push({ pattern: ['BB', 'BB'], keys: { B: [ITEM.BRICK] }, result: [BLOCK.BRICK, 1] });

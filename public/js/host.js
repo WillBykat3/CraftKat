@@ -4,7 +4,7 @@
 
 import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
-  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS,
+  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS, woolOf,
 } from './blocks.js';
 import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
@@ -728,6 +728,11 @@ export class GameHost {
       hp: t.hp, yaw: this.random() * 6.28, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false,
     };
     if (t.custom === 'slimeTick') this.setSlimeSize(e, SLIME_SIZES[Math.floor(this.random() * SLIME_SIZES.length)]);
+    if (type === 'sheep') {
+      // like Minecraft: mostly white, some black, grey, light grey or brown, and very rarely pink
+      const r = this.random();
+      e.color = r < 0.8164 ? 0 : r < 0.8664 ? 15 : r < 0.9164 ? 7 : r < 0.9664 ? 8 : r < 0.9964 ? 12 : 6;
+    }
     return this.addEntity(e);
   }
 
@@ -840,7 +845,7 @@ export class GameHost {
     const drops = {
       pig: [[ITEM.RAW_PORKCHOP, 1 + Math.floor(r() * 3)]],
       cow: [[ITEM.RAW_BEEF, 1 + Math.floor(r() * 3)], [ITEM.LEATHER, Math.floor(r() * 3)]],
-      sheep: [[ITEM.RAW_MUTTON, 1 + Math.floor(r() * 2)], [BLOCK.WOOL, e.sheared ? 0 : 1]],
+      sheep: [[ITEM.RAW_MUTTON, 1 + Math.floor(r() * 2)], [woolOf(e.color || 0), e.sheared ? 0 : 1]],
       chicken: [[ITEM.RAW_CHICKEN, 1], [ITEM.FEATHER, Math.floor(r() * 3)]],
       zombie: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)], [r() < 0.5 ? ITEM.CARROT : ITEM.POTATO, r() < 0.05 ? 1 : 0]],
       skeleton: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
@@ -1087,7 +1092,7 @@ export class GameHost {
       e.trading = this.now() + 5000;
       return this.sendTrades(p, e);
     }
-    if ((BREED_FOOD[e.type] || e.type === 'wolf') && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS) {
+    if ((BREED_FOOD[e.type] || e.type === 'wolf') && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS && ITEMS[msg.tool]?.dye === undefined) {
       if (this.feedAnimal(p, e, msg.tool)) this.send(p.peerId, { t: 'consume' });
       return;
     }
@@ -1095,7 +1100,13 @@ export class GameHost {
     if (e.type === 'sheep' && msg.tool === ITEM.SHEARS && !e.sheared) {
       e.sheared = true;
       e.regrow = 60 + this.random() * 60;
-      this.spawnItem(e.x, e.y + 1, e.z, BLOCK.WOOL, 1 + Math.floor(this.random() * 3));
+      this.spawnItem(e.x, e.y + 1, e.z, woolOf(e.color || 0), 1 + Math.floor(this.random() * 3));
+    }
+    // dyeing a sheep
+    const dye = ITEMS[msg.tool]?.dye;
+    if (e.type === 'sheep' && dye !== undefined && (e.color || 0) !== dye) {
+      e.color = dye;
+      this.send(p.peerId, { t: 'consume' });
     }
   }
 
@@ -2870,7 +2881,7 @@ export class GameHost {
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
           : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
             (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
-            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0);
+            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing

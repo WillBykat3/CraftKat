@@ -653,6 +653,12 @@ export class Game {
       return;
     }
     if (kind === 'wolf' && (flags & 4096)) { this.send({ t: 'interact', e: mob.id }); this.useCooldown = 0.25; return; } // sit / stand
+    if (kind === 'sheep' && held && ITEMS[held.id]?.dye !== undefined && ((flags >> 14) & 15) !== ITEMS[held.id].dye) {
+      this.send({ t: 'interact', e: mob.id, tool: held.id }); // dye it (the host replies 'consume')
+      this.swing = 1;
+      this.useCooldown = 0.25;
+      return;
+    }
     if (mob && held?.id === ITEM.SHEARS) {
       this.send({ t: 'interact', e: mob.id, tool: held.id });
       this.useTool(1);

@@ -57,6 +57,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Anvils** combine enchantments and repair items (each use costs more), and wear out; the **grindstone** takes
   enchantments off for experience; librarians sell enchanted books
 - **Blocks of iron, gold, diamond, emerald, lapis and coal**
+- **Dyes and colours**: all 16 of Minecraft's dyes, from flowers (dandelions, poppies, cornflowers), ink sacs, lapis,
+  bone meal, cactus (smelted) and cocoa beans, and mixed from each other. Dye wool, sheep (shear them for coloured
+  wool), glass (stained glass you can see through) and terracotta (smelt a clay block). Clay drops clay balls, which
+  smelt into bricks
 - **Brewing and potions**: a brewing stand (blaze rod + cobblestone, fuelled by blaze powder) brews Minecraft's
   potions from water bottles and nether wart: Swiftness, Slowness, Strength, Healing, Harming, Poison,
   Regeneration, Fire Resistance, Night Vision, Invisibility, Weakness, Leaping (rabbit's foot) and Slow Falling
@@ -120,6 +124,10 @@ cartography table, fletching table and composter are decoration for now.
 
 **Enchanting differences from Minecraft:** no curses, Frost Walker, Sweeping Edge or fishing and trident
 enchantments; anvils can't rename items.
+
+**Colour differences from Minecraft:** no concrete, carpets, banners, glazed terracotta, glass panes or coloured
+beds, candles or shulker boxes; cocoa beans drop from jungle leaves (there are no cocoa pods); lambs take a parent's
+colour rather than mixing; only the poppy, dandelion and cornflower exist among the flowers.
 
 **Mob differences from Minecraft:** mobs don't find paths around obstacles (they hop up single blocks); slimes don't
 follow the moon's phases in swamps; witches only throw a few kinds of potion; piglins don't remember or share gold,
