@@ -6,6 +6,10 @@ import { CHUNK, HEIGHT, SEA_LEVEL, BLOCK } from './blocks.js';
 import { makeNoise2D, makeNoise3D, hash2, mulberry32 } from './noise.js';
 import { Terrain3, SEA, Y_OFFSET } from './terrain.js';
 import { BIOME } from './biomes.js';
+import { NetherTerrain, NETHER_LAVA } from './terrain-nether.js';
+import { EndTerrain } from './terrain-end.js';
+
+export const DIMENSIONS = ['overworld', 'nether', 'end'];
 
 const TREE_CELL = 6;   // at most one tree per TREE_CELL x TREE_CELL area
 const SNOW_LEVEL = 64;
@@ -27,9 +31,11 @@ export const LATEST_GEN = 3;
 const LEGACY_MAX_GROUND = 76; // versions 1-2 were made for a 96-block world
 
 export class World {
-  constructor(seed, gen = 1) {
+  // dim: 'overworld', 'nether' or 'end' (the Nether and End don't depend on gen)
+  constructor(seed, gen = 1, dim = 'overworld') {
     this.seed = seed | 0;
     this.gen = gen;
+    this.dim = dim;
     this.chunks = new Map(); // chunkKey -> Uint8Array
     this.edits = new Map();  // chunkKey -> Map(blockIndex -> block id)
     this.noiseA = makeNoise2D(this.seed);
@@ -41,14 +47,21 @@ export class World {
     this.cave1 = makeNoise3D(this.seed + 6);
     this.cave2 = makeNoise3D(this.seed + 7);
     this.cavern = makeNoise3D(this.seed + 8);
-    this.terrain = gen >= 3 ? new Terrain3(this.seed) : null;
+    this.terrain = dim === 'overworld' && gen >= 3 ? new Terrain3(this.seed) : null;
+    this.other = dim === 'nether' ? new NetherTerrain(this.seed) : dim === 'end' ? new EndTerrain(this.seed) : null;
     this.biomes = new Map(); // chunkKey -> Uint8Array of biome ids (version 3)
-    this.seaLevel = this.terrain ? SEA : SEA_LEVEL;
+    this.seaLevel = this.terrain ? SEA : dim === 'nether' ? NETHER_LAVA : SEA_LEVEL;
     this.yOffset = this.terrain ? Y_OFFSET : 0; // shown y = y - yOffset
+    this.hasSky = dim === 'overworld'; // the Nether and the End have no sunlight
+  }
+
+  // Nether biome (see terrain-nether.js), or -1 elsewhere.
+  netherBiome(x, z) {
+    return this.dim === 'nether' ? this.other.biome(x, z) : -1;
   }
 
   biomeAt(x, z) {
-    if (!this.terrain) return BIOME.LEGACY;
+    if (!this.terrain) return BIOME.LEGACY; // also the Nether and the End (no grass to colour)
     const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
     const biomes = this.biomes.get(chunkKey(cx, cz));
     if (biomes) return biomes[(z - cz * CHUNK) * CHUNK + (x - cx * CHUNK)];
@@ -58,6 +71,7 @@ export class World {
   // Ground height (y of the top solid block) for a column.
   heightAt(x, z) {
     if (this.terrain) return this.terrain.column(x, z).h;
+    if (this.other) return this.topBlockY(x, z);
     const n =
       this.noiseA(x / 220, z / 220) * 0.6 +
       this.noiseB(x / 70, z / 70) * 0.3 +
@@ -185,7 +199,9 @@ export class World {
 
   generate(cx, cz) {
     let data;
-    if (this.terrain) {
+    if (this.other) {
+      data = this.other.generate(cx, cz).data;
+    } else if (this.terrain) {
       const out = this.terrain.generate(cx, cz);
       this.biomes.set(chunkKey(cx, cz), out.biomes);
       data = out.data;

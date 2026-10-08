@@ -51,6 +51,14 @@ export function shapeBoxes(id, neighbor, collision = false) {
       }
       return boxes;
     }
+    case 'portal': return [b.axis === 0 ? [0, 0, 6 * P, 1, 1, 10 * P] : [6 * P, 0, 0, 10 * P, 1, 1]];
+    case 'end_portal': return [[0, 11 * P, 0, 1, 12 * P, 1]];
+    case 'frame': {
+      const boxes = [[0, 0, 0, 1, 13 * P, 1]];
+      if (b.eye) boxes.push([4 * P, 13 * P, 4 * P, 12 * P, 16 * P, 12 * P, 'end_portal_frame_eye']);
+      return boxes;
+    }
+    case 'egg': return [[3 * P, 0, 3 * P, 13 * P, 8 * P, 13 * P], [4 * P, 8 * P, 4 * P, 12 * P, 12 * P, 12 * P], [5 * P, 12 * P, 5 * P, 11 * P, 14 * P, 11 * P], [6 * P, 14 * P, 6 * P, 10 * P, 15 * P, 10 * P]];
     case 'lever': {
       // a cobblestone base and a handle tipped one way (off) or the other (on)
       const handle = b.on ? [7, 3, 3, 9, 10, 7] : [7, 3, 9, 9, 10, 13];

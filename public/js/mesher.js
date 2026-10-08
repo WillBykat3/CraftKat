@@ -125,7 +125,7 @@ class MeshData {
 // uvOf(textureName) -> [u0, v0, u1, v1]
 export function buildChunkMesh(world, cx, cz, uvOf) {
   const ids = gatherRegion(world, cx, cz);
-  const { sky, block: blockLight } = computeLight(ids);
+  const { sky, block: blockLight } = computeLight(ids, world.hasSky);
   const get = (x, y, z) => (y < 0 ? BLOCK.BEDROCK : y >= HEIGHT ? BLOCK.AIR : ids[regionIndex(x, y, z)]);
   const skyAt = (x, y, z) => (y >= HEIGHT ? 15 : y < 0 ? 0 : sky[regionIndex(x, y, z)]);
   const blockAt = (x, y, z) => (y < 0 || y >= HEIGHT ? 0 : blockLight[regionIndex(x, y, z)]);
@@ -178,7 +178,7 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
         }
 
         if (def.render === 'shape') {
-          addShape(solid, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint);
+          addShape(def.translucent ? water : solid, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint);
           continue;
         }
         if (def.render === 'wire') {

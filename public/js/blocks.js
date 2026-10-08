@@ -25,7 +25,11 @@ export const BLOCK = {
   REDSTONE_WIRE: 124, REDSTONE_TORCH: 128, LEVER: 138, STONE_BUTTON: 148, STONE_PRESSURE_PLATE: 158,
   OAK_PRESSURE_PLATE: 160, REPEATER: 162, REDSTONE_LAMP: 194, REDSTONE_BLOCK: 196, TNT: 197,
   PISTON: 198, STICKY_PISTON: 210, PISTON_HEAD: 222,
+  NETHERRACK: 234, NETHER_QUARTZ_ORE: 235, SOUL_SAND: 236, GLOWSTONE: 237, NETHER_BRICKS: 238, NETHER_PORTAL: 239,
+  MAGMA_BLOCK: 241, NETHER_GOLD_ORE: 242, BASALT: 243, END_STONE: 244, END_PORTAL_FRAME: 245, END_PORTAL: 247,
+  DRAGON_EGG: 248, NETHER_BRICK_FENCE: 249,
 };
+//   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
 //   WHEAT + stage (0-7), CARROTS / POTATOES + stage (0-3)
 //   OAK_DOOR + (upper ? 8 : 0) + (open ? 4 : 0) + facing
@@ -201,6 +205,25 @@ for (let i = 0; i < 12; i++) {
   def(222 + i, 'Piston Head', { tex: ['piston_top'], hardness: 1.5, transparent: true, shape: 'head', redstone: 'head', sticky: i >= 6, facing6: i % 6, hidden: true, item: 0 });
 }
 
+// ---------- the Nether and the End ----------
+def(234, 'Netherrack', { tex: ['netherrack'], hardness: 0.4, tool: 'pickaxe', needsTier: 0 });
+def(235, 'Nether Quartz Ore', { tex: ['nether_quartz_ore'], hardness: 3, tool: 'pickaxe', needsTier: 0 });
+def(236, 'Soul Sand', { tex: ['soul_sand'], hardness: 0.5, tool: 'shovel', slow: 0.4 });
+def(237, 'Glowstone', { tex: ['glowstone'], hardness: 0.3, emit: 15 });
+def(238, 'Nether Bricks', { tex: ['nether_bricks'], hardness: 2, tool: 'pickaxe', needsTier: 0 });
+for (let a = 0; a < 2; a++) {
+  def(239 + a, 'Nether Portal', { tex: ['nether_portal'], hardness: Infinity, transparent: true, translucent: true, solid: false, shape: 'portal', axis: a, emit: 11, hidden: true, item: 0 });
+}
+def(241, 'Magma Block', { tex: ['magma'], hardness: 0.5, tool: 'pickaxe', needsTier: 0, emit: 3, hot: true });
+def(242, 'Nether Gold Ore', { tex: ['nether_gold_ore'], hardness: 3, tool: 'pickaxe', needsTier: 0 });
+def(243, 'Basalt', { tex: ['basalt_top', 'basalt_side', 'basalt_top'], hardness: 1.25, tool: 'pickaxe', needsTier: 0 });
+def(244, 'End Stone', { tex: ['end_stone'], hardness: 3, tool: 'pickaxe', needsTier: 0 });
+def(245, 'End Portal Frame', { tex: ['end_portal_frame_top', 'end_portal_frame_side', 'end_stone'], hardness: Infinity, transparent: true, shape: 'frame', eye: false });
+def(246, 'End Portal Frame', { tex: ['end_portal_frame_top', 'end_portal_frame_side', 'end_stone'], hardness: Infinity, transparent: true, shape: 'frame', eye: true, hidden: true, item: 245 });
+def(247, 'End Portal', { tex: ['end_portal'], hardness: Infinity, transparent: true, solid: false, shape: 'end_portal', emit: 15, hidden: true, item: 0 });
+def(248, 'Dragon Egg', { tex: ['dragon_egg'], hardness: 3, transparent: true, shape: 'egg', emit: 1 });
+def(249, 'Nether Brick Fence', { tex: ['nether_bricks'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'fence' });
+
 for (const b of B) {
   b.render ??= 'cube';
   b.solid ??= b.render === 'cube';
@@ -264,6 +287,8 @@ export const ITEM = {
   DIAMOND_HELMET: 320, DIAMOND_CHESTPLATE: 321, DIAMOND_LEGGINGS: 322, DIAMOND_BOOTS: 323,
   BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
   ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
+  GLOWSTONE_DUST: 335, QUARTZ: 336, BLAZE_ROD: 337, BLAZE_POWDER: 338, EYE_OF_ENDER: 339, NETHER_BRICK: 340,
+  GHAST_TEAR: 341, GOLD_NUGGET: 342,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -347,6 +372,14 @@ item(330, 'Bone Meal', { icon: 'bone_meal' });
 item(331, 'Ender Pearl', { icon: 'ender_pearl', stack: 16 });
 item(332, 'Flint', { icon: 'flint' });
 item(333, 'Oak Door', { icon: 'oak_door' });
+item(335, 'Glowstone Dust', { icon: 'glowstone_dust' });
+item(336, 'Nether Quartz', { icon: 'quartz' });
+item(337, 'Blaze Rod', { icon: 'blaze_rod' });
+item(338, 'Blaze Powder', { icon: 'blaze_powder' });
+item(339, 'Eye of Ender', { icon: 'eye_of_ender' });
+item(340, 'Nether Brick', { icon: 'nether_brick' });
+item(341, 'Ghast Tear', { icon: 'ghast_tear' });
+item(342, 'Gold Nugget', { icon: 'gold_nugget' });
 item(334, 'Flint and Steel', { icon: 'flint_and_steel', stack: 1, tool: { kind: 'lighter', tier: 0, speed: 1, damage: 1, durability: 64 } });
 export const ITEMS = I;
 
@@ -451,6 +484,10 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     case BLOCK.GRAVEL: return rand() < 0.1 ? [[ITEM.FLINT, 1]] : [[BLOCK.GRAVEL, 1]];
     case BLOCK.FARMLAND: return [[BLOCK.DIRT, 1]];
     case BLOCK.TNT: return [[BLOCK.TNT, 1]];
+    case BLOCK.NETHER_QUARTZ_ORE: return [[ITEM.QUARTZ, 1]];
+    case BLOCK.NETHER_GOLD_ORE: return [[ITEM.GOLD_NUGGET, 2 + Math.floor(rand() * 5)]];
+    case BLOCK.GLOWSTONE: return [[ITEM.GLOWSTONE_DUST, 2 + Math.floor(rand() * 3)]];
+    case BLOCK.NETHERRACK: return [[BLOCK.NETHERRACK, 1]];
     case BLOCK.FERN:
     case BLOCK.ICE:
     case BLOCK.LAVA:
@@ -469,7 +506,7 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     return [[crop, ripe ? 2 + Math.floor(rand() * 4) : 1]];
   }
   if (b.shape === 'door') return b.upper ? [] : [[ITEM.OAK_DOOR, 1]];
-  if (b.redstone === 'head') return [];
+  if (b.redstone === 'head' || b.shape === 'portal' || b.shape === 'end_portal') return [];
   return [[blockItem(blockId), 1]];
 }
 
@@ -494,6 +531,9 @@ export const SMELTING = {
   [ITEM.RAW_MUTTON]: ITEM.COOKED_MUTTON,
   [BLOCK.COBBLED_DEEPSLATE]: BLOCK.DEEPSLATE,
   [ITEM.POTATO]: ITEM.BAKED_POTATO,
+  [BLOCK.NETHERRACK]: ITEM.NETHER_BRICK,
+  [BLOCK.NETHER_GOLD_ORE]: ITEM.GOLD_INGOT,
+  [BLOCK.NETHER_QUARTZ_ORE]: ITEM.QUARTZ,
 };
 export const FUEL = {
   [ITEM.COAL]: 8,
@@ -506,6 +546,7 @@ export const FUEL = {
   [BLOCK.CHERRY_PLANKS]: 1.5,
   [BLOCK.CHEST]: 1.5,
   [ITEM.STICK]: 0.5,
+  [ITEM.BLAZE_ROD]: 12,
 };
 for (const id of [BLOCK.OAK_FENCE, BLOCK.OAK_SLAB, BLOCK.OAK_STAIRS, BLOCK.LADDER, ITEM.OAK_DOOR, ITEM.BOW]) FUEL[id] = id === BLOCK.OAK_SLAB ? 0.75 : 1.5;
 for (const wood of ['SPRUCE', 'ACACIA', 'DARK_OAK', 'JUNGLE']) {

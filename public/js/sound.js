@@ -109,6 +109,33 @@ export const sound = {
   levelUp() {
     [0, 0.12, 0.24].forEach((delay, i) => setTimeout(() => tone({ freq: [660, 880, 1320][i], duration: 0.5, gain: 0.12, type: 'triangle' }), delay * 1000));
   },
+  // flint and steel: a scratchy strike
+  ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
+  // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)
+  portal(trip) {
+    const a = audio();
+    if (!a || volume === 0) return;
+    const t = a.currentTime, len = trip ? 1.6 : 3;
+    const osc = a.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(trip ? 300 : 70, t);
+    osc.frequency.exponentialRampToValueAtTime(trip ? 60 : 160, t + len);
+    const lfo = a.createOscillator();
+    lfo.frequency.value = 6;
+    const wobble = a.createGain();
+    wobble.gain.value = 18;
+    lfo.connect(wobble).connect(osc.frequency);
+    const f = a.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 700;
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12 * volume, t + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    osc.connect(f).connect(g).connect(a.destination);
+    osc.start(t); lfo.start(t);
+    osc.stop(t + len + 0.05); lfo.stop(t + len + 0.05);
+  },
   // a distant, eerie rumble deep in caves
   cave() {
     const a = audio();

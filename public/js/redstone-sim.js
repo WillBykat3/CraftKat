@@ -33,9 +33,9 @@ export function isRedstoneBlock(id) {
 
 export class RedstoneSim {
   // host: {world, setBlock(x, y, z, id), spawnItem(...), primeTnt(x, y, z, fuse), entityBoxes()}
-  constructor(host) {
+  constructor(host, world = host.world) {
     this.host = host;
-    this.world = host.world;
+    this.world = world;
     this.positions = new Set();
     this.power = new Map();     // dust power 0-15
     this.pending = new Map();   // key -> {id, at}: changes waiting for their delay

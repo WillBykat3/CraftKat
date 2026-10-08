@@ -19,6 +19,7 @@ import { VERSION } from './version.js';
 import { Particles } from './particles.js';
 import { levelInfo } from './xp.js';
 import { lightCurve, toLinear } from './renderer.js';
+import { NETHER_FOG } from './terrain-nether.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -106,6 +107,7 @@ export class Game {
   handle(msg) {
     switch (msg.t) {
       case 'welcome': return this.welcome(msg);
+      case 'dimension': return this.changeDimension(msg);
       case 'error': return this.disconnected(msg.msg);
       case 'join':
         this.entities.addPlayer(msg.id, msg.name, msg.p, msg.r);
@@ -175,7 +177,9 @@ export class Game {
   welcome(msg) {
     this.myId = msg.id;
     this.name = msg.name;
-    this.world = new World(msg.seed, msg.gen || 1);
+    this.dim = msg.dim || 'overworld';
+    this.ds = 0;
+    this.world = new World(msg.seed, msg.gen || 1, this.dim);
     this.world.importEdits(msg.edits);
     this.spawn = msg.spawn;
     this.time = msg.time;
@@ -198,13 +202,43 @@ export class Game {
       this.entities.addPlayer(p.id, p.name, p.p, p.r);
       if (p.armor) this.entities.setArmor(p.id, p.armor);
     }
-    this.r.startWorld(msg.seed, msg.edits, msg.gen || 1);
+    this.r.startWorld(msg.seed, msg.edits, msg.gen || 1, this.dim);
     this.r.setRenderDistance(this.settings.renderDistance);
     this.playing = true;
     this.sentArmor = null;
     this.armorChanged(); // tell the others what we're wearing
     this.addChat(`Welcome to ${msg.worldName}, ${msg.name}!`, 'sys');
     this.addChat('E: inventory · T: chat · Q: drop · /help for commands', 'sys');
+  }
+
+  // The host moved us to another dimension (through a portal, by dying, or /tp).
+  changeDimension(msg) {
+    const { seed, gen } = this.world;
+    this.dim = msg.dim;
+    this.ds = msg.ds;
+    this.world = new World(seed, gen, msg.dim);
+    this.world.importEdits(msg.edits);
+    this.lightCache.clear();
+    this.entities.clear();
+    this.particles.clear();
+    if (this.screen.isOpen) this.closeScreen();
+    for (const q of msg.players) {
+      this.entities.addPlayer(q.id, q.name, q.p, q.r);
+      if (q.armor) this.entities.setArmor(q.id, q.armor);
+    }
+    const p = this.player;
+    [p.x, p.y, p.z] = msg.pos;
+    p.vx = p.vy = p.vz = 0;
+    p.fallStart = null;
+    this.unstick();
+    this.r.startWorld(seed, msg.edits, gen, msg.dim);
+    this.r.setRenderDistance(this.settings.renderDistance);
+    this.portalGlow = 0;
+    sound.portal(true);
+    // "Loading terrain..." until the ground under us is drawn
+    this.loadingTerrain = performance.now();
+    $('loading-text').textContent = 'Loading terrain…';
+    $('loading').classList.remove('hidden');
   }
 
   giveCreativeStarter() {
@@ -635,6 +669,15 @@ export class Game {
       id = BLOCK.FARMLAND;
       this.useTool(1);
       sound.place(BLOCK.DIRT);
+    } else if (held.id === ITEM.FLINT_AND_STEEL && hit.id !== BLOCK.TNT) {
+      // the host checks for an obsidian frame around the block in front of the clicked face
+      if (this.world.getBlock(hit.x + hit.normal[0], hit.y + hit.normal[1], hit.z + hit.normal[2]) !== BLOCK.AIR) return false;
+      this.useTool(1);
+      sound.ignite();
+      this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z, item: held.id, face: hit.normal });
+      this.swing = 1;
+      this.useCooldown = 0.25;
+      return true;
     } else if (held.id === ITEM.BONE_MEAL && BLOCKS[hit.id].crop && BLOCKS[hit.id].crop.stage < BLOCKS[hit.id].crop.max) {
       if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
       sound.place(BLOCK.TALL_GRASS);
@@ -918,6 +961,28 @@ export class Game {
     this.invDirty = true;
     this.send({ t: 'respawn' });
     this.lock();
+  }
+
+  // Purple swirl while standing in a Nether portal, like Minecraft's nausea-free portal overlay.
+  updatePortalOverlay(dt) {
+    const p = this.player;
+    const at = (dy) => BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z))].shape === 'portal';
+    const inside = at(0.1) || at(1.2);
+    const rate = this.mode === 'creative' ? 4 : 0.25; // full after 4 seconds, like the trip
+    this.portalGlow = Math.max(0, Math.min(1, (this.portalGlow || 0) + (inside ? dt * rate : -dt * 2)));
+    if (inside && !this.inPortal) sound.portal(false);
+    this.inPortal = inside;
+    const el = $('portal-overlay');
+    if (!el.style.backgroundImage) el.style.backgroundImage = `url(${this.textures.tileURL('nether_portal')})`;
+    el.classList.toggle('hidden', this.portalGlow <= 0);
+    el.style.opacity = (this.portalGlow * 0.8).toFixed(3);
+    if (this.loadingTerrain) {
+      const key = chunkKey(Math.floor(p.x / CHUNK), Math.floor(p.z / CHUNK));
+      if (this.r.meshes.has(key) || performance.now() - this.loadingTerrain > 8000) {
+        this.loadingTerrain = 0;
+        $('loading').classList.add('hidden');
+      }
+    }
   }
 
   unstick() {
@@ -1275,7 +1340,8 @@ export class Game {
     if (this.pickupTried.size > 200) this.pickupTried.clear();
 
     // environment
-    this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking);
+    const fogTint = this.dim === 'nether' ? NETHER_FOG[this.world.netherBiome(Math.floor(p.x), Math.floor(p.z))] : null;
+    this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking, fogTint);
     this.lightBudget = 1;
     this.time += dt * 20;
     this.entities.lightAt = (x, y, z) => this.lightAt(x, y, z);
@@ -1295,6 +1361,7 @@ export class Game {
     }
     this.updateHand(dt, this.lightAt(p.x, p.y + this.eyeHeight(), p.z));
     $('water-overlay').classList.toggle('hidden', !p.headInWater);
+    this.updatePortalOverlay(dt);
 
     // network
     if (now - this.lastSent > 100) {
@@ -1304,7 +1371,7 @@ export class Game {
       const state = JSON.stringify([pos, rot, this.heldId()]);
       if (state !== this.lastSentState) {
         this.lastSentState = state;
-        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId() });
+        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId(), ds: this.ds });
       }
     }
     this.unloadTimer = (this.unloadTimer || 0) + dt;
@@ -1349,7 +1416,8 @@ export class Game {
       const i = regionIndex(bx - cx * CHUNK, by, bz - cz * CHUNK);
       light = `Client Light: ${Math.max(lc.sky[i], lc.block[i])} (${lc.sky[i]} sky, ${lc.block[i]} block)`;
     }
-    const biome = BIOMES[w.biomeAt(bx, bz)]?.name || '?';
+    const biome = this.dim === 'nether' ? ['nether_wastes', 'soul_sand_valley', 'basalt_deltas'][w.netherBiome(bx, bz)]
+      : this.dim === 'end' ? (Math.hypot(bx, bz) < 900 ? 'the_end' : 'end_highlands') : BIOMES[w.biomeAt(bx, bz)]?.name || '?';
     const day = Math.floor(this.time / 24000);
     const left = [
       `${VERSION} (${w.gen >= 3 ? 'gen 3' : 'gen ' + w.gen})`,
@@ -1363,6 +1431,7 @@ export class Game {
       `Facing: ${facing} (${yawDeg.toFixed(1)} / ${(-p.pitch * 180 / Math.PI).toFixed(1)})`,
       light,
       `Biome: minecraft:${biome}`,
+      `Dimension: minecraft:${{ overworld: 'overworld', nether: 'the_nether', end: 'the_end' }[this.dim] || 'overworld'}`,
       `Day ${day}, time ${Math.floor(this.time % 24000)}`,
     ].filter((line, i) => line !== '' || i === 4);
     const gl = this.r.renderer.getContext();
@@ -1408,7 +1477,7 @@ export class Game {
     if (!light && this.lightBudget > 0) {
       this.lightBudget--;
       if (this.lightCache.size > 12) this.lightCache.clear();
-      light = computeLight(gatherRegion(this.world, cx, cz));
+      light = computeLight(gatherRegion(this.world, cx, cz), this.world.hasSky);
       this.lightCache.set(key, light);
     }
     if (!light) return toLinear(lightCurve(skyFactor * 0.8)); // not computed yet: assume outdoors

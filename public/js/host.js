@@ -6,13 +6,14 @@ import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
   SMELTING, FUEL, SMELT_SECONDS,
 } from './blocks.js';
-import { World, LATEST_GEN } from './world.js';
+import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
 import { clickSlot, quickMove } from './inventory.js';
 import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
 import { BIOME, FROZEN } from './biomes.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { RedstoneSim } from './redstone-sim.js';
+import { END_PLATFORM } from './terrain-end.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -129,25 +130,66 @@ export class GameHost {
     this.random = options.random || Math.random;
     this.maxPlayers = options.maxPlayers || 12;
     this.gen = save.genVersion ?? 1; // worlds made before generator versions existed use version 1
-    this.world = new World(save.seed, this.gen);
-    this.world.importEdits(save.edits || []);
-    // growing crops (only ever planted by players, so they're all in the edits)
-    this.crops = new Set();
-    for (const [x, y, z, id] of this.world.exportEdits()) if (BLOCKS[id]?.crop) this.crops.add(`${x},${y},${z}`);
-    this.redstone = new RedstoneSim(this);
+    // Each dimension has its own world, crops, redstone, furnaces and chests. Code runs
+    // "in" one dimension at a time (this.ctx): this.world and friends follow it.
+    this.dims = {};
+    this.ctx = 'overworld';
+    const saved = save.dims || {};
+    for (const dim of DIMENSIONS) {
+      const data = dim === 'overworld' ? save : saved[dim] || {};
+      const world = new World(save.seed, this.gen, dim);
+      world.importEdits(data.edits || []);
+      // growing crops (only ever planted by players, so they're all in the edits)
+      const crops = new Set();
+      for (const [x, y, z, id] of world.exportEdits()) if (BLOCKS[id]?.crop) crops.add(`${x},${y},${z}`);
+      this.dims[dim] = {
+        world, crops, lightCache: null,
+        furnaces: new Map(Object.entries(data.furnaces || {})), furnaceViewers: new Map(), // key -> Set(peerId)
+        chests: new Map(Object.entries(data.chests || {})), chestViewers: new Map(),
+      };
+      this.dims[dim].redstone = new RedstoneSim(this, world);
+    }
+    this.portals = Array.isArray(save.portals) ? save.portals.filter((q) => Array.isArray(q) && DIMENSIONS.includes(q[0])) : []; // [dim, x, y, z, axis]
     this.players = new Map();   // peerId -> player
     this.entities = new Map();  // id -> entity
     this.nextPlayerId = 1;
     this.nextEntityId = 1;
     this.time = save.time ?? 1000;
-    this.furnaces = new Map(Object.entries(save.furnaces || {}));
-    this.furnaceViewers = new Map(); // key -> Set(peerId)
-    this.chests = new Map(Object.entries(save.chests || {}));
-    this.chestViewers = new Map();   // key -> Set(peerId)
     this.sleepTimer = 0;
     this.dirty = false;
     this.acc = { state: 0, spawn: 0, time: 0, furnace: 0 };
     this.onLog = options.onLog || (() => {});
+  }
+
+  // ---------- dimensions ----------
+  get world() { return this.dims[this.ctx].world; }
+  get crops() { return this.dims[this.ctx].crops; }
+  get redstone() { return this.dims[this.ctx].redstone; }
+  get furnaces() { return this.dims[this.ctx].furnaces; }
+  get furnaceViewers() { return this.dims[this.ctx].furnaceViewers; }
+  get chests() { return this.dims[this.ctx].chests; }
+  get chestViewers() { return this.dims[this.ctx].chestViewers; }
+  get lightCache() { return this.dims[this.ctx].lightCache; }
+  set lightCache(v) { this.dims[this.ctx].lightCache = v; }
+
+  // Runs fn with `dim` as the current dimension.
+  inDim(dim, fn) {
+    const before = this.ctx;
+    this.ctx = dim;
+    try { return fn(); } finally { this.ctx = before; }
+  }
+
+  // Players in the current dimension.
+  here() {
+    const out = [];
+    for (const p of this.players.values()) if (p.dim === this.ctx) out.push(p);
+    return out;
+  }
+
+  addEntity(e) {
+    e.dim = this.ctx;
+    this.entities.set(e.id, e);
+    return e;
   }
 
   // ---------- messaging ----------
@@ -157,6 +199,11 @@ export class GameHost {
 
   broadcast(msg, exceptPeer = null) {
     for (const peerId of this.players.keys()) if (peerId !== exceptPeer) this.sendRaw(peerId, msg);
+  }
+
+  // To the players in the current dimension only (block changes, explosions...).
+  broadcastHere(msg, exceptPeer = null) {
+    for (const p of this.players.values()) if (p.dim === this.ctx && p.peerId !== exceptPeer) this.sendRaw(p.peerId, msg);
   }
 
   sys(text) {
@@ -173,10 +220,16 @@ export class GameHost {
     if (!p) return;
     this.storePlayer(p);
     this.players.delete(peerId);
-    for (const viewers of this.furnaceViewers.values()) viewers.delete(peerId);
-    for (const viewers of this.chestViewers.values()) viewers.delete(peerId);
+    this.closeViewers(peerId);
     this.broadcast({ t: 'leave', id: p.id });
     this.sys(`${p.name} left the game`);
+  }
+
+  closeViewers(peerId) {
+    for (const d of Object.values(this.dims)) {
+      for (const viewers of d.furnaceViewers.values()) viewers.delete(peerId);
+      for (const viewers of d.chestViewers.values()) viewers.delete(peerId);
+    }
   }
 
   storePlayer(p) {
@@ -193,6 +246,7 @@ export class GameHost {
       bed: p.bed ?? prev.bed ?? null,
       xp: p.xp ?? prev.xp ?? 0,
       armor: p.armor ?? prev.armor ?? null,
+      dim: p.dim,
     };
     this.dirty = true;
   }
@@ -204,6 +258,7 @@ export class GameHost {
       if (msg.t === 'hello') this.hello(peerId, msg);
       return;
     }
+    this.ctx = p.dim;
     switch (msg.t) {
       case 'pos': return this.onPos(p, msg);
       case 'set': return this.onSet(peerId, p, msg);
@@ -250,8 +305,11 @@ export class GameHost {
     // players with accounts are saved by account (so renaming keeps your stuff); older saves used names
     const saveKey = typeof msg.accountId === 'string' && msg.accountId ? 'id:' + msg.accountId : name.toLowerCase();
     const saved = this.save.players[saveKey] ?? this.save.players[name.toLowerCase()];
+    const dim = DIMENSIONS.includes(saved?.dim) ? saved.dim : 'overworld';
     const pos = saved?.pos ?? this.save.spawn;
     const p = {
+      dim,
+      ds: 0, // counts dimension changes
       id: this.nextPlayerId++,
       peerId,
       name,
@@ -271,8 +329,10 @@ export class GameHost {
       canChat: bucket(1, 5, this.now),
     };
     this.players.set(peerId, p);
+    this.ctx = dim;
     this.send(peerId, {
       t: 'welcome',
+      dim,
       id: p.id,
       name,
       worldName: this.save.name,
@@ -283,9 +343,9 @@ export class GameHost {
       time: this.time,
       mode: p.mode,
       me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor },
-      players: [...this.players.values()].filter((q) => q !== p).map((q) => this.playerInfo(q)),
+      players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
-    this.broadcast({ t: 'join', ...this.playerInfo(p) }, peerId);
+    this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, peerId);
     this.sys(`${name} joined the game`);
   }
 
@@ -294,6 +354,7 @@ export class GameHost {
   }
 
   onPos(p, msg) {
+    if (msg.ds !== undefined && msg.ds !== p.ds) return; // sent before the player changed dimension
     const { p: pos, r } = msg;
     if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(isNum)) return;
     if (!Array.isArray(r) || r.length !== 2 || !r.every(isNum)) return;
@@ -324,7 +385,8 @@ export class GameHost {
       for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.lightCache.delete((cx + dx) + ',' + (cz + dz));
     }
     this.dirty = true;
-    this.broadcast({ t: 'set', x, y, z, id }, exceptPeer);
+    this.checkPortals(x, y, z);
+    this.broadcastHere({ t: 'set', x, y, z, id }, exceptPeer);
   }
 
   correct(peerId, x, y, z) {
@@ -350,7 +412,7 @@ export class GameHost {
     if (!BLOCKS[id].solid) return false;
     const box = (b) => x < b.x + b.halfW && x + 1 > b.x - b.halfW && y < b.y + b.height && y + 1 > b.y &&
       z < b.z + b.halfW && z + 1 > b.z - b.halfW;
-    for (const e of this.entities.values()) if (isMob(e) && box(e)) return true;
+    for (const e of this.entities.values()) if (isMob(e) && e.dim === this.ctx && box(e)) return true;
     return false;
   }
 
@@ -437,14 +499,15 @@ export class GameHost {
   // ---------- redstone hooks ----------
   // Where the (living) players are, as [x, z].
   playerSpots() {
-    return [...this.players.values()].filter((p) => !p.dead).map((p) => [p.x, p.z]);
+    return this.here().filter((p) => !p.dead).map((p) => [p.x, p.z]);
   }
 
   // Everything that can stand on a pressure plate (items only count for wooden ones).
   entityBoxes(withItems) {
     const out = [];
-    for (const p of this.players.values()) if (!p.dead) out.push({ x: p.x, y: p.y, z: p.z, halfW: 0.3, height: 1.8 });
+    for (const p of this.here()) if (!p.dead) out.push({ x: p.x, y: p.y, z: p.z, halfW: 0.3, height: 1.8 });
     for (const e of this.entities.values()) {
+      if (e.dim !== this.ctx) continue;
       if (isMob(e)) out.push(e);
       else if (withItems && e.type === 'item') out.push(e);
     }
@@ -456,8 +519,8 @@ export class GameHost {
       id: this.nextEntityId++, type: 'tnt', x: x + 0.5, y, z: z + 0.5, halfW: 0.49, height: 0.98,
       vx: (this.random() - 0.5) * 0.4, vy: 2, vz: (this.random() - 0.5) * 0.4, fuse, age: 0, yaw: 0,
     };
-    this.entities.set(e.id, e);
-    this.broadcast({ t: 'hiss', x: e.x, y: e.y, z: e.z });
+    this.addEntity(e);
+    this.broadcastHere({ t: 'hiss', x: e.x, y: e.y, z: e.z });
     return e;
   }
 
@@ -469,7 +532,7 @@ export class GameHost {
     if (e.fuse <= 0) {
       this.entities.delete(e.id);
       this.broadcast({ t: 'mobdeath', e: e.id });
-      this.explode(e.x, e.y + 0.5, e.z, 4);
+      this.explode(e.x, e.y + 0.5, e.z, 4, 'was blown up by TNT');
     }
   }
 
@@ -508,8 +571,7 @@ export class GameHost {
       vx: vel ? vel[0] : (this.random() - 0.5) * 2, vy: vel ? vel[1] : 3, vz: vel ? vel[2] : (this.random() - 0.5) * 2,
       age: 0, yaw: this.random() * 6.28,
     };
-    this.entities.set(e.id, e);
-    return e;
+    return this.addEntity(e);
   }
 
   // Experience orbs, split into Minecraft's orb sizes.
@@ -517,7 +579,7 @@ export class GameHost {
     while (amount > 0) {
       const value = XP_SIZES.find((v) => v <= amount);
       amount -= value;
-      this.entities.set(this.nextEntityId, {
+      this.addEntity({
         id: this.nextEntityId++, type: 'xp', value, x, y, z, halfW: 0.125, height: 0.25,
         vx: (this.random() - 0.5) * 2, vy: 2 + this.random() * 2, vz: (this.random() - 0.5) * 2, age: 0, yaw: 0,
       });
@@ -528,7 +590,7 @@ export class GameHost {
     if (e.age > ITEM_LIFETIME) { this.entities.delete(e.id); return; }
     // fly towards the nearest living player within 8 blocks
     let best = null, bestD = 8;
-    for (const p of this.players.values()) {
+    for (const p of this.here()) {
       if (p.dead) continue;
       const d = Math.hypot(p.x - e.x, p.y + 0.9 - e.y, p.z - e.z);
       if (d < bestD) { best = p; bestD = d; }
@@ -557,13 +619,12 @@ export class GameHost {
       id: this.nextEntityId++, type, x, y, z, vx: 0, vy: 0, vz: 0, halfW: t.halfW, height: t.height,
       hp: t.hp, yaw: this.random() * 6.28, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false,
     };
-    this.entities.set(e.id, e);
-    return e;
+    return this.addEntity(e);
   }
 
   onPickup(peerId, p, msg) {
     const e = this.entities.get(msg.e);
-    if (!e || e.type !== 'item' || e.age < (e.pickupAfter ?? PICKUP_DELAY)) return;
+    if (!e || e.type !== 'item' || e.dim !== p.dim || e.age < (e.pickupAfter ?? PICKUP_DELAY)) return;
     if (Math.hypot(e.x - p.x, e.y - (p.y + 0.9), e.z - p.z) > 3) return;
     this.entities.delete(e.id);
     const give = { t: 'give', id: e.item, count: e.count };
@@ -599,7 +660,7 @@ export class GameHost {
 
   onAttack(p, msg) {
     const e = this.entities.get(msg.e);
-    if (!e || !isMob(e) || !p.canBuild()) return;
+    if (!e || !isMob(e) || e.dim !== p.dim || !p.canBuild()) return;
     if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
     const tool = toolOf(msg.tool);
     const damage = tool && tool.kind !== 'bow' ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
@@ -715,6 +776,12 @@ export class GameHost {
   // ---------- beds ----------
   onSleep(peerId, p, msg) {
     if (!this.validCoords(msg) || this.world.getBlock(msg.x, msg.y, msg.z) !== BLOCK.BED || !this.inReach(p, msg.x, msg.y, msg.z)) return;
+    if (!this.world.hasSky) {
+      // beds blow up in the Nether and the End
+      this.setBlock(msg.x, msg.y, msg.z, BLOCK.AIR);
+      this.explode(msg.x + 0.5, msg.y + 0.5, msg.z + 0.5, 5, 'was killed by [Intentional Game Design]');
+      return;
+    }
     p.bed = [msg.x, msg.y, msg.z];
     this.storePlayer(p);
     const t = this.time % DAY_TICKS;
@@ -724,23 +791,27 @@ export class GameHost {
     }
     p.sleeping = true;
     this.send(peerId, { t: 'sleeping', at: [msg.x, msg.y, msg.z] });
-    const sleepers = [...this.players.values()].filter((q) => q.sleeping).length;
-    this.sys(`${p.name} is sleeping (${sleepers}/${this.players.size})`);
+    const awake = [...this.players.values()].filter((q) => q.dim === 'overworld');
+    this.sys(`${p.name} is sleeping (${awake.filter((q) => q.sleeping).length}/${awake.length})`);
   }
 
   // Respawn at your bed if it's still there, otherwise at world spawn.
   onRespawn(peerId, p) {
     p.dead = false;
-    let spot = this.save.spawn;
+    const spot = this.homeOf(p, true);
+    if (p.dim !== 'overworld') this.changeDim(p, 'overworld', spot);
+    else this.send(peerId, { t: 'teleport', p: spot });
+  }
+
+  // Where a player respawns: their bed (in the Overworld) if it's still there, else world spawn.
+  homeOf(p, tell = false) {
     if (p.bed) {
       const [bx, by, bz] = p.bed;
-      if (this.world.getBlock(bx, by, bz) === BLOCK.BED) spot = [bx + 0.5, by + 1, bz + 0.5];
-      else {
-        p.bed = null;
-        this.send(peerId, { t: 'sys', msg: 'Your bed was missing, so you respawned at the world spawn.' });
-      }
+      if (this.dims.overworld.world.getBlock(bx, by, bz) === BLOCK.BED) return [bx + 0.5, by + 1, bz + 0.5];
+      p.bed = null;
+      if (tell) this.send(p.peerId, { t: 'sys', msg: 'Your bed was missing, so you respawned at the world spawn.' });
     }
-    this.send(peerId, { t: 'teleport', p: spot });
+    return this.save.spawn;
   }
 
   // ---------- buckets ----------
@@ -765,6 +836,15 @@ export class GameHost {
     const id = this.world.getBlock(x, y, z);
     const def = BLOCKS[id];
     if (this.redstone.use(x, y, z, msg.item)) return;
+    if (msg.item === ITEM.FLINT_AND_STEEL) {
+      // flint and steel lights the inside of an obsidian frame (there's no fire, so nothing else happens)
+      const f = msg.face;
+      if (Array.isArray(f) && f.length === 3 && f.every((v) => v === 0 || v === 1 || v === -1) && Math.abs(f[0]) + Math.abs(f[1]) + Math.abs(f[2]) === 1) {
+        const ax = x + f[0], ay = y + f[1], az = z + f[2];
+        if (this.world.getBlock(ax, ay, az) === BLOCK.AIR && this.lightPortal(ax, ay, az)) return;
+      }
+      return;
+    }
     if (def.shape === 'door' && msg.item === undefined) {
       const lowerY = def.upper ? y - 1 : y;
       for (const yy of [lowerY, lowerY + 1]) {
@@ -792,7 +872,7 @@ export class GameHost {
   tickCrops(dt) {
     for (const key of this.crops) {
       const [x, y, z] = key.split(',').map(Number);
-      const near = [...this.players.values()].some((p) => Math.abs(p.x - x) < 160 && Math.abs(p.z - z) < 160);
+      const near = this.here().some((p) => Math.abs(p.x - x) < 160 && Math.abs(p.z - z) < 160);
       if (!near) continue;
       const id = this.world.getBlock(x, y, z);
       const def = BLOCKS[id];
@@ -813,7 +893,7 @@ export class GameHost {
   // ---------- using items on mobs ----------
   onInteract(p, msg) {
     const e = this.entities.get(msg.e);
-    if (!e || Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
+    if (!e || e.dim !== p.dim || Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
     if (e.type === 'sheep' && msg.tool === ITEM.SHEARS && !e.sheared) {
       e.sheared = true;
       e.regrow = 60 + this.random() * 60;
@@ -822,8 +902,8 @@ export class GameHost {
   }
 
   // ---------- explosions & arrows ----------
-  explode(x, y, z, power) {
-    this.broadcast({ t: 'boom', x, y, z });
+  explode(x, y, z, power, cause = 'was blown up by a Creeper') {
+    this.broadcastHere({ t: 'boom', x, y, z });
     const r = Math.ceil(power);
     for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
       if (Math.hypot(dx, dy, dz) > power - this.random() * 0.8) continue;
@@ -835,12 +915,12 @@ export class GameHost {
       // like Minecraft, only some of the blown-up blocks drop (chests and furnaces always spill their contents)
       this.breakBlock(bx, by, bz, this.random() < 1 / power ? ITEM.DIAMOND_PICKAXE : null);
     }
-    for (const p of this.players.values()) {
+    for (const p of this.here()) {
       const d = Math.hypot(p.x - x, p.y + 0.9 - y, p.z - z);
-      if (d < power * 2) this.send(p.peerId, { t: 'hurt', amount: Math.round((1 - d / (power * 2)) * 22), from: [x, z], cause: 'was blown up by a Creeper' });
+      if (d < power * 2) this.send(p.peerId, { t: 'hurt', amount: Math.round((1 - d / (power * 2)) * 22), from: [x, z], cause });
     }
-    for (const e of this.entities.values()) {
-      if (!isMob(e)) continue;
+    for (const e of [...this.entities.values()]) {
+      if (!isMob(e) || e.dim !== this.ctx) continue;
       const d = Math.hypot(e.x - x, e.y - y, e.z - z);
       if (d < power * 2) { e.hp -= Math.round((1 - d / (power * 2)) * 22); if (e.hp <= 0) this.killMob(e); }
     }
@@ -859,7 +939,7 @@ export class GameHost {
       vz: ((tz - sz) / (dist || 1)) * speed + (this.random() - 0.5) * 1.2,
       yaw: Math.atan2(-(tx - sx), -(tz - sz)), age: 0, shooter: from.id, cause: `was shot by ${MOB_NAMES[from.type] || 'a Skeleton'}`,
     };
-    this.entities.set(a.id, a);
+    this.addEntity(a);
   }
 
   // A player let go of a drawn bow. power 0-1 (Minecraft: full draw after a second).
@@ -874,7 +954,7 @@ export class GameHost {
       vx: dir[0] * speed, vy: dir[1] * speed, vz: dir[2] * speed, yaw: msg.yaw, age: 0,
       player: p.name, damage: Math.ceil(power * 6) + (power >= 1 ? Math.floor(this.random() * 4) : 0), // a full draw can crit
     };
-    this.entities.set(a.id, a);
+    this.addEntity(a);
   }
 
   tickArrow(a, dt) {
@@ -887,7 +967,7 @@ export class GameHost {
       if (a.player) {
         // a player's arrow hits mobs (not other players)
         for (const e of this.entities.values()) {
-          if (!isMob(e) || e.id === a.id) continue;
+          if (!isMob(e) || e.id === a.id || e.dim !== this.ctx) continue;
           const t = MOB_TYPES[e.type];
           if (Math.abs(a.x - e.x) < t.halfW + 0.1 && Math.abs(a.z - e.z) < t.halfW + 0.1 && a.y > e.y && a.y < e.y + t.height) {
             this.hurtMob(e, a.damage, a.vx, a.vz, a.player);
@@ -896,7 +976,7 @@ export class GameHost {
           }
         }
       } else {
-        for (const p of this.players.values()) {
+        for (const p of this.here()) {
           if (p.mode !== 'survival' || p.dead) continue;
           if (Math.abs(a.x - p.x) < 0.45 && Math.abs(a.z - p.z) < 0.45 && a.y > p.y && a.y < p.y + 1.85) {
             this.send(p.peerId, { t: 'hurt', amount: ARROW_DAMAGE, from: [a.x - a.vx, a.z - a.vz], cause: a.cause || 'was shot by a Skeleton' });
@@ -941,6 +1021,7 @@ export class GameHost {
       case 'seed':
         return reply(`Seed: ${this.save.seed}`);
       case 'spawn':
+        if (p.dim !== 'overworld') return this.changeDim(p, 'overworld', this.save.spawn);
         return this.send(peerId, { t: 'teleport', p: this.save.spawn });
       case 'kill':
         return this.send(peerId, { t: 'hurt', amount: 1000, cause: 'died' });
@@ -967,6 +1048,7 @@ export class GameHost {
         if (!allowed) return reply('Only the host can teleport in this world.');
         const target = findPlayer(args.join(' '));
         if (!target) return reply('Usage: /tp <player>');
+        if (target.dim !== p.dim) return this.changeDim(p, target.dim, [target.x, target.y, target.z]);
         return this.send(peerId, { t: 'teleport', p: [target.x, target.y, target.z] });
       }
       default:
@@ -1094,14 +1176,20 @@ export class GameHost {
   // ---------- simulation ----------
   tick(dt) {
     this.time = (this.time + dt * TICKS_PER_SECOND) % DAY_TICKS;
-    this.tickFurnaces(dt);
-    this.redstone.update(dt);
+    const crops = this.acc.spawn + dt >= 1;
+    for (const dim of DIMENSIONS) {
+      this.ctx = dim;
+      this.tickFurnaces(dt);
+      this.redstone.update(dt);
+      if (crops) this.tickCrops(this.acc.spawn + dt);
+    }
     this.tickEntities(dt);
+    this.tickPortals(dt);
+    this.ctx = 'overworld';
     this.tickSleep(dt);
 
     this.acc.spawn += dt;
     if (this.acc.spawn >= 1) {
-      this.tickCrops(this.acc.spawn);
       this.acc.spawn = 0;
       this.spawnMobs();
       this.mergeItems();
@@ -1122,13 +1210,14 @@ export class GameHost {
   // which keeps the number of things sent to players down.
   mergeItems() {
     const items = [...this.entities.values()].filter((e) => e.type === 'item' && e.dur === undefined);
+    // (items in different dimensions never merge)
     for (let i = 0; i < items.length; i++) {
       const a = items[i];
       if (!this.entities.has(a.id)) continue;
       const limit = maxStack(a.item);
       for (let j = i + 1; j < items.length && a.count < limit; j++) {
         const b = items[j];
-        if (b.item !== a.item || !this.entities.has(b.id)) continue;
+        if (b.item !== a.item || b.dim !== a.dim || !this.entities.has(b.id)) continue;
         if (Math.abs(a.x - b.x) > 1.2 || Math.abs(a.y - b.y) > 0.8 || Math.abs(a.z - b.z) > 1.2) continue;
         const n = Math.min(limit - a.count, b.count);
         a.count += n;
@@ -1141,7 +1230,7 @@ export class GameHost {
 
   // When everyone online is in bed for a moment, skip to morning.
   tickSleep(dt) {
-    const players = [...this.players.values()];
+    const players = [...this.players.values()].filter((p) => p.dim === 'overworld'); // like Minecraft, other dimensions don't count
     if (players.length && players.every((p) => p.sleeping)) {
       this.sleepTimer += dt;
       if (this.sleepTimer >= 2.5) {
@@ -1160,6 +1249,7 @@ export class GameHost {
   nearestPlayer(e, maxDist, survivalOnly = false) {
     let best = null, bestD = maxDist;
     for (const p of this.players.values()) {
+      if (p.dim !== (e.dim ?? this.ctx)) continue;
       if (survivalOnly && (p.mode !== 'survival' || p.dead)) continue;
       const d = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z);
       if (d < bestD) { best = p; bestD = d; }
@@ -1170,6 +1260,8 @@ export class GameHost {
   tickEntities(dt) {
     const light = daylight(this.time);
     for (const e of [...this.entities.values()]) {
+      if (!this.entities.has(e.id)) continue; // gone already (blown up this tick...)
+      this.ctx = e.dim;
       e.age += dt;
       const near = this.nearestPlayer(e, 128);
       if (e.type === 'tnt') { this.tickTnt(e, dt); continue; } // lit TNT always goes off
@@ -1215,7 +1307,7 @@ export class GameHost {
 
       if (t.hostile) {
         // zombies and skeletons burn in sunlight when nothing is above them
-        if (t.burns && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y) {
+        if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y) {
           e.burn = (e.burn || 0) + dt;
           if (e.burn > 1) { e.burn = 0; e.hp -= 2; this.broadcast({ t: 'mobhurt', e: e.id }); }
           if (e.hp <= 0) { this.killMob(e); continue; }
@@ -1289,11 +1381,13 @@ export class GameHost {
   spawnMobs() {
     const light = daylight(this.time);
     for (const p of this.players.values()) {
+      this.ctx = p.dim;
       const counts = { passive: 0, hostile: 0 };
       for (const e of this.entities.values()) {
-        if (!isMob(e) || Math.hypot(e.x - p.x, e.z - p.z) > 64) continue;
+        if (!isMob(e) || e.dim !== p.dim || Math.hypot(e.x - p.x, e.z - p.z) > 64) continue;
         if (MOB_TYPES[e.type].hostile) counts.hostile++; else counts.passive++;
       }
+      if (p.dim !== 'overworld') { this.spawnOther(p, counts); continue; }
       // underground: monsters appear in total darkness, day or night
       if (counts.hostile < 8 && p.y < this.world.seaLevel + 10 && this.random() < 0.5) this.spawnInCave(p);
       const wantHostile = light < 0.3 && counts.hostile < 6;
@@ -1359,7 +1453,7 @@ export class GameHost {
     let light = this.lightCache.get(key);
     if (!light) {
       if (this.lightCache.size > 16) this.lightCache.delete(this.lightCache.keys().next().value);
-      light = computeLight(gatherRegion(this.world, cx, cz));
+      light = computeLight(gatherRegion(this.world, cx, cz), this.world.hasSky);
       this.lightCache.set(key, light);
     }
     const i = regionIndex(x - cx * 16, y, z - cz * 16);
@@ -1369,7 +1463,7 @@ export class GameHost {
   // Endermen are calm until hit or stared at, then chase you, and teleport when hurt.
   endermanMind(e, dt) {
     if (!e.angry) {
-      for (const p of this.players.values()) {
+      for (const p of this.here()) {
         if (p.dead || p.mode !== 'survival') continue;
         const ex = e.x - p.x, ey = e.y + 2.55 - (p.y + 1.62), ez = e.z - p.z;
         const dist = Math.hypot(ex, ey, ez);
@@ -1424,19 +1518,233 @@ export class GameHost {
   }
 
 
+  // ---------- portals & dimensions ----------
+  // Fills an obsidian frame around the empty block (x, y, z) with portal, like fire does in Minecraft.
+  lightPortal(x, y, z) {
+    if (this.ctx === 'end') return false; // Nether portals don't work in the End
+    for (const axis of [0, 1]) {
+      const cells = this.portalFrame(x, y, z, axis);
+      if (!cells) continue;
+      this.buildingPortal = true;
+      for (const [cx, cy, cz] of cells) this.setBlock(cx, cy, cz, BLOCK.NETHER_PORTAL + axis);
+      this.buildingPortal = false;
+      const low = cells.reduce((a, c) => (c[1] < a[1] || (c[1] === a[1] && c[0] + c[2] < a[0] + a[2]) ? c : a));
+      this.addPortal(low, axis);
+      return true;
+    }
+    return false;
+  }
+
+  // The empty blocks inside an obsidian frame, in the plane of `axis` (0: along x, 1: along z),
+  // or null if (x, y, z) isn't inside one. Frames are 2-21 wide and 3-21 tall inside; corners don't matter.
+  portalFrame(x, y, z, axis) {
+    const ax = axis === 0 ? 1 : 0, az = 1 - ax;
+    const seen = new Set([`${x},${y},${z}`]);
+    const cells = [[x, y, z]];
+    for (let i = 0; i < cells.length; i++) {
+      const [cx, cy, cz] = cells[i];
+      for (const [ox, oy, oz] of [[ax, 0, az], [-ax, 0, -az], [0, 1, 0], [0, -1, 0]]) {
+        const nx = cx + ox, ny = cy + oy, nz = cz + oz;
+        const k = `${nx},${ny},${nz}`;
+        if (seen.has(k)) continue;
+        const id = ny < 0 || ny >= HEIGHT ? -1 : this.world.getBlock(nx, ny, nz);
+        if (id === BLOCK.OBSIDIAN) continue;
+        if (id !== BLOCK.AIR) return null;
+        seen.add(k);
+        cells.push([nx, ny, nz]);
+        if (cells.length > 21 * 21) return null;
+      }
+    }
+    const along = cells.map((c) => c[0] * ax + c[2] * az), ys = cells.map((c) => c[1]);
+    const w = Math.max(...along) - Math.min(...along) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
+    if (w < 2 || w > 21 || h < 3 || h > 21 || cells.length !== w * h) return null;
+    return cells;
+  }
+
+  addPortal([x, y, z], axis) {
+    const dim = this.ctx;
+    this.portals = this.portals.filter((q) => !(q[0] === dim && Math.abs(q[1] - x) <= 1 && Math.abs(q[2] - y) <= 1 && Math.abs(q[3] - z) <= 1));
+    this.portals.push([dim, x, y, z, axis]);
+    if (this.portals.length > 256) this.portals.shift();
+  }
+
+  // A portal block stays only while it's framed: portal or obsidian above, below and to both sides.
+  // Breaking any part of a frame takes the whole portal down, one block after another.
+  checkPortals(x, y, z) {
+    if (this.buildingPortal) return;
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const nx = x + dx, ny = y + dy, nz = z + dz;
+      if (ny < 0 || ny >= HEIGHT) continue;
+      const id = this.world.getBlock(nx, ny, nz);
+      if (BLOCKS[id].shape !== 'portal') continue;
+      const ax = id === BLOCK.NETHER_PORTAL ? 1 : 0, az = 1 - ax;
+      const framed = [[ax, 0, az], [-ax, 0, -az], [0, 1, 0], [0, -1, 0]].every(([ox, oy, oz]) => {
+        const n = this.world.getBlock(nx + ox, ny + oy, nz + oz);
+        return n === BLOCK.OBSIDIAN || n === id;
+      });
+      if (!framed) this.setBlock(nx, ny, nz, BLOCK.AIR);
+    }
+  }
+
+  // Standing in a Nether portal for 4 seconds (at once in creative) takes you through;
+  // an End portal takes you at once. After arriving you have to step out before it works again.
+  tickPortals(dt) {
+    for (const p of this.players.values()) {
+      if (p.dead) continue;
+      this.ctx = p.dim;
+      const fx = Math.floor(p.x), fz = Math.floor(p.z);
+      const feet = this.world.getBlock(fx, Math.floor(p.y + 0.1), fz), head = this.world.getBlock(fx, Math.floor(p.y + 1.2), fz);
+      const nether = BLOCKS[feet].shape === 'portal' || BLOCKS[head].shape === 'portal';
+      const end = feet === BLOCK.END_PORTAL || this.world.getBlock(fx, Math.floor(p.y - 0.3), fz) === BLOCK.END_PORTAL;
+      if (!nether && !end) { p.portalTime = 0; p.portalLock = false; continue; }
+      if (p.portalLock) continue;
+      if (end) { this.throughEndPortal(p); continue; }
+      p.portalTime = (p.portalTime || 0) + dt;
+      if (p.portalTime >= (p.mode === 'creative' ? 0.05 : 4)) this.throughNetherPortal(p);
+    }
+  }
+
+  throughNetherPortal(p) {
+    const to = p.dim === 'nether' ? 'overworld' : 'nether';
+    const scale = to === 'nether' ? 1 / 8 : 8;
+    // heights match the shown y (the Overworld's internal y is shifted in tall worlds)
+    const yOff = this.dims.overworld.world.yOffset;
+    const ty = Math.floor(p.y) + (to === 'nether' ? -yOff : yOff);
+    const tx = Math.floor(p.x * scale), tz = Math.floor(p.z * scale);
+    const spot = this.inDim(to, () => this.findPortal(tx, ty, tz) || this.makePortal(tx, ty, tz));
+    this.changeDim(p, to, spot);
+  }
+
+  throughEndPortal(p) {
+    if (p.dim === 'end') return this.changeDim(p, 'overworld', this.homeOf(p));
+    this.inDim('end', () => this.buildEndPlatform());
+    this.changeDim(p, 'end', [END_PLATFORM[0] + 0.5, END_PLATFORM[1] + 1, END_PLATFORM[2] + 0.5]);
+  }
+
+  // Like Minecraft, the arrival platform is rebuilt every time someone comes in.
+  buildEndPlatform() {
+    const [px, py, pz] = END_PLATFORM;
+    for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      for (let dy = 0; dy <= 3; dy++) {
+        const want = dy === 0 ? BLOCK.OBSIDIAN : BLOCK.AIR;
+        if (this.world.getBlock(px + dx, py + dy, pz + dz) !== want) this.setBlock(px + dx, py + dy, pz + dz, want);
+      }
+    }
+  }
+
+  // Standing spot in the nearest known portal (within 16 blocks in the Nether, 128 in the Overworld).
+  findPortal(tx, ty, tz) {
+    const r = this.ctx === 'nether' ? 16 : 128;
+    let best = null, bestD = Infinity;
+    for (const q of [...this.portals]) {
+      const [dim, x, y, z, axis] = q;
+      if (dim !== this.ctx || Math.abs(x - tx) > r || Math.abs(z - tz) > r) continue;
+      if (BLOCKS[this.world.getBlock(x, y, z)].shape !== 'portal') { this.portals.splice(this.portals.indexOf(q), 1); continue; }
+      const d = Math.hypot(x - tx, (y - ty) * 0.5, z - tz);
+      if (d < bestD) { bestD = d; best = [x, y, z, axis]; }
+    }
+    if (!best) return null;
+    const [x, y, z] = best;
+    // stand in the middle of the bottom row: find how far the portal goes along its axis
+    const axis = this.world.getBlock(x, y, z) - BLOCK.NETHER_PORTAL;
+    const ax = axis === 0 ? 1 : 0, az = 1 - ax;
+    let lo = 0, hi = 0;
+    while (lo > -21 && this.world.getBlock(x + (lo - 1) * ax, y, z + (lo - 1) * az) === BLOCK.NETHER_PORTAL + axis) lo--;
+    while (hi < 21 && this.world.getBlock(x + (hi + 1) * ax, y, z + (hi + 1) * az) === BLOCK.NETHER_PORTAL + axis) hi++;
+    const mid = (lo + hi + 1) / 2;
+    return [x + (ax ? mid : 0.5), y, z + (az ? mid : 0.5)];
+  }
+
+  // Builds a new portal near (tx, ty, tz), on solid ground if there's room within 16 blocks,
+  // otherwise floating on a little obsidian platform. Returns where to stand.
+  makePortal(tx, ty, tz) {
+    const nether = this.ctx === 'nether';
+    const yMin = nether ? 6 : 2, yMax = nether ? 118 : HEIGHT - 8;
+    const w = this.world;
+    const air = (x, y, z) => w.getBlock(x, y, z) === BLOCK.AIR;
+    const ground = (x, y, z) => {
+      const id = w.getBlock(x, y, z), b = BLOCKS[id];
+      return b.solid && b.render === 'cube' && !b.transparent && b.hardness !== Infinity && id !== BLOCK.CHEST && id !== BLOCK.FURNACE;
+    };
+    let best = null, bestD = Infinity;
+    for (let dx = -16; dx <= 16; dx++) for (let dz = -16; dz <= 16; dz++) {
+      const x = tx + dx, z = tz + dz;
+      for (let y = yMax; y >= yMin; y--) {
+        if (!air(x, y, z) || !ground(x, y - 1, z)) continue;
+        const d = Math.hypot(dx, y - ty, dz);
+        if (d >= bestD) continue;
+        for (const axis of [0, 1]) {
+          const ax = axis === 0 ? 1 : 0, az = 1 - ax;
+          // like Minecraft: solid ground under the portal and on both sides of it, and room to stand
+          let ok = true;
+          for (let i = 0; ok && i <= 1; i++) for (const k of [-1, 0, 1]) ok = ground(x + i * ax + k * az, y - 1, z + i * az + k * ax);
+          for (let i = -1; ok && i <= 2; i++) for (let j = 0; ok && j <= 3; j++) ok = air(x + i * ax, y + j, z + i * az);
+          for (let i = 0; ok && i <= 1; i++) for (const k of [-1, 1]) for (let j = 0; ok && j <= 2; j++) ok = air(x + i * ax + k * az, y + j, z + i * az + k * ax);
+          if (ok) { bestD = d; best = [x, y, z, axis]; break; }
+        }
+      }
+    }
+    // like Minecraft, a floating portal is at least at (shown) y 70
+    const [x, y, z, axis] = best || [tx, Math.max(70 + (nether ? 0 : w.yOffset), Math.min(yMax - 4, ty)), tz, 0];
+    const ax = axis === 0 ? 1 : 0, az = 1 - ax;
+    this.buildingPortal = true;
+    if (!best) {
+      // floating: a 2 x 3 obsidian platform with air above it
+      for (let i = 0; i <= 1; i++) for (const k of [-1, 0, 1]) {
+        const bx = x + i * ax + k * az, bz = z + i * az + k * ax;
+        this.setBlock(bx, y - 1, bz, BLOCK.OBSIDIAN);
+        if (k) for (let j = 0; j <= 2; j++) this.setBlock(bx, y + j, bz, BLOCK.AIR);
+      }
+    }
+    for (let i = -1; i <= 2; i++) for (let j = -1; j <= 3; j++) {
+      const edge = i < 0 || i > 1 || j < 0 || j > 2;
+      this.setBlock(x + i * ax, y + j, z + i * az, edge ? BLOCK.OBSIDIAN : BLOCK.NETHER_PORTAL + axis);
+    }
+    this.buildingPortal = false;
+    this.addPortal([x, y, z], axis);
+    return [x + (ax ? 1 : 0.5), y, z + (az ? 1 : 0.5)];
+  }
+
+  // Moves a player to another dimension: they get that dimension's world, and the
+  // players on each side see them leave or arrive.
+  changeDim(p, dim, pos) {
+    const from = p.dim;
+    this.closeViewers(p.peerId);
+    p.sleeping = false;
+    this.inDim(from, () => this.broadcastHere({ t: 'leave', id: p.id }, p.peerId));
+    p.dim = dim;
+    p.ds++;
+    [p.x, p.y, p.z] = pos;
+    p.portalLock = true;
+    p.portalTime = 0;
+    p.moved = true;
+    p.sentEntities = true; // so the next entity list clears what they saw before
+    this.inDim(dim, () => {
+      this.send(p.peerId, {
+        t: 'dimension', dim, ds: p.ds, edits: this.world.exportEdits(), pos,
+        players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
+      });
+      this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, p.peerId);
+    });
+    this.storePlayer(p);
+  }
+
+  // Monsters of the Nether and the End (see spawnMobs).
+  spawnOther(_p, _counts) {}
+
   sendStates() {
-    const moved = [];
+    const moved = {}; // dim -> moves
     for (const p of this.players.values()) {
       if (!p.moved) continue;
       p.moved = false;
-      moved.push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0]);
+      (moved[p.dim] ??= []).push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0]);
     }
-    if (moved.length) this.broadcast({ t: 'state', players: moved });
+    for (const p of this.players.values()) if (moved[p.dim]) this.send(p.peerId, { t: 'state', players: moved[p.dim] });
 
     for (const [peerId, p] of this.players) {
       const list = [];
       for (const e of this.entities.values()) {
-        if (Math.abs(e.x - p.x) > VIEW || Math.abs(e.z - p.z) > VIEW) continue;
+        if (e.dim !== p.dim || Math.abs(e.x - p.x) > VIEW || Math.abs(e.z - p.z) > VIEW) continue;
         // flags: 1 = sheared sheep, 2 = creeper about to explode
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0) : (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
@@ -1450,10 +1758,19 @@ export class GameHost {
   // Everything needed to resume this world later.
   serialize() {
     for (const p of this.players.values()) this.storePlayer(p);
-    this.save.edits = this.world.exportEdits();
+    const o = this.dims.overworld;
+    this.save.edits = o.world.exportEdits();
     this.save.time = this.time;
-    this.save.furnaces = Object.fromEntries(this.furnaces);
-    this.save.chests = Object.fromEntries(this.chests);
+    this.save.furnaces = Object.fromEntries(o.furnaces);
+    this.save.chests = Object.fromEntries(o.chests);
+    const dims = this.save.dims || {};
+    for (const dim of DIMENSIONS) {
+      if (dim === 'overworld') continue;
+      const d = this.dims[dim];
+      dims[dim] = { ...dims[dim], edits: d.world.exportEdits(), furnaces: Object.fromEntries(d.furnaces), chests: Object.fromEntries(d.chests) };
+    }
+    this.save.dims = dims;
+    this.save.portals = this.portals;
     this.save.lastPlayed = Date.now();
     this.dirty = false;
     return this.save;
@@ -1462,13 +1779,16 @@ export class GameHost {
   // Server-side chunk memory cap: terrain regenerates on demand, edits are kept.
   trimMemory() {
     // chunks are 64 KB each in tall worlds, so keep at most ~40 MB of terrain
-    if (this.world.chunks.size <= 600) return;
-    const near = [...this.players.values()].map((p) => [Math.floor(p.x / 16), Math.floor(p.z / 16)]);
-    for (const key of [...this.world.chunks.keys()]) {
-      const [cx, cz] = key.split(',').map(Number);
-      if (!near.some(([px, pz]) => Math.abs(cx - px) <= 8 && Math.abs(cz - pz) <= 8)) {
-        this.world.chunks.delete(key);
-        this.world.biomes.delete(key);
+    for (const dim of DIMENSIONS) {
+      const world = this.dims[dim].world;
+      if (world.chunks.size <= (dim === 'overworld' ? 600 : 200)) continue;
+      const near = [...this.players.values()].filter((p) => p.dim === dim).map((p) => [Math.floor(p.x / 16), Math.floor(p.z / 16)]);
+      for (const key of [...world.chunks.keys()]) {
+        const [cx, cz] = key.split(',').map(Number);
+        if (!near.some(([px, pz]) => Math.abs(cx - px) <= 8 && Math.abs(cz - pz) <= 8)) {
+          world.chunks.delete(key);
+          world.biomes.delete(key);
+        }
       }
     }
   }

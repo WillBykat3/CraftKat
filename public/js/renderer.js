@@ -34,6 +34,7 @@ uniform float fogNear;
 uniform float fogFar;
 uniform float opacity;
 uniform float brightness;
+uniform float ambient;
 varying vec2 vUv;
 varying float vShade;
 varying vec2 vLight;
@@ -44,6 +45,7 @@ float curve(float l) {
   // lifted by the brightness setting (0 = moody, 1 = bright)
   float f = 1.0 - l;
   float b = (1.0 - f) / (f * 3.0 + 1.0);
+  b = ambient + (1.0 - ambient) * b; // the Nether and the End are never pitch black
   return mix(b, sqrt(b), brightness);
 }
 void main() {
@@ -62,12 +64,18 @@ void main() {
 // Same curve as the chunk shader, for things drawn with regular materials (mobs, the hand).
 // Returns a display-space brightness; regular three.js materials work in linear space,
 // so use toLinear() before multiplying a material color with it.
-export const lighting = { brightness: 0.5 };
+export const lighting = { brightness: 0.5, ambient: 0 };
 export function lightCurve(level) {
   const f = 1 - level;
-  const b = (1 - f) / (f * 3 + 1);
+  let b = (1 - f) / (f * 3 + 1);
+  b = lighting.ambient + (1 - lighting.ambient) * b;
   return Math.max(0.035, b + (Math.sqrt(b) - b) * lighting.brightness);
 }
+
+// Light in total darkness, like Minecraft: the Nether's ambient light is 0.1,
+// and the End's light map is forced a quarter of the way to full brightness.
+const AMBIENT = { overworld: 0, nether: 0.1, end: 0.25 };
+const END_SKY = new THREE.Color(0x120c1a);
 export const toLinear = (v) => Math.pow(v, 2.2);
 
 function freeArray() {
@@ -102,6 +110,7 @@ export class Renderer {
       fogFar: { value: 90 },
       opacity: { value: 1 },
       brightness: { value: 0.5 },
+      ambient: { value: AMBIENT.overworld },
     };
     this.solidMaterial = new THREE.ShaderMaterial({
       uniforms: this.uniforms, vertexShader: CHUNK_VERTEX, fragmentShader: CHUNK_FRAGMENT,
@@ -132,14 +141,17 @@ export class Renderer {
   }
 
   // ---------- chunks ----------
-  startWorld(seed, edits, gen = 1) {
+  startWorld(seed, edits, gen = 1, dim = 'overworld') {
     this.clearChunks();
+    this.dim = dim;
+    this.uniforms.ambient.value = lighting.ambient = AMBIENT[dim] ?? AMBIENT.overworld;
+    this.dimFog = null;
     this.cloudY = gen >= 3 ? 192.33 + 64 : 126; // Minecraft's cloud height in tall worlds
     if (this.worker) this.worker.terminate();
     this.worker = new Worker(new URL('./mesh-worker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.onMesh(e.data);
     this.worker.onerror = (e) => console.error('mesh worker error', e.message || e);
-    this.worker.postMessage({ t: 'init', seed, edits, gen });
+    this.worker.postMessage({ t: 'init', seed, edits, gen, dim });
   }
 
   clearChunks() {
@@ -454,7 +466,14 @@ export class Renderer {
 
   // ---------- per frame ----------
   // time: world ticks; medium: 'water' or 'lava' when the camera is inside one, else null
-  updateEnvironment(time, medium, sprintFov) {
+  // fogTint: [r, g, b] (0-255) of the Nether biome the camera is in
+  updateEnvironment(time, medium, sprintFov, fogTint) {
+    if (this.dim && this.dim !== 'overworld') return this.otherEnvironment(medium, sprintFov, fogTint);
+    if (!this.sun.visible) {
+      // back from another dimension
+      this.sun.visible = this.moon.visible = this.stars.visible = true;
+      this.setClouds(this.cloudMode);
+    }
     const underwater = medium === 'water';
     const t = ((time % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
     const day = daylightAt(t);
@@ -497,12 +516,42 @@ export class Renderer {
     }
     this.cloudUniforms.brightness.value = 0.25 + day * 0.75;
 
+    this.updateFov(sprintFov);
+    return day;
+  }
+
+  updateFov(sprintFov) {
     const fov = (this.fov + (sprintFov ? 8 : 0)) * (this.zoom ?? 1); // drawing a bow zooms in
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * 0.2;
       this.camera.updateProjectionMatrix();
     }
-    return day;
+  }
+
+  // The Nether: no sky, thick fog coloured by the biome. The End: a dark purple void.
+  otherEnvironment(medium, sprintFov, fogTint) {
+    for (const o of [this.sun, this.moon, this.stars, this.clouds, this.fancyClouds]) if (o) o.visible = false;
+    this.uniforms.skyFactor.value = 0;
+    this.skyFactor = 0;
+    const nether = this.dim === 'nether';
+    let target = END_SKY;
+    if (nether) {
+      const [r, g, b] = fogTint || [0x33, 0x08, 0x08];
+      target = new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
+    }
+    // biome fog blends over a couple of seconds as you walk between biomes
+    this.dimFog = this.dimFog ? this.dimFog.lerp(target, 0.03) : target.clone();
+    const fog = medium === 'lava' ? LAVA_FOG : medium === 'water' ? WATER_FOG : this.dimFog;
+    this.scene.background = this.dimFog;
+    const srgb = {};
+    fog.getRGB(srgb, THREE.SRGBColorSpace);
+    this.uniforms.fogColor.value.set(srgb.r, srgb.g, srgb.b);
+    const far = this.renderDistance * CHUNK;
+    // like Minecraft, the Nether's fog starts almost at your feet and ends halfway to the view distance
+    this.uniforms.fogNear.value = medium === 'lava' ? 0 : medium === 'water' ? 2 : nether ? far * 0.05 : far * 0.6;
+    this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : medium === 'water' ? 18 : nether ? Math.min(far, 192) * 0.5 : far * 0.95;
+    this.updateFov(sprintFov);
+    return 0;
   }
 
   render(extraScene, extraCamera) {

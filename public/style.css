@@ -380,6 +380,13 @@ button.danger:hover { color: #ff8080; }
 #chat.open input { display: block; }
 
 #water-overlay { position: fixed; inset: 0; background: rgba(20, 50, 140, 0.35); pointer-events: none; z-index: 4; }
+/* standing in a Nether portal: the portal texture fills the screen, like Minecraft */
+#portal-overlay {
+  position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
+  background-size: 100% 100%; image-rendering: pixelated;
+  animation: portal-wobble 1.5s ease-in-out infinite alternate;
+}
+@keyframes portal-wobble { from { filter: brightness(0.9) hue-rotate(-8deg); } to { filter: brightness(1.15) hue-rotate(8deg); } }
 #damage-flash { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 0, 0, 0.5)); }
 #damage-flash.on { animation: flash 0.4s; }
 @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }

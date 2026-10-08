@@ -23,6 +23,8 @@ export const TILE_NAMES = [
   'redstone_dust_dot', 'redstone_dust_line', 'redstone_torch', 'redstone_torch_off', 'lever_handle', 'torch_tip_on', 'torch_tip_off',
   'repeater', 'redstone_lamp', 'redstone_lamp_on', 'redstone_block', 'tnt_top', 'tnt_side', 'tnt_bottom',
   'piston_side', 'piston_top', 'piston_bottom', 'piston_inner',
+  'netherrack', 'nether_quartz_ore', 'soul_sand', 'glowstone', 'nether_bricks', 'nether_portal', 'magma', 'nether_gold_ore',
+  'basalt_top', 'basalt_side', 'end_stone', 'end_portal_frame_top', 'end_portal_frame_side', 'end_portal_frame_eye', 'end_portal', 'dragon_egg',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

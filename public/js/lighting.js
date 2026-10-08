@@ -98,7 +98,8 @@ export function topY(ids) {
 }
 
 // Returns {sky, block} light arrays covering the region (see regionIndex).
-export function computeLight(ids) {
+// hasSky: false in the Nether and the End, which have no sunlight at all.
+export function computeLight(ids, hasSky = true) {
   const total = LAYER * HEIGHT;
   const sky = new Uint8Array(total);
   const block = new Uint8Array(total);
@@ -107,7 +108,7 @@ export function computeLight(ids) {
 
   // Sky light: straight down each column, losing light through leaves/water.
   let tail = 0;
-  for (let c = 0; c < LAYER; c++) {
+  for (let c = 0; c < (hasSky ? LAYER : 0); c++) {
     let l = 15;
     for (let y = HEIGHT - 1; y >= 0 && l > 0; y--) {
       const i = y * LAYER + c;

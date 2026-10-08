@@ -535,6 +535,86 @@ function drawBlockTile(p, name) {
       if (!top) { px(11, 2, [60, 60, 60]); px(11, 3, [60, 60, 60]); px(12, 2, [90, 90, 90]); }
       break;
     }
+    case 'netherrack':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const v = Math.sin(x * 1.3 + y * 0.7) + Math.sin(y * 1.9 - x * 0.4);
+        px(x, y, shade([111, 54, 53], (v > 1 ? 1.15 : v < -1 ? 0.75 : 0.95) + rand() * 0.12));
+      }
+      break;
+    case 'nether_quartz_ore':
+      drawBlockTile(p, 'netherrack');
+      for (let i = 0; i < 7; i++) { const x = 2 + Math.floor(rand() * 12), y = 2 + Math.floor(rand() * 12); px(x, y, [236, 230, 222]); px(x + 1, y, [210, 200, 190]); px(x, y + 1, [250, 248, 244]); }
+      break;
+    case 'nether_gold_ore': drawBlockTile(p, 'netherrack'); p.ore([250, 205, 60]); break;
+    case 'soul_sand':
+      p.noisy([84, 64, 51], 0.15);
+      for (let i = 0; i < 4; i++) { const x = 2 + Math.floor(rand() * 11), y = 3 + Math.floor(rand() * 10); px(x, y, [45, 32, 25]); px(x + 2, y, [45, 32, 25]); px(x + 1, y + 2, [45, 32, 25]); } // faces
+      break;
+    case 'glowstone':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const v = rand();
+        px(x, y, v < 0.2 ? [140, 100, 50] : v < 0.6 ? [230, 180, 100] : [255, 230, 150]);
+      }
+      break;
+    case 'nether_bricks':
+      for (let y = 0; y < S; y++) {
+        const offset = Math.floor(y / 4) % 2 ? 4 : 0;
+        for (let x = 0; x < S; x++) {
+          if (y % 4 === 3 || (x + offset) % 8 === 7) px(x, y, [32, 15, 18]);
+          else px(x, y, shade([68, 34, 40], 0.85 + rand() * 0.25));
+        }
+      }
+      break;
+    case 'nether_portal':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const v = Math.sin((x + y) * 0.9 + Math.sin(x * 0.5) * 2) + Math.sin(y * 1.1 - x * 0.7);
+        px(x, y, v > 0.8 ? [190, 110, 255] : v > -0.4 ? shade([110, 30, 200], 0.9 + rand() * 0.2) : [70, 10, 140]);
+      }
+      break;
+    case 'magma':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const crack = Math.sin(x * 1.1 + Math.sin(y * 0.9) * 2) > 0.85 || Math.sin(y * 1.3 + Math.sin(x) * 2) > 0.9;
+        px(x, y, crack ? [255, 150, 40] : shade([90, 35, 20], 0.85 + rand() * 0.3));
+      }
+      break;
+    case 'basalt_side':
+      for (let x = 0; x < S; x++) { const f = 0.8 + rand() * 0.3; for (let y = 0; y < S; y++) px(x, y, shade([78, 78, 84], f * (0.92 + rand() * 0.12))); }
+      break;
+    case 'basalt_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+        px(x, y, shade([90, 90, 96], (Math.floor(d) % 3 ? 1 : 0.75) * (0.9 + rand() * 0.15)));
+      }
+      break;
+    case 'end_stone':
+      p.noisy([220, 222, 160], 0.06);
+      for (let i = 0; i < 8; i++) { const x = Math.floor(rand() * 15), y = Math.floor(rand() * 15); px(x, y, [190, 192, 130]); px(x + 1, y, [200, 202, 140]); }
+      break;
+    case 'end_portal_frame_side':
+      drawBlockTile(p, 'end_stone');
+      for (let x = 0; x < S; x++) for (let y = 0; y < 4; y++) px(x, y, shade([60, 110, 90], 0.85 + rand() * 0.25));
+      break;
+    case 'end_portal_frame_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const ring = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)) > 5.5;
+        px(x, y, ring ? shade([60, 110, 90], 0.85 + rand() * 0.25) : shade([40, 70, 60], 0.85 + rand() * 0.2));
+      }
+      break;
+    case 'end_portal_frame_eye':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.hypot(x - 7.5, y - 7.5);
+        px(x, y, d < 2.5 ? [20, 40, 30] : d < 6 ? shade([40, 160, 120], 0.85 + rand() * 0.3) : [25, 70, 55]);
+      }
+      break;
+    case 'end_portal':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const r = rand();
+        px(x, y, r < 0.06 ? [160, 220, 200] : r < 0.12 ? [60, 120, 160] : shade([8, 12, 22], 0.8 + rand() * 0.4));
+      }
+      break;
+    case 'dragon_egg':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, rand() < 0.1 ? [100, 40, 140] : shade([16, 10, 20], 0.8 + rand() * 0.5));
+      break;
     case 'redstone_dust_dot':
       for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) {
         if ((x - 7.5) ** 2 + (y - 7.5) ** 2 > 14 + rand() * 6) continue;
@@ -804,6 +884,28 @@ function drawItem(p, icon) {
       for (let y = 3; y < 14; y++) for (let x = 4 + Math.abs(8 - y) / 2; x < 12 - Math.abs(6 - y) / 3; x++) px(Math.floor(x), y, shade([60, 60, 65], 0.8 + rand() * 0.4));
       px(7, 5, [130, 130, 135]);
       break;
+    case 'glowstone_dust':
+      for (let i = 0; i < 26; i++) { const a = rand() * 6.28, r = Math.sqrt(rand()) * 4.5; px(Math.round(8 + Math.cos(a) * r), Math.round(9 + Math.sin(a) * r * 0.7), rand() < 0.5 ? [255, 220, 120] : [220, 170, 70]); }
+      break;
+    case 'quartz':
+      for (let y = 4; y < 13; y++) for (let x = 5 + Math.abs(8 - y) / 3; x < 11 - Math.abs(8 - y) / 3; x++) px(Math.floor(x), y, shade([238, 232, 224], 0.85 + rand() * 0.2));
+      px(7, 6, [255, 255, 255]);
+      break;
+    case 'blaze_rod': case 'blaze_powder':
+      if (icon === 'blaze_rod') for (let i = 0; i < 11; i++) { px(3 + i, 13 - i, [250, 200, 50]); px(4 + i, 13 - i, [220, 140, 30]); }
+      else for (let i = 0; i < 26; i++) { const a = rand() * 6.28, r = Math.sqrt(rand()) * 4.5; px(Math.round(8 + Math.cos(a) * r), Math.round(9 + Math.sin(a) * r * 0.7), rand() < 0.5 ? [255, 200, 40] : [240, 120, 20]); }
+      break;
+    case 'eye_of_ender':
+      blob([40, 120, 90], 8, 8, 5, 5, 0.2); blob([60, 180, 130], 8, 8, 3.2, 3.2, 0.2);
+      for (let y = 5; y < 11; y++) px(8, y, [20, 30, 25]); px(7, 7, [20, 30, 25]); px(9, 9, [20, 30, 25]);
+      break;
+    case 'nether_brick':
+      for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([80, 40, 46], y === 6 ? 1.2 : 0.9 + rand() * 0.1));
+      break;
+    case 'ghast_tear':
+      for (let y = 3; y < 13; y++) { const w = y < 8 ? (y - 3) / 2.5 : 3 - (y - 8) / 2.5; for (let x = Math.round(8 - w); x <= Math.round(8 + w); x++) px(x, y, shade([200, 230, 235], 0.9 + rand() * 0.15)); }
+      break;
+    case 'gold_nugget': blob([250, 210, 60], 8, 9, 3, 2.5, 0.3); px(7, 8, [255, 245, 170]); break;
     case 'flint_and_steel':
       for (let i = 0; i < 6; i++) { px(3 + i, 12 - i, [200, 200, 205]); px(4 + i, 12 - i, [150, 150, 155]); }
       px(3, 11, [200, 200, 205]); px(2, 12, [200, 200, 205]); px(3, 13, [150, 150, 155]);
@@ -1071,5 +1173,14 @@ export function createTextures() {
     cracks.push(tex);
   }
 
-  return { atlas, atlasSRGB, atlasTinted, atlasCanvas, iconURL, itemTexture, tileTexture, cracks };
+  // A block tile as a data URL (for CSS, like the portal overlay).
+  function tileURL(name) {
+    const c = document.createElement('canvas');
+    c.width = c.height = S;
+    const [sx, sy] = tileRect(name);
+    c.getContext('2d').drawImage(tintedCanvas, sx, sy, S, S, 0, 0, S, S);
+    return c.toDataURL();
+  }
+
+  return { atlas, atlasSRGB, atlasTinted, atlasCanvas, iconURL, itemTexture, tileTexture, tileURL, cracks };
 }
