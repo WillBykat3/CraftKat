@@ -303,10 +303,20 @@ button.danger:hover { color: #ff8080; }
   margin-left: -182px;
   height: 40px;
 }
-#hearts, #food, #air { position: absolute; display: flex; }
+#hearts, #food, #air, #armor { position: absolute; display: flex; }
 #hearts { left: 0; bottom: 0; }
 #food { right: 0; bottom: 0; flex-direction: row-reverse; }
 #air { right: 0; bottom: 20px; flex-direction: row-reverse; }
+#armor { left: 0; bottom: 20px; }
+.armor.full { background-image: var(--art-armorFull); }
+.armor.half { background-image: var(--art-armorHalf); }
+.armor.empty { background-image: var(--art-armorEmpty); }
+.armor-col { display: flex; flex-direction: column; }
+.armor-empty::after { content: ""; position: absolute; inset: 4px; opacity: 0.35; background: center / contain no-repeat; image-rendering: pixelated; }
+.armor-helmet::after { background-image: var(--art-slotHelmet); }
+.armor-chestplate::after { background-image: var(--art-slotChestplate); }
+.armor-leggings::after { background-image: var(--art-slotLeggings); }
+.armor-boots::after { background-image: var(--art-slotBoots); }
 #stats i { display: block; width: 16px; height: 18px; flex: none; background-position: 0 0; background-size: 18px 16px; background-repeat: no-repeat; image-rendering: pixelated; }
 #stats i:first-child { width: 18px; }
 #food i { background-position: 2px 0; }

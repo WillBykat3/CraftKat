@@ -498,3 +498,28 @@ test('doors open for everyone and break as one; hoes till, crops grow, bone meal
   const reloaded = new GameHost(structuredClone(host.serialize()), () => {});
   assert.ok(reloaded.crops.has(`${fx},${y},${z}`));
 });
+
+test('arrows from a bow hit mobs; armor is saved, checked and shown to others', () => {
+  const { host, join, last } = setup();
+  join('a', 'A'); join('b', 'B');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  const pl = [...host.players.values()][0];
+  pl.x = 0.5; pl.y = 220; pl.z = 0.5; // shoot in open sky
+  const pig = host.spawnMob('pig', 0.5, 221, -6.5);
+  pig.think = 999;
+  const hp = pig.hp;
+  host.message('a', { t: 'shoot', power: 1, yaw: 0, pitch: 0 });
+  for (let i = 0; i < 20 && pig.hp === hp; i++) { pig.vx = pig.vy = pig.vz = 0; pig.x = 0.5; pig.y = 221; pig.z = -6.5; host.tickArrow([...host.entities.values()].find((e) => e.type === 'arrow') || { age: 99 }, 0.02); }
+  assert.ok(pig.hp < hp, 'the pig was hit');
+
+  // armor
+  const armor = [null, { id: ITEM.IRON_CHESTPLATE, count: 1, dur: 240 }, null, null];
+  host.message('a', { t: 'save', inv: new Array(36).fill(null), armor, health: 20, food: 20 });
+  assert.deepEqual(host.serialize().players[pl.saveKey].armor, armor);
+  // a chestplate in the helmet slot is refused
+  host.message('a', { t: 'save', inv: new Array(36).fill(null), armor: [armor[1], null, null, null], health: 20, food: 20 });
+  assert.deepEqual(host.serialize().players[pl.saveKey].armor, armor);
+  host.message('a', { t: 'equip', armor: [0, ITEM.IRON_CHESTPLATE, ITEM.DIAMOND_HELMET, 0] });
+  assert.deepEqual(last('b', 'equip'), { t: 'equip', id: pl.id, armor: [0, ITEM.IRON_CHESTPLATE, 0, 0] });
+  void x; void y; void z;
+});

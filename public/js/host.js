@@ -3,7 +3,7 @@
 // themselves, through plain message objects.
 
 import {
-  BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, isBlockId, isValidId, maxStack, toolOf,
+  BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, isBlockId, isValidId, maxStack, toolOf,
   SMELTING, FUEL, SMELT_SECONDS,
 } from './blocks.js';
 import { World, LATEST_GEN } from './world.js';
@@ -32,6 +32,8 @@ const HOSTILE = [['zombie', 0.4], ['skeleton', 0.25], ['creeper', 0.2], ['spider
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
+// 4 slots, each empty or one piece of armor of the right kind
+const validArmor = (a) => Array.isArray(a) && a.length === 4 && a.every((s, slot) => s === null || (validStack(s) && armorOf(s.id)?.slot === slot && s.count === 1));
 
 export function newWorldSave({ name, seed, mode = 'survival', cheats = true }) {
   const world = new World(seed, LATEST_GEN);
@@ -181,6 +183,7 @@ export class GameHost {
       food: p.food ?? prev.food ?? 20,
       bed: p.bed ?? prev.bed ?? null,
       xp: p.xp ?? prev.xp ?? 0,
+      armor: p.armor ?? prev.armor ?? null,
     };
     this.dirty = true;
   }
@@ -203,6 +206,7 @@ export class GameHost {
       case 'attack': return this.onAttack(p, msg);
       case 'chat': return this.onChat(peerId, p, msg);
       case 'save': return this.onSave(p, msg);
+      case 'equip': return this.onEquip(p, msg);
       case 'furnace_open': return this.onFurnaceOpen(peerId, p, msg);
       case 'furnace_close': return this.onFurnaceClose(peerId, msg);
       case 'furnace_click': return this.onFurnaceClick(peerId, p, msg);
@@ -216,6 +220,7 @@ export class GameHost {
       case 'bucket': return this.onBucket(peerId, p, msg);
       case 'interact': return this.onInteract(p, msg);
       case 'use': return this.onUse(peerId, p, msg);
+      case 'shoot': return this.onShoot(p, msg);
     }
   }
 
@@ -250,6 +255,7 @@ export class GameHost {
       food: saved?.food ?? 20,
       bed: saved?.bed ?? null,
       xp: saved?.xp ?? 0,
+      armor: saved?.armor ?? null,
       isHost: !!msg.isHost && peerId === 'local',
       moved: true,
       canBuild: bucket(25, 50, this.now),
@@ -267,7 +273,7 @@ export class GameHost {
       spawn: this.save.spawn,
       time: this.time,
       mode: p.mode,
-      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp },
+      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor },
       players: [...this.players.values()].filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
     this.broadcast({ t: 'join', ...this.playerInfo(p) }, peerId);
@@ -275,7 +281,7 @@ export class GameHost {
   }
 
   playerInfo(p) {
-    return { id: p.id, name: p.name, p: [p.x, p.y, p.z], r: [p.yaw, p.pitch] };
+    return { id: p.id, name: p.name, p: [p.x, p.y, p.z], r: [p.yaw, p.pitch], armor: (p.armor || []).map((s) => s?.id ?? 0) };
   }
 
   onPos(p, msg) {
@@ -518,16 +524,23 @@ export class GameHost {
     if (!e || !isMob(e) || !p.canBuild()) return;
     if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
     const tool = toolOf(msg.tool);
-    const damage = tool ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
+    const damage = tool && tool.kind !== 'bow' ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
+    this.hurtMob(e, damage, e.x - p.x, e.z - p.z, p.name);
+  }
+
+  // Damage with knockback away from (dx, dz); by: the player's name (angers neutral mobs).
+  hurtMob(e, damage, dx, dz, by) {
     e.hp -= damage;
-    const dx = e.x - p.x, dz = e.z - p.z, len = Math.hypot(dx, dz) || 1;
+    const len = Math.hypot(dx, dz) || 1;
     e.vx = (dx / len) * 6;
     e.vz = (dz / len) * 6;
     e.vy = 4;
     e.panic = 4;
     e.hurtUntil = this.now() + 400;
+    if (by) e.angryAt = by;
     this.broadcast({ t: 'mobhurt', e: e.id });
     if (e.hp <= 0) this.killMob(e);
+    else this.onMobHurt?.(e);
   }
 
   killMob(e) {
@@ -766,6 +779,21 @@ export class GameHost {
     this.entities.set(a.id, a);
   }
 
+  // A player let go of a drawn bow. power 0-1 (Minecraft: full draw after a second).
+  onShoot(p, msg) {
+    if (p.dead || !isNum(msg.power) || !isNum(msg.yaw) || !isNum(msg.pitch)) return;
+    const power = Math.max(0, Math.min(1, msg.power));
+    if (power < 0.1) return;
+    const speed = power * 50;
+    const dir = [-Math.sin(msg.yaw) * Math.cos(msg.pitch), Math.sin(msg.pitch), -Math.cos(msg.yaw) * Math.cos(msg.pitch)];
+    const a = {
+      id: this.nextEntityId++, type: 'arrow', x: p.x + dir[0] * 0.5, y: p.y + 1.5 + dir[1] * 0.5, z: p.z + dir[2] * 0.5, halfW: 0.05, height: 0.1,
+      vx: dir[0] * speed, vy: dir[1] * speed, vz: dir[2] * speed, yaw: msg.yaw, age: 0,
+      player: p.name, damage: Math.ceil(power * 6) + (power >= 1 ? Math.floor(this.random() * 4) : 0), // a full draw can crit
+    };
+    this.entities.set(a.id, a);
+  }
+
   tickArrow(a, dt) {
     a.age += dt;
     if (a.age > 5) { this.entities.delete(a.id); return; }
@@ -773,12 +801,25 @@ export class GameHost {
     for (let i = 0; i < steps; i++) {
       a.vy -= 20 * dt / steps;
       a.x += a.vx * dt / steps; a.y += a.vy * dt / steps; a.z += a.vz * dt / steps;
-      for (const p of this.players.values()) {
-        if (p.mode !== 'survival' || p.dead) continue;
-        if (Math.abs(a.x - p.x) < 0.45 && Math.abs(a.z - p.z) < 0.45 && a.y > p.y && a.y < p.y + 1.85) {
-          this.send(p.peerId, { t: 'hurt', amount: ARROW_DAMAGE, from: [a.x - a.vx, a.z - a.vz], cause: 'was shot by a Skeleton' });
-          this.entities.delete(a.id);
-          return;
+      if (a.player) {
+        // a player's arrow hits mobs (not other players)
+        for (const e of this.entities.values()) {
+          if (!isMob(e) || e.id === a.id) continue;
+          const t = MOB_TYPES[e.type];
+          if (Math.abs(a.x - e.x) < t.halfW + 0.1 && Math.abs(a.z - e.z) < t.halfW + 0.1 && a.y > e.y && a.y < e.y + t.height) {
+            this.hurtMob(e, a.damage, a.vx, a.vz, a.player);
+            this.entities.delete(a.id);
+            return;
+          }
+        }
+      } else {
+        for (const p of this.players.values()) {
+          if (p.mode !== 'survival' || p.dead) continue;
+          if (Math.abs(a.x - p.x) < 0.45 && Math.abs(a.z - p.z) < 0.45 && a.y > p.y && a.y < p.y + 1.85) {
+            this.send(p.peerId, { t: 'hurt', amount: ARROW_DAMAGE, from: [a.x - a.vx, a.z - a.vz], cause: a.cause || 'was shot by a Skeleton' });
+            this.entities.delete(a.id);
+            return;
+          }
         }
       }
       if (BLOCKS[this.world.getBlock(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z))].solid) {
@@ -850,11 +891,19 @@ export class GameHost {
     }
   }
 
+  // What others see a player wearing.
+  onEquip(p, msg) {
+    if (!Array.isArray(msg.armor) || msg.armor.length !== 4) return;
+    const ids = msg.armor.map((id, slot) => (armorOf(id)?.slot === slot ? id : 0));
+    this.broadcast({ t: 'equip', id: p.id, armor: ids }, p.peerId);
+  }
+
   onSave(p, msg) {
     if (Array.isArray(msg.inv) && msg.inv.length === 36 && msg.inv.every(validStack)) p.inv = msg.inv;
     if (isNum(msg.health)) p.health = Math.max(0, Math.min(20, msg.health));
     if (isNum(msg.food)) p.food = Math.max(0, Math.min(20, msg.food));
     if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
+    if (validArmor(msg.armor)) p.armor = msg.armor;
     this.storePlayer(p);
   }
 

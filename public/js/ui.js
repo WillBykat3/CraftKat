@@ -1,7 +1,7 @@
 // Inventory screens (survival inventory, crafting table, furnace, creative)
 // and the in-game HUD (hotbar, hearts, hunger, air).
 
-import { itemName, ITEMS, maxDurability, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
+import { itemName, ITEMS, maxDurability, armorOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
 import {
   HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem,
   RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult,
@@ -137,6 +137,27 @@ export class InventoryScreen {
     return s;
   }
 
+  // Helmet, chestplate, leggings and boots: each slot takes only its own kind of armor.
+  armorSlots(parent) {
+    const armor = this.game.armor;
+    const col = el('div', 'armor-col', parent);
+    ['helmet', 'chestplate', 'leggings', 'boots'].forEach((piece, i) => {
+      this.slot(col, armor[i], (button, shift) => {
+        if (shift) {
+          if (armor[i] && addItem(this.game.inv, armor[i].id, armor[i].count, armor[i].dur) === 0) armor[i] = null;
+        } else if (this.cursor) {
+          const a = armorOf(this.cursor.id);
+          if (!a || a.slot !== i || this.cursor.count !== 1) return;
+          [armor[i], this.cursor] = [this.cursor, armor[i]];
+        } else {
+          this.cursor = armor[i];
+          armor[i] = null;
+        }
+        this.game.armorChanged();
+      }, armor[i] ? '' : 'armor-empty armor-' + piece);
+    });
+  }
+
   // inventory grid + hotbar, shared by every screen
   playerSlots(panel) {
     const inv = this.game.inv;
@@ -150,9 +171,17 @@ export class InventoryScreen {
         return;
       }
       if (shift && this.kind !== 'creative') {
-        // move between hotbar and backpack
         const stack = inv[i];
         if (!stack) return;
+        // armor goes straight into its slot when that's empty
+        const a = armorOf(stack.id);
+        if (a && this.kind === 'inventory' && !this.game.armor[a.slot]) {
+          this.game.armor[a.slot] = stack;
+          inv[i] = null;
+          this.game.armorChanged();
+          return;
+        }
+        // move between hotbar and backpack
         inv[i] = null;
         const targets = i < HOTBAR_SIZE ? range(HOTBAR_SIZE, 36) : range(0, HOTBAR_SIZE);
         const left = quickMove(stack, inv, targets);
@@ -231,6 +260,7 @@ export class InventoryScreen {
     toggle.textContent = '📖 Recipe Book';
     toggle.addEventListener('click', () => { this.bookOpen = !this.bookOpen; this.render(); });
     const row = el('div', 'craft-row', panel);
+    if (this.kind === 'inventory' && this.game.armor) this.armorSlots(row);
     const gridEl = el('div', size === 3 ? 'grid3' : 'grid2', row);
     for (let i = 0; i < this.grid.length; i++) {
       this.slot(gridEl, this.grid[i], (button) => {
@@ -312,6 +342,7 @@ export class InventoryScreen {
   render() {
     if (!this.kind) return;
     this.root.innerHTML = '';
+    this.tooltip.classList.add('hidden'); // the slot under the mouse may have changed
     const wrap = el('div', 'inv-wrap', this.root);
     if (this.bookOpen && (this.kind === 'inventory' || this.kind === 'crafting')) this.recipeBook(wrap);
     const panel = el('div', 'inv-panel', wrap);
@@ -377,6 +408,7 @@ export class HUD {
     this.hearts = row('hearts', 'heart');
     this.food = row('food', 'food');
     this.air = row('air', 'bubble');
+    this.armorIcons = row('armor', 'armor');
     this.lastName = '';
     this.lastStats = '';
   }
@@ -401,17 +433,19 @@ export class HUD {
       if (name) n.classList.add('fade');
     }
     $('itemname').classList.toggle('creative', !survival);
-    const key = [mode, stats.health, stats.food, Math.ceil(stats.air / 15), stats.hurtFlash, stats.xpLevel, stats.xpProgress].join();
+    const key = [mode, Math.ceil(stats.health), stats.food, Math.ceil(stats.air / 15), stats.hurtFlash, stats.xpLevel, stats.xpProgress, stats.armorPoints].join();
     if (key === this.lastStats) return;
     this.lastStats = key;
     $('stats').classList.toggle('hidden', !survival);
     $('xp').classList.toggle('hidden', !survival);
     if (!survival) return;
-    setIcons(this.hearts, stats.health);
+    setIcons(this.hearts, Math.ceil(stats.health));
+    setIcons(this.armorIcons, stats.armorPoints || 0);
+    $('armor').classList.toggle('hidden', !stats.armorPoints);
     setIcons(this.food, stats.food);
     setIcons(this.air, stats.air < 300 ? Math.ceil(stats.air / 15) : 0, true);
     $('hearts').classList.toggle('flash', !!stats.hurtFlash);
-    $('hearts').classList.toggle('low', stats.health <= 4);
+    $('hearts').classList.toggle('low', Math.ceil(stats.health) <= 4);
     $('xp-fill').style.width = `${Math.round((stats.xpProgress || 0) * 100)}%`;
     $('xp-level').textContent = stats.xpLevel > 0 ? stats.xpLevel : '';
   }

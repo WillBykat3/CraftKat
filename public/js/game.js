@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -56,6 +56,7 @@ export class Game {
     this.stats = { health: 20, food: 20, air: MAX_AIR, exhaustion: 0, regen: 0, starve: 0, invuln: 0, hurtFlash: false, xpTotal: 0, xpLevel: 0, xpProgress: 0 };
     this.mode = 'survival';
     this.inv = new Array(INVENTORY_SIZE).fill(null);
+    this.armor = [null, null, null, null]; // helmet, chestplate, leggings, boots
     this.selected = 0;
     this.spawn = [0.5, 40, 0.5];
     this.time = 1000;
@@ -106,7 +107,10 @@ export class Game {
     switch (msg.t) {
       case 'welcome': return this.welcome(msg);
       case 'error': return this.disconnected(msg.msg);
-      case 'join': return this.entities.addPlayer(msg.id, msg.name, msg.p, msg.r);
+      case 'join':
+        this.entities.addPlayer(msg.id, msg.name, msg.p, msg.r);
+        if (msg.armor) this.entities.setArmor(msg.id, msg.armor);
+        return;
       case 'leave': return this.entities.removePlayer(msg.id);
       case 'state':
         for (const [id, x, y, z, yaw, pitch] of msg.players) if (id !== this.myId) this.entities.movePlayer(id, [x, y, z], [yaw, pitch]);
@@ -135,7 +139,8 @@ export class Game {
         if (this.screen.isOpen) this.screen.render();
         return;
       }
-      case 'hurt': return this.damage(msg.amount, msg.cause, msg.from);
+      case 'hurt': return this.damage(msg.amount, msg.cause, msg.from, true);
+      case 'equip': return this.entities.setArmor(msg.id, msg.armor);
       case 'xp': return this.addXP(msg.amount);
       case 'mobhurt': {
         const v = this.entities.entities.get(msg.e);
@@ -183,13 +188,20 @@ export class Game {
     this.stats.health = me.health ?? 20;
     this.stats.food = me.food ?? 20;
     this.stats.xpTotal = Number.isInteger(me.xp) ? me.xp : 0;
+    this.armor = Array.isArray(me.armor) && me.armor.length === 4 ? me.armor.map((s) => (s ? { ...s } : null)) : [null, null, null, null];
+    this.armorChanged();
     this.addXP(0);
     if (this.stats.health <= 0) this.stats.health = 20;
     this.unstick();
-    for (const p of msg.players) this.entities.addPlayer(p.id, p.name, p.p, p.r);
+    for (const p of msg.players) {
+      this.entities.addPlayer(p.id, p.name, p.p, p.r);
+      if (p.armor) this.entities.setArmor(p.id, p.armor);
+    }
     this.r.startWorld(msg.seed, msg.edits, msg.gen || 1);
     this.r.setRenderDistance(this.settings.renderDistance);
     this.playing = true;
+    this.sentArmor = null;
+    this.armorChanged(); // tell the others what we're wearing
     this.addChat(`Welcome to ${msg.worldName}, ${msg.name}!`, 'sys');
     this.addChat('E: inventory · T: chat · Q: drop · /help for commands', 'sys');
   }
@@ -575,7 +587,9 @@ export class Game {
         return;
       }
     }
+    if (held?.id === ITEM.BOW) return; // drawn while the button is held (see update)
     if (hit && held && this.useOnBlock(hit, held)) return;
+    if (held && armorOf(held.id)) { this.equipHeld(held); return; }
     if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET)) {
       this.useBucket(held);
       return;
@@ -747,6 +761,63 @@ export class Game {
     }
   }
 
+  // ---------- armor ----------
+  armorChanged() {
+    let points = 0;
+    for (const s of this.armor) points += armorOf(s?.id)?.defense ?? 0;
+    this.stats.armorPoints = points;
+    this.invDirty = true;
+    const ids = this.armor.map((s) => s?.id ?? 0);
+    if (JSON.stringify(ids) !== JSON.stringify(this.sentArmor)) {
+      this.sentArmor = ids;
+      if (this.playing) this.send({ t: 'equip', armor: ids });
+      this.entities.setSelfArmor(ids);
+    }
+  }
+
+  // Minecraft's armor formula; each worn piece wears down a little.
+  armorReduce(amount) {
+    let defense = 0, toughness = 0;
+    for (const s of this.armor) {
+      const a = armorOf(s?.id);
+      if (a) { defense += a.defense; toughness += a.toughness; }
+    }
+    if (defense === 0) return amount;
+    const reduced = amount * (1 - Math.min(20, Math.max(defense / 5, defense - amount / (2 + toughness / 4))) / 25);
+    const wear = Math.max(1, Math.floor(amount / 4));
+    this.armor.forEach((s, i) => {
+      if (!s) return;
+      s.dur -= wear;
+      if (s.dur <= 0) { this.armor[i] = null; sound.broke(BLOCK.GLASS); }
+    });
+    this.armorChanged();
+    return reduced;
+  }
+
+  // Minecraft's bow: full power after a second of drawing.
+  shootBow(seconds) {
+    const power = Math.min(1, (seconds * seconds + 2 * seconds) / 3);
+    if (power < 0.1) return;
+    const p = this.player;
+    this.send({ t: 'shoot', power, yaw: p.yaw, pitch: p.pitch });
+    sound.bow();
+    if (this.mode === 'survival') {
+      const i = this.inv.findIndex((st) => st && st.id === ITEM.ARROW);
+      if (i >= 0) takeOne(this.inv, i);
+      this.useTool(1);
+    }
+  }
+
+  // Right-clicking with armor in hand puts it on (swapping with what you wear).
+  equipHeld(held) {
+    const a = armorOf(held.id);
+    const old = this.armor[a.slot];
+    this.armor[a.slot] = held;
+    this.inv[this.selected] = old;
+    this.armorChanged();
+    sound.place(BLOCK.WOOL);
+  }
+
   // ---------- experience ----------
   addXP(amount) {
     const s = this.stats;
@@ -763,8 +834,9 @@ export class Game {
   }
 
   // ---------- survival ----------
-  damage(amount, cause = 'died', from = null) {
+  damage(amount, cause = 'died', from = null, armored = false) {
     if (this.mode !== 'survival' || this.dead || this.stats.invuln > 0) return;
+    if (armored) amount = this.armorReduce(amount);
     this.stats.health = Math.max(0, this.stats.health - amount);
     this.stats.invuln = 0.5;
     this.stats.hurtUntil = performance.now() + 300;
@@ -785,8 +857,10 @@ export class Game {
 
   die(cause) {
     this.dead = true;
-    const items = this.inv.filter(Boolean);
+    const items = this.inv.concat(this.armor).filter(Boolean);
     this.inv = new Array(INVENTORY_SIZE).fill(null);
+    this.armor = [null, null, null, null];
+    this.armorChanged();
     this.send({ t: 'died', items, cause, xp: this.stats.xpTotal });
     $('death-score').textContent = this.stats.xpTotal;
     this.stats.xpTotal = 0;
@@ -837,7 +911,7 @@ export class Game {
     // lava burns
     if (this.player.inLava) {
       s.lavaTimer = (s.lavaTimer || 0) + dt;
-      if (s.lavaTimer >= 0.5) { s.lavaTimer = 0; this.damage(4, 'tried to swim in lava'); }
+      if (s.lavaTimer >= 0.5) { s.lavaTimer = 0; this.damage(4, 'tried to swim in lava', null, true); }
     } else s.lavaTimer = 0.5; // the first touch hurts straight away
 
     // drowning
@@ -1141,6 +1215,17 @@ export class Game {
     this.r.setTarget(hit, progress);
     this.lastHit = hit;
 
+    // bows: hold right click to draw, let go to shoot
+    const heldNow = this.held();
+    const hasArrows = this.mode === 'creative' || this.inv.some((st) => st && st.id === ITEM.ARROW);
+    if (heldNow?.id === ITEM.BOW && this.mouse.right && hasArrows && this.locked() && !this.dead) {
+      this.bowDraw = (this.bowDraw || 0) + dt;
+    } else if (this.bowDraw > 0) {
+      if (heldNow?.id === ITEM.BOW && !this.mouse.right) this.shootBow(this.bowDraw);
+      this.bowDraw = 0;
+    }
+    this.r.zoom = 1 - 0.15 * Math.min(1, this.bowDraw || 0);
+
     // pick up nearby items (not while dead, or you'd grab back what you just dropped)
     const now = performance.now();
     for (const [id, v] of this.dead ? [] : this.entities.entities) {
@@ -1198,7 +1283,7 @@ export class Game {
     if (this.invDirty && this.saveTimer > 2) {
       this.saveTimer = 0;
       this.invDirty = false;
-      this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
+      this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
     }
 
     // HUD
@@ -1310,7 +1395,7 @@ export class Game {
 
   // Leaving the world: tell the host our final state.
   quit() {
-    if (this.playing) this.send({ t: 'save', inv: this.inv, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
+    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal });
     this.playing = false;
     this.closed = true;
     this.screen.close();

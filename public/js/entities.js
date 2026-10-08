@@ -2,7 +2,7 @@
 // host ~10 times a second and are smoothed here.
 
 import * as THREE from 'three';
-import { BLOCKS, isBlockId } from './blocks.js';
+import { BLOCKS, isBlockId, armorOf } from './blocks.js';
 import { blockGeometry, hasBlockModel } from './textures.js';
 
 const SHIRTS = [0x3b82f6, 0xef4444, 0x22c55e, 0xf59e0b, 0xa855f7, 0x14b8a6, 0xec4899, 0xf97316];
@@ -74,7 +74,41 @@ function humanoid(skin, shirt, pants, armsForward) {
   head.add(skull);
   eyes(head, 0.28, -0.26);
   g.add(legL, legR, body, armL, armR, head);
-  return { group: g, head, legs: [legL, legR], arms: armsForward ? [] : [armL, armR], armsForward };
+  return { group: g, head, body, legL, legR, armL, armR, legs: [legL, legR], arms: armsForward ? [] : [armL, armR], armsForward };
+}
+
+const ARMOR_COLORS = { leather: 0x96643a, iron: 0xd8d8d8, gold: 0xf5cd3c, diamond: 0x5ae1d7 };
+
+// Puts armor pieces (item ids, 0 = none) on a humanoid model as slightly bigger boxes.
+function dressModel(model, ids) {
+  for (const part of model.armorParts || []) { part.parent?.remove(part); part.geometry.dispose(); part.material.dispose(); }
+  model.armorParts = [];
+  const add = (parent, w, h, d, color, x, y, z) => {
+    const m = box(w, h, d, color);
+    m.position.set(x, y, z);
+    parent.add(m);
+    model.armorParts.push(m);
+  };
+  ids.forEach((id, slot) => {
+    const a = armorOf(id);
+    if (!a) return;
+    const c = ARMOR_COLORS[a.material];
+    if (slot === 0) add(model.head, 0.58, 0.58, 0.58, c, 0, 0.25, 0);
+    if (slot === 1) {
+      add(model.group, 0.56, 0.8, 0.31, c, 0, 1.125, 0);
+      add(model.armL, 0.31, 0.4, 0.31, c, 0, -0.18, 0);
+      add(model.armR, 0.31, 0.4, 0.31, c, 0, -0.18, 0);
+    }
+    if (slot === 2) {
+      add(model.group, 0.54, 0.2, 0.29, c, 0, 0.7, 0);
+      add(model.legL, 0.29, 0.5, 0.29, c, 0, -0.25, 0);
+      add(model.legR, 0.29, 0.5, 0.29, c, 0, -0.25, 0);
+    }
+    if (slot === 3) {
+      add(model.legL, 0.3, 0.28, 0.3, c, 0, -0.62, 0);
+      add(model.legR, 0.3, 0.28, 0.3, c, 0, -0.62, 0);
+    }
+  });
 }
 
 function quadruped(bodyColor, headColor, size, extra) {
@@ -300,6 +334,16 @@ export class EntityViews {
     v.tPitch = r[1];
   }
 
+  setArmor(id, ids) {
+    const v = this.players.get(id);
+    if (v && Array.isArray(ids)) dressModel(v.model, ids);
+  }
+
+  setSelfArmor(ids) {
+    this.selfArmor = ids;
+    if (this.self) dressModel(this.self.model, ids);
+  }
+
   // The player's own body, seen in third person (F5).
   setSelf(visible, p, name, dt = 0) {
     if (!visible) {
@@ -310,6 +354,7 @@ export class EntityViews {
       const model = humanoid(0xd8a47f, SHIRTS[0], 0x2c3e7a, false);
       this.scene.add(model.group);
       this.self = { model, walk: 0, last: [p.x, p.z] };
+      if (this.selfArmor) dressModel(model, this.selfArmor);
     }
     const v = this.self;
     const g = v.model.group;

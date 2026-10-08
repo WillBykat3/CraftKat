@@ -52,6 +52,26 @@ const FOOD = [
 const FOOD_HALF = FOOD.map((row) => row.split('').map((c, x) => (x < 5 && (c === 'b' || c === 'w') ? 'e' : c)).join(''));
 const FOOD_EMPTY = FOOD.map((row) => row.replace(/[bw]/g, 'e'));
 
+const ARMOR = [
+  '.oo...oo.',
+  'oaaoooaao',
+  'oaaaaaaao',
+  '.oaaaaao.',
+  '.oaaaaao.',
+  '.oaaaaao.',
+  '.oaaaaao.',
+  '..ooooo..',
+];
+const ARMOR_HALF = ARMOR.map((row) => row.split('').map((c, x) => (x > 4 && c === 'a' ? 'e' : c)).join(''));
+const ARMOR_EMPTY = ARMOR.map((row) => row.replace(/a/g, 'e'));
+// faint outlines in empty armor slots
+const SLOT_ICONS = {
+  Helmet: ['', '', '', '...oooooooo...', '..o........o..', '..o..oooo..o..', '..o.o....o.o..', '..oo......oo..'],
+  Chestplate: ['', '..ooo....ooo..', '.o..oooooo..o.', '.o..........o.', '..oo......oo..', '...o......o...', '...o......o...', '...o......o...', '...o......o...', '...oooooooo...'],
+  Leggings: ['', '...oooooooo...', '...o......o...', '...o..oo..o...', '...o..oo..o...', '...o..oo..o...', '...o..oo..o...', '...o..oo..o...', '...oooooooo...'],
+  Boots: ['', '', '', '', '', '...ooo..ooo...', '...o.o..o.o...', '...o.o..o.o...', '..oo.o..o.oo..', '..oooo..oooo..'],
+};
+
 const BUBBLE = [
   '..ooooo..',
   '.oaaaaao.',
@@ -78,6 +98,11 @@ export function createUIArt() {
   art.foodHalf = bitmap(FOOD_HALF, foodPal);
   art.foodEmpty = bitmap(FOOD_EMPTY, foodPal);
   art.bubble = bitmap(BUBBLE, { o: '#0d3b8f', a: '#3a86e8', w: '#d4ecff' });
+  const armorPal = { o: '#1a1a1a', a: '#d8d8d8', e: '#3a3a3a' };
+  art.armorFull = bitmap(ARMOR, armorPal);
+  art.armorHalf = bitmap(ARMOR_HALF, armorPal);
+  art.armorEmpty = bitmap(ARMOR_EMPTY, armorPal);
+  for (const [name, rows] of Object.entries(SLOT_ICONS)) art['slot' + name] = bitmap(rows.map((r) => r.padEnd(14, '.')), { o: '#373737' });
 
   // hotbar: 182 x 22, nine 20-pixel cells
   {

@@ -497,7 +497,7 @@ export class Renderer {
     }
     this.cloudUniforms.brightness.value = 0.25 + day * 0.75;
 
-    const fov = this.fov + (sprintFov ? 8 : 0);
+    const fov = (this.fov + (sprintFov ? 8 : 0)) * (this.zoom ?? 1); // drawing a bow zooms in
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * 0.2;
       this.camera.updateProjectionMatrix();
