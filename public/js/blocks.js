@@ -7,6 +7,7 @@ export const SEA_LEVEL = 30; // sea level of generator versions 1-2; see World.s
 export const ITEM_BASE = 256; // ids below this are blocks, from here on items (up to 999)
 export const HIGH_BLOCKS = 1000; // later blocks: ids 1000 to MAX_BLOCK - 1 (chunks store 16-bit ids)
 export const MAX_BLOCK = 4096;
+const ITEM_NETHER_WART = 351; // (ITEM is defined below)
 
 export const BLOCK = {
   AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, COBBLE: 4, SAND: 5, GRAVEL: 6, LOG: 7, LEAVES: 8,
@@ -37,6 +38,7 @@ export const BLOCK = {
   CAULDRON: 1043, BARREL: 1044, BELL: 1045,
   ENCHANTING_TABLE: 1046, ANVIL: 1047, CHIPPED_ANVIL: 1048, DAMAGED_ANVIL: 1049,
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
+  BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -269,6 +271,14 @@ def(1052, 'Block of Diamond', { tex: ['diamond_block'], hardness: 5, tool: 'pick
 def(1053, 'Block of Emerald', { tex: ['emerald_block'], hardness: 5, tool: 'pickaxe', needsTier: 2 });
 def(1054, 'Block of Lapis Lazuli', { tex: ['lapis_block'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
 def(1055, 'Block of Coal', { tex: ['coal_block'], hardness: 5, tool: 'pickaxe', needsTier: 0 });
+// brewing
+def(1056, 'Brewing Stand', { tex: ['brewing_stand_base', 'brewing_stand', 'brewing_stand_base'], hardness: 0.5, tool: 'pickaxe', transparent: true, shape: 'brewing', job: 'cleric', emit: 1 });
+for (let i = 0; i < 4; i++) {
+  def(1060 + i, 'Nether Wart', { tex: [`nether_wart_${i}`], render: 'crop', solid: false, transparent: true, hardness: 0, needsSupport: true, hidden: true, wart: i, item: ITEM_NETHER_WART });
+}
+def(1064, 'Brown Mushroom', { tex: ['brown_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, emit: 1 });
+def(1065, 'Red Mushroom', { tex: ['red_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
+def(1066, 'Melon', { tex: ['melon_top', 'melon_side', 'melon_top'], hardness: 1, tool: 'axe' });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
 B.forEach((b) => {
@@ -292,6 +302,8 @@ export function isSupported(id, below) {
   if (id === BLOCK.SUGAR_CANE && below === BLOCK.SUGAR_CANE) return true;
   if (id === BLOCK.CACTUS) return below === BLOCK.CACTUS || below === BLOCK.SAND;
   if (B[id].crop) return below === BLOCK.FARMLAND;
+  if (B[id].wart !== undefined) return below === BLOCK.SOUL_SAND;
+  if (id === BLOCK.BROWN_MUSHROOM || id === BLOCK.RED_MUSHROOM) return B[below].solid && !B[below].transparent;
   if (B[id].shape === 'door') return B[id].upper ? B[below].shape === 'door' && !B[below].upper : B[below].solid && B[below].shape !== 'door';
   if (B[id].attach > 0) return true; // wall-mounted: see supportOffset
   if (B[id].redstone === 'wire' || B[id].redstone === 'repeater' || B[id].redstone === 'plate') return B[below].solid && !B[below].transparent;
@@ -336,6 +348,9 @@ export const ITEM = {
   ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
   GLOWSTONE_DUST: 335, QUARTZ: 336, BLAZE_ROD: 337, BLAZE_POWDER: 338, EYE_OF_ENDER: 339, NETHER_BRICK: 340,
   GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343, PAPER: 344, BOOK: 345, ENCHANTED_BOOK: 346, EXPERIENCE_BOTTLE: 347,
+  GLASS_BOTTLE: 348, POTION: 349, SPLASH_POTION: 350, NETHER_WART: 351, SPIDER_EYE: 352, FERMENTED_SPIDER_EYE: 353, SUGAR: 354,
+  MELON_SLICE: 355, GLISTERING_MELON_SLICE: 356, GOLDEN_CARROT: 357, MAGMA_CREAM: 358, RABBIT_FOOT: 359, PUFFERFISH: 360,
+  PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -382,6 +397,22 @@ item(344, 'Paper', { icon: 'paper' });
 item(345, 'Book', { icon: 'book' });
 item(346, 'Enchanted Book', { icon: 'enchanted_book', stack: 1 });
 item(347, "Bottle o' Enchanting", { icon: 'experience_bottle' });
+item(348, 'Glass Bottle', { icon: 'glass_bottle' });
+item(349, 'Potion', { icon: 'potion', stack: 1 });
+item(350, 'Splash Potion', { icon: 'splash_potion', stack: 1 });
+item(351, 'Nether Wart', { icon: 'nether_wart', plants: 1060 });
+item(352, 'Spider Eye', { icon: 'spider_eye', food: 2 });
+item(353, 'Fermented Spider Eye', { icon: 'fermented_spider_eye' });
+item(354, 'Sugar', { icon: 'sugar' });
+item(355, 'Melon Slice', { icon: 'melon_slice', food: 2 });
+item(356, 'Glistering Melon Slice', { icon: 'glistering_melon_slice' });
+item(357, 'Golden Carrot', { icon: 'golden_carrot', food: 6 });
+item(358, 'Magma Cream', { icon: 'magma_cream' });
+item(359, "Rabbit's Foot", { icon: 'rabbit_foot' });
+item(360, 'Pufferfish', { icon: 'pufferfish', food: 1 });
+item(361, 'Phantom Membrane', { icon: 'phantom_membrane' });
+item(362, 'Golden Apple', { icon: 'golden_apple', food: 4, alwaysEat: true });
+item(363, 'Milk Bucket', { icon: 'milk_bucket', stack: 1, drink: true });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -570,6 +601,7 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.NETHER_QUARTZ_ORE: return [[ITEM.QUARTZ, 1]];
     case BLOCK.NETHER_GOLD_ORE: return [[ITEM.GOLD_NUGGET, 2 + Math.floor(rand() * 5)]];
     case BLOCK.GLOWSTONE: return [[ITEM.GLOWSTONE_DUST, 2 + Math.floor(rand() * 3)]];
+    case BLOCK.MELON: return [[ITEM.MELON_SLICE, 3 + Math.floor(rand() * 5)]];
     case BLOCK.NETHERRACK: return [[BLOCK.NETHERRACK, 1]];
     case BLOCK.FERN:
     case BLOCK.ICE:
@@ -581,6 +613,7 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.SNOW: return [[BLOCK.SNOW, 1]];
     default: break;
   }
+  if (b.wart !== undefined) return [[ITEM.NETHER_WART, b.wart === 3 ? 2 + Math.floor(rand() * 3) : 1]];
   if (b.crop) {
     const { kind, stage, max } = b.crop;
     const ripe = stage === max;

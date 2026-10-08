@@ -32,6 +32,8 @@ export const TILE_NAMES = [
   'cauldron_top', 'cauldron_side', 'barrel_top', 'barrel_side', 'bell',
   'enchanting_table_top', 'enchanting_table_side', 'anvil', 'anvil_top', 'anvil_top_chipped', 'anvil_top_damaged',
   'iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'lapis_block', 'coal_block',
+  'brewing_stand_base', 'brewing_stand', 'brewing_stand_rod', 'nether_wart_0', 'nether_wart_1', 'nether_wart_2', 'nether_wart_3',
+  'brown_mushroom', 'red_mushroom', 'melon_top', 'melon_side',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

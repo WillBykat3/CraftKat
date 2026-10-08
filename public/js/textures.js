@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
 import { TILE as S, ATLAS_TILES, TILE_NAMES, tileIndex, uvOf } from './atlas-layout.js';
 import { FACES } from './mesher.js';
-import { BLOCKS, ITEMS, isBlockId } from './blocks.js';
+import { BLOCKS, ITEMS, ITEM, isBlockId } from './blocks.js';
+import { potionColor } from './effects.js';
 import { DEFAULT_GRASS, DEFAULT_FOLIAGE, BIOMES, BIOME } from './biomes.js';
 import { shapeBoxes } from './shapes.js';
 
@@ -605,6 +606,35 @@ function drawBlockTile(p, name) {
       if (name === 'diamond_block' || name === 'emerald_block') for (let i = 3; i < 13; i += 4) for (let j = 3; j < 13; j += 4) px(i, j, shade(base, 1.3));
       break;
     }
+    case 'brewing_stand_base': p.noisy([110, 110, 110], 0.12); break;
+    case 'brewing_stand_rod': p.noisy([150, 110, 50], 0.1); break;
+    case 'brewing_stand':
+      for (let y = 2; y < 15; y++) px(7, y, [150, 110, 50]), px(8, y, [130, 95, 40]);
+      for (const bx of [2, 11]) for (let y = 8; y < 14; y++) for (let x = bx; x < bx + 3; x++) px(x, y, y === 8 ? [200, 200, 210] : [170, 190, 230], 0.85);
+      break;
+    case 'nether_wart_0': case 'nether_wart_1': case 'nether_wart_2': case 'nether_wart_3': {
+      const stage = Number(name.slice(-1));
+      for (let i = 0; i < 4 + stage * 2; i++) {
+        const x = 2 + Math.floor(rand() * 12), top = 15 - (3 + stage * 3) + Math.floor(rand() * 2);
+        for (let y = top; y < 16; y++) px(x, y, y === top ? [200, 40, 50] : shade([140, 25, 35], 0.85 + rand() * 0.3));
+      }
+      break;
+    }
+    case 'brown_mushroom':
+      for (let y = 9; y < 16; y++) px(7, y, [220, 210, 190]), px(8, y, [200, 190, 170]);
+      for (let y = 5; y < 9; y++) for (let x = 4 + (8 - y); x < 12 - (8 - y); x++) px(x, y, shade([150, 110, 80], 0.9 + rand() * 0.15));
+      break;
+    case 'red_mushroom':
+      for (let y = 9; y < 16; y++) px(7, y, [220, 210, 190]), px(8, y, [200, 190, 170]);
+      for (let y = 4; y < 9; y++) for (let x = 4 + (8 - y) / 2; x < 12 - (8 - y) / 2; x++) px(Math.floor(x), y, rand() < 0.15 ? [240, 240, 240] : [200, 30, 30]);
+      break;
+    case 'melon_top':
+      p.noisy([110, 150, 40], 0.1);
+      for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) if (Math.hypot(x - 7.5, y - 7.5) < 2) px(x, y, [90, 120, 30]);
+      break;
+    case 'melon_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade(x % 4 < 2 ? [120, 165, 40] : [70, 115, 25], 0.9 + rand() * 0.15));
+      break;
     case 'enchanting_table_top':
       drawBlockTile(p, 'obsidian');
       for (let y = 1; y < 15; y++) for (let x = 1; x < 15; x++) px(x, y, shade([150, 30, 30], 0.8 + rand() * 0.25));
@@ -1122,6 +1152,39 @@ function drawItem(p, icon) {
     case 'copper_ingot':
       for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([225, 125, 85], y === 6 ? 1.1 : 0.9 + rand() * 0.1));
       break;
+    case 'glass_bottle': case 'potion': case 'splash_potion': {
+      // the liquid is tinted by the potion (alpha 250 marks pixels the slot colours, see iconURL)
+      const neck = icon === 'splash_potion' ? [[6, 3], [9, 3]] : [];
+      for (let y = 6; y < 14; y++) for (let x = 4 + (y > 12 ? 1 : 0); x < 12 - (y > 12 ? 1 : 0); x++) {
+        const edge = x === 4 || x === 11 || y === 13;
+        if (icon === 'glass_bottle' || edge || y < 8) px(x, y, edge ? [200, 220, 240] : [220, 235, 250], edge ? 1 : 0.4);
+        else px(x, y, [255, 255, 255], 250 / 255);
+      }
+      for (let y = 3; y < 6; y++) { px(7, y, [200, 220, 240]); px(8, y, [200, 220, 240]); }
+      px(7, 2, [150, 110, 70]); px(8, 2, [150, 110, 70]);
+      for (const [x, y] of neck) px(x, y, [200, 220, 240]);
+      break;
+    }
+    case 'nether_wart': for (let i = 0; i < 6; i++) { const x = 4 + i * 1.5 | 0, y = 6 + (i % 3) * 2; px(x, y, [170, 30, 40]); px(x + 1, y, [140, 25, 35]); px(x, y + 1, [120, 20, 30]); } break;
+    case 'spider_eye': blob([150, 30, 50], 8, 8, 4, 3.5, 0.3); px(7, 7, [230, 120, 130]); break;
+    case 'fermented_spider_eye': blob([150, 30, 50], 8, 9, 4, 3.5, 0.3); for (let x = 4; x < 12; x++) px(x, 5, [190, 150, 110]); px(6, 4, [190, 150, 110]); break;
+    case 'sugar': for (let i = 0; i < 26; i++) px(4 + Math.floor(rand() * 8), 6 + Math.floor(rand() * 7), [245, 245, 250]); break;
+    case 'melon_slice':
+      for (let y = 4; y < 13; y++) for (let x = 3; x < 13; x++) { const d = Math.hypot(x - 8, y - 13); if (d < 9 && d > 0 && y < 12) px(x, y, d > 7.5 ? [80, 140, 40] : d > 6.5 ? [230, 230, 200] : rand() < 0.08 ? [30, 30, 30] : [230, 60, 60]); }
+      break;
+    case 'glistering_melon_slice':
+      for (let y = 4; y < 13; y++) for (let x = 3; x < 13; x++) { const d = Math.hypot(x - 8, y - 13); if (d < 9 && d > 0 && y < 12) px(x, y, d > 7.5 ? [240, 200, 60] : rand() < 0.15 ? [255, 240, 150] : [230, 70, 60]); }
+      break;
+    case 'golden_carrot': for (let i = 0; i < 9; i++) { px(4 + i, 12 - i, [240, 200, 50]); px(5 + i, 12 - i, [210, 170, 40]); } px(12, 3, [120, 180, 60]); px(13, 2, [120, 180, 60]); break;
+    case 'magma_cream': blob([200, 90, 30], 8, 8, 4, 4, 0.3); p.specks([255, 200, 60], 6); break;
+    case 'rabbit_foot': blob([180, 140, 100], 8, 9, 3, 4.5, 0.3); break;
+    case 'pufferfish': blob([230, 200, 60], 8, 8, 5, 4, 0.2); p.specks([255, 250, 200], 6); px(5, 7, [20, 20, 20]); break;
+    case 'phantom_membrane': for (let y = 4; y < 13; y++) for (let x = 3 + (y % 2); x < 13; x += 2) px(x, y, [190, 180, 160], 0.9); break;
+    case 'golden_apple': blob([240, 200, 50], 8, 9, 4.5, 4.5, 0.25); px(8, 3, [100, 70, 40]); px(9, 4, [100, 170, 60]); break;
+    case 'milk_bucket':
+      drawItem(p, 'bucket');
+      for (let x = 5; x < 11; x++) { px(x, 4, [245, 245, 245]); px(x, 5, [230, 230, 230]); }
+      break;
     case 'enchanted_book':
       for (let y = 3; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, x === 4 ? [70, 20, 90] : shade([120, 40, 150], 0.9 + rand() * 0.15));
       for (let y = 4; y < 12; y++) px(11, y, [235, 230, 210]);
@@ -1194,6 +1257,18 @@ function drawItem(p, icon) {
 }
 
 // ---------- public API ----------
+// Colours the pixels drawn with alpha 250 (a potion's liquid) and makes them opaque.
+function tintLiquid(ctx, size, hex) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const img = ctx.getImageData(0, 0, size, size);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 245 || d[i + 3] === 255) continue;
+    d[i] = (d[i] * r) / 255; d[i + 1] = (d[i + 1] * g) / 255; d[i + 2] = (d[i + 2] * b) / 255; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 export function createTextures() {
   const rand = mulberry32(1337);
 
@@ -1257,8 +1332,10 @@ export function createTextures() {
 
   // Inventory icon (data URL) for a block or item, cached.
   const iconCache = new Map();
-  function iconURL(id) {
-    if (iconCache.has(id)) return iconCache.get(id);
+  // potion: for potions, the liquid takes that potion's colour
+  function iconURL(id, potion) {
+    const key = potion ? `${id}|${potion}` : id;
+    if (iconCache.has(key)) return iconCache.get(key);
     const size = 32;
     const c = document.createElement('canvas');
     c.width = c.height = size;
@@ -1274,9 +1351,10 @@ export function createTextures() {
       }
     } else {
       ctx.drawImage(itemCanvases[ITEMS[id].icon], 0, 0, size, size);
+      if (potion || id === ITEM.POTION || id === ITEM.SPLASH_POTION) tintLiquid(ctx, size, potionColor(potion || 'water'));
     }
     const url = c.toDataURL();
-    iconCache.set(id, url);
+    iconCache.set(key, url);
     return url;
   }
 

@@ -12,7 +12,7 @@ export function makeStack(id, count = 1) {
 }
 
 function canMerge(a, b) {
-  return a && b && a.id === b.id && a.dur === undefined && b.dur === undefined && !a.ench && !b.ench;
+  return a && b && a.id === b.id && a.dur === undefined && b.dur === undefined && !a.ench && !b.ench && a.potion === b.potion;
 }
 
 // The extra parts of a stack (enchantments, anvil uses) to keep when it moves.
@@ -20,6 +20,7 @@ export function extras(s) {
   const out = {};
   if (s?.ench) out.ench = s.ench;
   if (s?.rc) out.rc = s.rc;
+  if (s?.potion) out.potion = s.potion;
   return out;
 }
 
@@ -27,7 +28,7 @@ export function extras(s) {
 // extra: {ench, rc} of an enchanted item (those never stack)
 export function addItem(slots, id, count = 1, dur, extra) {
   const limit = maxStack(id);
-  if (extra && !extra.ench && !extra.rc) extra = undefined;
+  if (extra && !extra.ench && !extra.rc && !extra.potion) extra = undefined;
   if (dur === undefined && limit > 1 && !extra) {
     for (let i = 0; i < slots.length && count > 0; i++) {
       const s = slots[i];
@@ -239,6 +240,15 @@ RECIPES.push(
   { pattern: ['PB'], keys: { P: [ITEM.ENDER_PEARL], B: [ITEM.BLAZE_POWDER] }, result: [ITEM.EYE_OF_ENDER, 1], shapeless: true },
   // books and village job sites
   { pattern: ['SSS'], keys: { S: [BLOCK.SUGAR_CANE] }, result: [ITEM.PAPER, 3] },
+  // brewing
+  { pattern: ['.B.', 'SSS'], keys: { B: [ITEM.BLAZE_ROD], S: [BLOCK.COBBLE, BLOCK.COBBLED_DEEPSLATE] }, result: [BLOCK.BREWING_STAND, 1] },
+  { pattern: ['G.G', '.G.'], keys: { G: [BLOCK.GLASS] }, result: [ITEM.GLASS_BOTTLE, 3] },
+  { pattern: ['S'], keys: { S: [BLOCK.SUGAR_CANE] }, result: [ITEM.SUGAR, 1] },
+  { pattern: ['EMS'], keys: { E: [ITEM.SPIDER_EYE], M: [BLOCK.BROWN_MUSHROOM], S: [ITEM.SUGAR] }, result: [ITEM.FERMENTED_SPIDER_EYE, 1], shapeless: true },
+  { pattern: ['NNN', 'NMN', 'NNN'], keys: { N: [ITEM.GOLD_NUGGET], M: [ITEM.MELON_SLICE] }, result: [ITEM.GLISTERING_MELON_SLICE, 1] },
+  { pattern: ['NNN', 'NCN', 'NNN'], keys: { N: [ITEM.GOLD_NUGGET], C: [ITEM.CARROT] }, result: [ITEM.GOLDEN_CARROT, 1] },
+  { pattern: ['GGG', 'GAG', 'GGG'], keys: { G: [ITEM.GOLD_INGOT], A: [ITEM.APPLE] }, result: [ITEM.GOLDEN_APPLE, 1] },
+  { pattern: ['MMM', 'MMM', 'MMM'], keys: { M: [ITEM.MELON_SLICE] }, result: [BLOCK.MELON, 1] },
   { pattern: ['.B.', 'DOD', 'OOO'], keys: { B: [ITEM.BOOK], D: [ITEM.DIAMOND], O: [BLOCK.OBSIDIAN] }, result: [BLOCK.ENCHANTING_TABLE, 1] },
   { pattern: ['BBB', '.I.', 'III'], keys: { B: [BLOCK.IRON_BLOCK], I: [ITEM.IRON_INGOT] }, result: [BLOCK.ANVIL, 1] },
   { pattern: ['PPL'], keys: { P: [ITEM.PAPER], L: [ITEM.LEATHER] }, result: [ITEM.BOOK, 1], shapeless: true },

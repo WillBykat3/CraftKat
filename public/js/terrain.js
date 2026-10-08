@@ -549,6 +549,13 @@ export class Terrain3 {
           continue;
         }
         if (ground !== BLOCK.GRASS) continue;
+        // melons in jungles; mushrooms in shady forests and swamps
+        const r3 = hash2(x, z, s + 32);
+        if (biome === BIOME.JUNGLE && r3 < 0.006) { data[idx(lx, h + 1, lz)] = BLOCK.MELON; continue; }
+        if ((biome === BIOME.DARK_FOREST || biome === BIOME.SWAMP || biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA) && r3 < 0.004) {
+          data[idx(lx, h + 1, lz)] = r3 < 0.002 ? BLOCK.BROWN_MUSHROOM : BLOCK.RED_MUSHROOM;
+          continue;
+        }
         const p = PLANTS[biome];
         if (!p) continue;
         const [grass, fern, flowerChance, flowers] = p;

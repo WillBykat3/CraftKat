@@ -70,7 +70,10 @@ export class NetherTerrain {
     if (!hall && !onX && !onZ) return undefined;
     const ry = y - FORT_Y;
     if (hall) {
-      if (ry === 0) return BLOCK.NETHER_BRICKS;
+      // nether wart grows on soul sand in the hall's corners
+      const wart = ax >= 4 && ax <= 5 && az >= 4 && az <= 5;
+      if (ry === 0) return wart ? BLOCK.SOUL_SAND : BLOCK.NETHER_BRICKS;
+      if (ry === 1 && wart) return BLOCK.NETHER_WART + 3;
       if (ry === 6) return BLOCK.NETHER_BRICKS;
       if (ry > 0 && ry < 6) {
         const wall = ax === 7 || az === 7;
@@ -141,6 +144,18 @@ export class NetherTerrain {
               }
             }
           }
+        }
+      }
+    }
+    // the odd mushroom on the cavern floors
+    for (let lz = 0; lz < CHUNK; lz++) for (let lx = 0; lx < CHUNK; lx++) {
+      const x = x0 + lx, z = z0 + lz;
+      if (hash2(x, z, s + 3300) > 0.012) continue;
+      for (let y = 34; y < 118; y++) {
+        const i = idx(lx, y, lz);
+        if ((data[i] === BLOCK.NETHERRACK || data[i] === BLOCK.SOUL_SAND) && data[idx(lx, y + 1, lz)] === BLOCK.AIR && hash2(x, y, z + s) < 0.3) {
+          data[idx(lx, y + 1, lz)] = hash2(z, x, s + 3301) < 0.5 ? BLOCK.BROWN_MUSHROOM : BLOCK.RED_MUSHROOM;
+          break;
         }
       }
     }

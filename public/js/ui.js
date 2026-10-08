@@ -7,7 +7,21 @@ import {
   RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult, countItem, extras,
 } from './inventory.js';
 import { LEVELS } from './trades.js';
-import { tableOffers, anvilCombine, grind, enchantName } from './enchant.js';
+import { tableOffers, anvilCombine, grind, enchantName, ENCHANTS } from './enchant.js';
+import { potionLabel, POTIONS, EFFECTS } from './effects.js';
+
+// Every potion (to drink and to throw) and an enchanted book of each enchantment, for creative mode.
+const CREATIVE_EXTRAS = [
+  ...Object.keys(POTIONS).map((potion) => ({ id: ITEM.POTION, count: 1, potion })),
+  ...Object.keys(POTIONS).map((potion) => ({ id: ITEM.SPLASH_POTION, count: 1, potion })),
+  ...Object.entries(ENCHANTS).map(([name, e]) => ({ id: ITEM.ENCHANTED_BOOK, count: 1, ench: { [name]: e.max } })),
+];
+
+// "Speed (3:00)" lines for a potion's tooltip.
+function potionLines(name) {
+  const ROMAN = ['', ' II', ' III', ' IV'];
+  return (POTIONS[name]?.effects || []).map(([e, amp, t]) => `\n${EFFECTS[e][0]}${ROMAN[amp] || ''}${t ? ` (${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')})` : ''}`).join('');
+}
 import { ITEM } from './blocks.js';
 import { sound } from './sound.js';
 
@@ -23,11 +37,11 @@ function el(tag, className, parent) {
 // Draws a stack into a slot element.
 export function paintSlot(slotEl, stack, iconURL) {
   slotEl.innerHTML = '';
-  slotEl.dataset.name = stack ? itemName(stack.id) + (stack.ench ? '\n' + Object.entries(stack.ench).map(([n, l]) => enchantName(n, l)).join('\n') : '') : '';
+  slotEl.dataset.name = stack ? (stack.potion ? potionLabel(stack.id, stack.potion) + potionLines(stack.potion) : itemName(stack.id)) + (stack.ench ? '\n' + Object.entries(stack.ench).map(([n, l]) => enchantName(n, l)).join('\n') : '') : '';
   slotEl.classList.toggle('glint', !!stack?.ench);
   if (!stack) return;
   const img = el('img', 'icon', slotEl);
-  img.src = iconURL(stack.id);
+  img.src = iconURL(stack.id, stack.potion);
   img.draggable = false;
   if (stack.count > 1) el('span', 'count', slotEl).textContent = stack.count;
   const max = maxDurability(stack.id);
@@ -80,6 +94,7 @@ export class InventoryScreen {
     this.furnace = kind === 'furnace' ? { at: data.at, slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 } : null;
     this.chest = kind === 'chest' ? { at: data.at, slots: new Array(27).fill(null), loaded: false } : null;
     this.trade = kind === 'trade' ? data : null;
+    this.brewer = kind === 'brewing' ? { at: data.at, slots: [null, null, null, null, null], fuel: 0, progress: 0 } : null;
     this.station = ['enchant', 'anvil', 'grindstone'].includes(kind) ? { at: data.at } : null;
     this.work = [null, null]; // the input slots of the enchanting table, anvil or grindstone
     this.creativeTab = this.creativeTab || 'blocks';
@@ -112,6 +127,14 @@ export class InventoryScreen {
   setFurnaceState(state) {
     if (!this.furnace) return;
     Object.assign(this.furnace, state);
+    this.render();
+  }
+
+  setBrewState(state) {
+    if (!this.brewer) return;
+    const [x, y, z] = this.brewer.at;
+    if (state.x !== x || state.y !== y || state.z !== z) return;
+    Object.assign(this.brewer, state);
     this.render();
   }
 
@@ -407,6 +430,25 @@ export class InventoryScreen {
     });
   }
 
+  // The brewing stand: blaze powder fuel, an ingredient on top, three bottles below.
+  brewingArea(panel) {
+    const b = this.brewer;
+    const click = (slot) => (button) => {
+      this.game.brewClick(b.at, slot, button === 2 ? 2 : 0, this.cursor);
+      this.cursor = null; // the host sends back what we end up holding
+    };
+    const top = el('div', 'station-row', panel);
+    this.slot(top, b.slots[4], click(4));
+    const fuel = el('div', 'brew-fuel', top);
+    fuel.style.setProperty('--fill', b.fuel / 20);
+    el('span', 'trade-arrow', top).textContent = ' ';
+    this.slot(top, b.slots[3], click(3));
+    const bubbles = el('div', 'progress brew-progress', top);
+    bubbles.style.setProperty('--fill', b.progress || 0);
+    const row = el('div', 'station-row brew-bottles', panel);
+    for (let i = 0; i < 3; i++) this.slot(row, b.slots[i], click(i));
+  }
+
   // A villager's offers: what it wants, and what it gives. Click one to trade.
   tradeArea(panel, title) {
     const t = this.trade;
@@ -452,12 +494,14 @@ export class InventoryScreen {
       b.addEventListener('click', () => { this.creativeTab = tab; this.render(); });
     }
     const list = el('div', 'creative-grid', panel);
-    const ids = this.creativeTab === 'blocks' ? CREATIVE_BLOCKS : CREATIVE_ITEMS;
-    for (const id of ids) {
-      this.slot(list, { id, count: 1 }, (button, shift) => {
+    const ids = this.creativeTab === 'blocks' ? CREATIVE_BLOCKS : [...CREATIVE_ITEMS, ...CREATIVE_EXTRAS];
+    for (const entry of ids) {
+      const id = typeof entry === 'number' ? entry : entry.id;
+      const extra = typeof entry === 'number' ? null : entry;
+      this.slot(list, extra ? { ...extra } : { id, count: 1 }, (button, shift) => {
         if (this.cursor) { this.cursor = null; return; } // clicking the palette deletes what you hold
-        const stack = makeStack(id, button === 2 || maxDurability(id) ? 1 : maxStack(id));
-        if (shift) addItem(this.game.inv, stack.id, stack.count, stack.dur);
+        const stack = extra ? { ...extra, ench: extra.ench && { ...extra.ench } } : makeStack(id, button === 2 || maxDurability(id) ? 1 : maxStack(id));
+        if (shift) addItem(this.game.inv, stack.id, stack.count, stack.dur, extras(stack));
         else this.cursor = stack;
       });
     }
@@ -475,7 +519,7 @@ export class InventoryScreen {
     const panel = el('div', 'inv-panel', wrap);
     const title = el('h3', '', panel);
     title.textContent = this.title || { inventory: 'Crafting', crafting: 'Crafting Table', furnace: 'Furnace', chest: 'Chest', creative: 'Creative Inventory',
-      enchant: 'Enchant', anvil: 'Repair & Name', grindstone: 'Repair & Disenchant' }[this.kind];
+      enchant: 'Enchant', anvil: 'Repair & Name', grindstone: 'Repair & Disenchant', brewing: 'Brewing Stand' }[this.kind];
     if (this.kind === 'inventory' || this.kind === 'crafting') this.craftingArea(panel);
     if (this.kind === 'furnace') this.furnaceArea(panel);
     if (this.kind === 'chest') this.chestArea(panel);
@@ -484,6 +528,7 @@ export class InventoryScreen {
     if (this.kind === 'enchant') this.enchantArea(panel);
     if (this.kind === 'anvil') this.anvilArea(panel);
     if (this.kind === 'grindstone') this.grindstoneArea(panel);
+    if (this.kind === 'brewing') this.brewingArea(panel);
     el('h3', 'small', panel).textContent = 'Inventory';
     this.playerSlots(panel);
     el('p', 'hint', panel).textContent = this.kind === 'creative'

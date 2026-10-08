@@ -14,12 +14,12 @@ export const PROFESSION_OF = {
   [BLOCK.COMPOSTER]: 'farmer', [BLOCK.LECTERN]: 'librarian', [BLOCK.BLAST_FURNACE]: 'armorer', [BLOCK.SMOKER]: 'butcher',
   [BLOCK.SMITHING_TABLE]: 'toolsmith', [BLOCK.GRINDSTONE]: 'weaponsmith', [BLOCK.FLETCHING_TABLE]: 'fletcher',
   [BLOCK.LOOM]: 'shepherd', [BLOCK.CARTOGRAPHY_TABLE]: 'cartographer', [BLOCK.STONECUTTER]: 'mason',
-  [BLOCK.CAULDRON]: 'leatherworker', [BLOCK.BARREL]: 'fisherman',
+  [BLOCK.CAULDRON]: 'leatherworker', [BLOCK.BARREL]: 'fisherman', [BLOCK.BREWING_STAND]: 'cleric',
 };
 
 // order used to tell clients a villager's profession (entity flags)
 export const PROFESSIONS = ['unemployed', 'nitwit', 'farmer', 'librarian', 'armorer', 'butcher', 'toolsmith', 'weaponsmith',
-  'fletcher', 'shepherd', 'cartographer', 'mason', 'leatherworker', 'fisherman'];
+  'fletcher', 'shepherd', 'cartographer', 'mason', 'leatherworker', 'fisherman', 'cleric'];
 
 const buy = (id, n, xp = 2, uses = 16) => ({ cost: [[id, n]], result: [E, 1], uses, xp });
 const sell = (n, id, count = 1, xp = 1, uses = 12, extra = null) => ({ cost: extra ? [[E, n], extra] : [[E, n]], result: [id, count], uses, xp });
@@ -102,6 +102,13 @@ export const TRADES = {
     [buy(ITEM.RAW_BEEF, 9, 20), sell(6, ITEM.LEATHER, 4, 10)],
     [buy(ITEM.BONE, 20, 30), sell(6, BLOCK.CAULDRON, 1, 15)],
     [sell(6, ITEM.SHEARS, 1, 30), sell(5, ITEM.LEATHER_CHESTPLATE, 1, 30)],
+  ],
+  cleric: [
+    [buy(ITEM.ROTTEN_FLESH, 32), sell(1, ITEM.REDSTONE, 2)],
+    [buy(ITEM.GOLD_INGOT, 3, 10), sell(1, ITEM.LAPIS_LAZULI, 1, 5)],
+    [buy(ITEM.SPIDER_EYE, 2, 20), sell(4, BLOCK.GLOWSTONE, 1, 10)],
+    [buy(ITEM.NETHER_WART, 22, 30), sell(5, ITEM.ENDER_PEARL, 1, 15)],
+    [sell(3, ITEM.EXPERIENCE_BOTTLE, 1, 30), sell(1, ITEM.GLASS_BOTTLE, 3, 30)],
   ],
   fisherman: [
     [buy(ITEM.STRING, 20), buy(ITEM.COAL, 10), sell(1, ITEM.BUCKET, 1)],

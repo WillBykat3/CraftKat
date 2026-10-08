@@ -137,6 +137,9 @@ export const sound = {
   // an anvil: a ringing clang (or a crash when it breaks)
   anvil() { tone({ freq: 1250, endFreq: 1180, duration: 0.6, gain: 0.15, type: 'triangle' }); tone({ freq: 2520, duration: 0.4, gain: 0.06 }); burst({ freq: 3000, q: 4, duration: 0.08, gain: 0.3 }); },
   anvilBreak() { burst({ freq: 400, q: 0.6, duration: 0.6, gain: 0.6, type: 'lowpass' }); burst({ freq: 2500, q: 2, duration: 0.3, gain: 0.3 }); },
+  // drinking a potion, and a brewing stand finishing
+  drink() { burst({ freq: 500, q: 3, duration: 0.12, gain: 0.25, type: 'lowpass' }); },
+  brew() { tone({ freq: 700, endFreq: 1100, duration: 0.3, gain: 0.08 }); burst({ freq: 1500, q: 6, duration: 0.2, gain: 0.15 }); },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)

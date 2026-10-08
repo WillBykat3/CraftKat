@@ -147,7 +147,7 @@ function quadruped(bodyColor, headColor, size, extra) {
 const PROFESSION_LOOK = [
   [0x6b4a33, null], [0x4f7a3a, null], [0x8a6a3a, 0xd8c060], [0xe8e0d0, 0x8a2020], [0x3a3a40, 0x505058], [0xe8e8e8, 0x8a2020],
   [0x2a2a2a, null], [0x2a2a2a, 0x202020], [0x6b4a33, 0x6a9a3a], [0xe8e8e8, 0x8a6a3a], [0x3a5a8a, null], [0x5a4a40, null],
-  [0x8a5a30, 0x5a3a20], [0x2a4a6a, 0xd8c060],
+  [0x8a5a30, 0x5a3a20], [0x2a4a6a, 0xd8c060], [0x6a2a8a, 0xd8c060],
 ];
 
 const MOB_BUILDERS = {
@@ -551,9 +551,11 @@ export class EntityViews {
     this.players.delete(id);
   }
 
-  movePlayer(id, p, r) {
+  // flags: 1 = invisible
+  movePlayer(id, p, r, flags = 0) {
     const v = this.players.get(id);
     if (!v) return;
+    v.model.group.visible = !(flags & 1);
     v.target.set(p[0], p[1], p[2]);
     v.tYaw = r[0];
     v.tPitch = r[1];
@@ -656,6 +658,16 @@ export class EntityViews {
       group.add(sprite);
       // only a ghast's fireball can be punched back
       return { fireball: true, mob: kind === 'fireball' ? 'fireball' : undefined, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
+    }
+    if (kind === 'potion' || kind === 'xp_bottle') {
+      // a thrown splash potion or bottle o' enchanting, tumbling through the air
+      const map = this.textures.itemTexture(kind === 'potion' ? ITEM.SPLASH_POTION : ITEM.EXPERIENCE_BOTTLE);
+      map.userData.shared = true;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, alphaTest: 0.5 }));
+      sprite.scale.set(0.35, 0.35, 1);
+      const group = new THREE.Group();
+      group.add(sprite);
+      return { fireball: true, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
     if (kind === 'eye') {
       // a thrown eye of ender, with a trail of purple sparks

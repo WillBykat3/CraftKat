@@ -18,6 +18,7 @@ import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 import { validEnch, level as enchLevel } from './enchant.js';
+import { brewResult, validPotion, BREW_SECONDS, POTIONS, UNDEAD as POTION_UNDEAD, ATTACK_EFFECTS } from './effects.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -154,10 +155,12 @@ function bucket(rate, burst, now) {
 function validStack(s) {
   return s === null || (s && typeof s === 'object' && isValidId(s.id) && isInt(s.count) &&
     s.count > 0 && s.count <= maxStack(s.id) && (s.dur === undefined || (isInt(s.dur) && s.dur >= 0)) &&
-    (s.ench === undefined || (validEnch(s.ench) && s.count === 1)) && (s.rc === undefined || (isInt(s.rc) && s.rc >= 0 && s.rc < 40)));
+    (s.ench === undefined || (validEnch(s.ench) && s.count === 1)) && (s.rc === undefined || (isInt(s.rc) && s.rc >= 0 && s.rc < 40)) &&
+    (s.potion === undefined || (validPotion(s.potion) && (s.id === ITEM.POTION || s.id === ITEM.SPLASH_POTION))));
 }
 // the enchantments and anvil uses of a stack, to carry along (see inventory.js extras)
-const extrasOf = (s) => (s && (s.ench || s.rc) ? { ...(s.ench ? { ench: s.ench } : {}), ...(s.rc ? { rc: s.rc } : {}) } : undefined);
+const extrasOf = (s) => (s && (s.ench || s.rc || s.potion)
+  ? { ...(s.ench ? { ench: s.ench } : {}), ...(s.rc ? { rc: s.rc } : {}), ...(s.potion ? { potion: s.potion } : {}) } : undefined);
 
 export class GameHost {
   // save: from newWorldSave() or a previous serialize()
@@ -182,11 +185,12 @@ export class GameHost {
       world.importEdits(data.edits || []);
       // growing crops (only ever planted by players, so they're all in the edits)
       const crops = new Set();
-      for (const [x, y, z, id] of world.exportEdits()) if (BLOCKS[id]?.crop) crops.add(`${x},${y},${z}`);
+      for (const [x, y, z, id] of world.exportEdits()) if (BLOCKS[id]?.crop || BLOCKS[id]?.wart !== undefined) crops.add(`${x},${y},${z}`);
       this.dims[dim] = {
         world, crops, lightCache: null,
         furnaces: new Map(Object.entries(data.furnaces || {})), furnaceViewers: new Map(), // key -> Set(peerId)
         chests: new Map(Object.entries(data.chests || {})), chestViewers: new Map(),
+        brewers: new Map(Object.entries(data.brewers || {})), brewViewers: new Map(),
       };
       this.dims[dim].redstone = new RedstoneSim(this, world);
       this.dims[dim].fluids = new FluidSim(this, world, dim);
@@ -224,6 +228,8 @@ export class GameHost {
   get furnaceViewers() { return this.dims[this.ctx].furnaceViewers; }
   get chests() { return this.dims[this.ctx].chests; }
   get chestViewers() { return this.dims[this.ctx].chestViewers; }
+  get brewers() { return this.dims[this.ctx].brewers; }
+  get brewViewers() { return this.dims[this.ctx].brewViewers; }
   get lightCache() { return this.dims[this.ctx].lightCache; }
   set lightCache(v) { this.dims[this.ctx].lightCache = v; }
 
@@ -284,6 +290,7 @@ export class GameHost {
     for (const d of Object.values(this.dims)) {
       for (const viewers of d.furnaceViewers.values()) viewers.delete(peerId);
       for (const viewers of d.chestViewers.values()) viewers.delete(peerId);
+      for (const viewers of d.brewViewers.values()) viewers.delete(peerId);
     }
   }
 
@@ -332,6 +339,10 @@ export class GameHost {
       case 'furnace_open': return this.onFurnaceOpen(peerId, p, msg);
       case 'furnace_close': return this.onFurnaceClose(peerId, msg);
       case 'furnace_click': return this.onFurnaceClick(peerId, p, msg);
+      case 'brew_open': return this.onBrewOpen(peerId, p, msg);
+      case 'brew_close': return this.validCoords(msg) && this.brewViewers.get(this.keyOf(msg))?.delete(peerId);
+      case 'brew_click': return this.onBrewClick(peerId, p, msg);
+      case 'throw': return this.onThrow(p, msg);
       case 'chest_open': return this.onChestOpen(peerId, p, msg);
       case 'chest_close': return this.chestViewers.get(this.keyOf(msg))?.delete(peerId);
       case 'chest_click': return this.onChestClick(peerId, p, msg);
@@ -424,6 +435,7 @@ export class GameHost {
     [p.x, p.y, p.z] = pos;
     [p.yaw, p.pitch] = r;
     p.held = isValidId(msg.h) ? msg.h : 0;
+    p.invisible = msg.inv === 1;
     p.moved = true;
   }
 
@@ -440,7 +452,7 @@ export class GameHost {
   setBlock(x, y, z, id, exceptPeer = null) {
     this.world.setBlock(x, y, z, id);
     const key = `${x},${y},${z}`;
-    if (BLOCKS[id].crop) this.crops.add(key); else this.crops.delete(key);
+    if (BLOCKS[id].crop || BLOCKS[id].wart !== undefined) this.crops.add(key); else this.crops.delete(key);
     this.redstone?.changed(x, y, z, id);
     this.fluids?.changed(x, y, z);
     if (id === BLOCK.FIRE) this.fires.add(key); else this.fires?.delete(key);
@@ -534,6 +546,13 @@ export class GameHost {
       if (f) for (const s of f.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur, undefined, extrasOf(s));
       this.furnaces.delete(key);
       this.furnaceViewers.delete(key);
+    }
+    if (id === BLOCK.BREWING_STAND) {
+      const key = `${x},${y},${z}`;
+      const b = this.brewers.get(key);
+      if (b) for (const s of b.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur, undefined, extrasOf(s));
+      this.brewers.delete(key);
+      this.brewViewers.delete(key);
     }
     if (isContainer(id)) {
       const key = `${x},${y},${z}`;
@@ -740,6 +759,8 @@ export class GameHost {
     let damage = tool && tool.kind !== 'bow' ? (tool.kind === 'sword' ? tool.damage + 1 : tool.damage - 1) : 1;
     const ench = validEnch(msg.ench) ? msg.ench : {};
     // Sharpness, Smite (undead) and Bane of Arthropods (spiders), like Minecraft
+    // Strength adds 3 per level, Weakness takes 4
+    if (isInt(msg.str) && msg.str >= -2 && msg.str <= 2) damage = Math.max(0, damage + (msg.str > 0 ? 3 * msg.str : 4 * msg.str));
     if (ench.sharpness) damage += 0.5 * ench.sharpness + 0.5;
     if (ench.smite && UNDEAD.has(e.type)) damage += 2.5 * ench.smite;
     if (ench.bane_of_arthropods && e.type === 'spider') damage += 2.5 * ench.bane_of_arthropods;
@@ -794,7 +815,7 @@ export class GameHost {
       chicken: [[ITEM.RAW_CHICKEN, 1], [ITEM.FEATHER, Math.floor(r() * 3)]],
       zombie: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)], [r() < 0.5 ? ITEM.CARROT : ITEM.POTATO, r() < 0.05 ? 1 : 0]],
       skeleton: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
-      spider: [[ITEM.STRING, Math.floor(r() * 3)]],
+      spider: [[ITEM.STRING, Math.floor(r() * 3)], [ITEM.SPIDER_EYE, r() < 1 / 3 ? 1 : 0]],
       creeper: [[ITEM.GUNPOWDER, Math.floor(r() * 3)]],
       husk: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
       stray: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
@@ -1001,6 +1022,11 @@ export class GameHost {
       if (!near) continue;
       const id = this.world.getBlock(x, y, z);
       const def = BLOCKS[id];
+      if (def.wart !== undefined) {
+        // nether wart grows slowly, without water or light
+        if (def.wart < 3 && this.random() < dt / 60) this.setBlock(x, y, z, id + 1);
+        continue;
+      }
       if (!def.crop) { this.crops.delete(key); continue; }
       if (def.crop.stage >= def.crop.max) continue;
       const stageTime = (def.crop.max === 7 ? 1 : 2) * (this.hydrated(x, y - 1, z) ? 40 : 90); // seconds per stage, on average
@@ -1224,6 +1250,150 @@ export class GameHost {
     this.storePlayer(p);
   }
 
+  // ---------- brewing stands ----------
+  // slots: 0-2 bottles, 3 ingredient, 4 fuel (blaze powder: 20 brews)
+  brewerAt(p, msg) {
+    if (!this.validCoords(msg) || this.world.getBlock(msg.x, msg.y, msg.z) !== BLOCK.BREWING_STAND || !this.inReach(p, msg.x, msg.y, msg.z)) return null;
+    const key = this.keyOf(msg);
+    if (!this.brewers.has(key)) this.brewers.set(key, { slots: [null, null, null, null, null], fuel: 0, progress: 0 });
+    return [key, this.brewers.get(key)];
+  }
+
+  brewState(key, b) {
+    const [x, y, z] = key.split(',').map(Number);
+    return { t: 'brewing', x, y, z, slots: b.slots, fuel: b.fuel, progress: b.progress / BREW_SECONDS };
+  }
+
+  notifyBrewer(key, b) {
+    const state = this.brewState(key, b);
+    for (const peer of this.brewViewers.get(key) || []) this.send(peer, state);
+  }
+
+  onBrewOpen(peerId, p, msg) {
+    const found = this.brewerAt(p, msg);
+    if (!found) return;
+    const [key, b] = found;
+    if (!this.brewViewers.has(key)) this.brewViewers.set(key, new Set());
+    this.brewViewers.get(key).add(peerId);
+    this.send(peerId, this.brewState(key, b));
+  }
+
+  onBrewClick(peerId, p, msg) {
+    const found = this.brewerAt(p, msg);
+    const cursor = validStack(msg.cursor) ? msg.cursor : null;
+    if (!found || !isInt(msg.slot) || msg.slot < 0 || msg.slot > 4 || !(msg.button === 0 || msg.button === 2)) return this.send(peerId, { t: 'cursor', stack: cursor });
+    const [key, b] = found;
+    // bottles only go in the bottle slots, blaze powder in the fuel slot
+    const fits = !cursor || (msg.slot < 3 ? (cursor.id === ITEM.POTION || cursor.id === ITEM.SPLASH_POTION || cursor.id === ITEM.GLASS_BOTTLE) : msg.slot === 4 ? cursor.id === ITEM.BLAZE_POWDER : true);
+    if (!fits) return this.send(peerId, { t: 'cursor', stack: cursor });
+    this.send(peerId, { t: 'cursor', stack: clickSlot(b.slots, msg.slot, cursor, msg.button) });
+    this.dirty = true;
+    this.notifyBrewer(key, b);
+  }
+
+  tickBrewers(dt) {
+    for (const [key, b] of this.brewers) {
+      const ing = b.slots[3];
+      const canBrew = ing && [0, 1, 2].some((i) => brewResult(b.slots[i], ing.id));
+      if (canBrew && b.fuel <= 0 && b.slots[4]?.id === ITEM.BLAZE_POWDER) {
+        b.fuel = 20;
+        b.slots[4].count--;
+        if (b.slots[4].count <= 0) b.slots[4] = null;
+      }
+      const before = Math.floor(b.progress);
+      if (canBrew && b.fuel > 0) {
+        b.progress += dt;
+        if (b.progress >= BREW_SECONDS) {
+          b.progress = 0;
+          b.fuel--;
+          for (let i = 0; i < 3; i++) { const r = brewResult(b.slots[i], ing.id); if (r) b.slots[i] = r; }
+          ing.count--;
+          if (ing.count <= 0) b.slots[3] = null;
+          this.dirty = true;
+          const [x, y, z] = key.split(',').map(Number);
+          this.broadcastHere({ t: 'sfx', s: 'brew', x, y, z });
+          this.notifyBrewer(key, b);
+          continue;
+        }
+      } else b.progress = 0;
+      if (Math.floor(b.progress) !== before) this.notifyBrewer(key, b);
+    }
+  }
+
+  // ---------- thrown potions ----------
+  // Splash potions and bottles o' enchanting fly like arrows and break where they land.
+  onThrow(p, msg) {
+    if (p.dead || !isNum(msg.yaw) || !isNum(msg.pitch)) return;
+    const kind = msg.kind === 'xp' ? 'xp_bottle' : msg.kind === 'splash' && validPotion(msg.potion) ? 'potion' : null;
+    if (!kind) return;
+    const dir = [-Math.sin(msg.yaw) * Math.cos(msg.pitch), Math.sin(msg.pitch) + 0.15, -Math.cos(msg.yaw) * Math.cos(msg.pitch)];
+    this.addEntity({
+      id: this.nextEntityId++, type: kind, potion: msg.potion, x: p.x + dir[0] * 0.6, y: p.y + 1.5, z: p.z + dir[2] * 0.6,
+      halfW: 0.12, height: 0.25, vx: dir[0] * 14, vy: dir[1] * 14, vz: dir[2] * 14, yaw: msg.yaw, age: 0, thrower: p.name,
+    });
+  }
+
+  tickThrown(e, dt) {
+    e.age += dt;
+    e.vy -= 20 * dt;
+    const steps = Math.max(1, Math.ceil(Math.hypot(e.vx, e.vy, e.vz) * dt / 0.25));
+    for (let i = 0; i < steps; i++) {
+      e.x += e.vx * dt / steps; e.y += e.vy * dt / steps; e.z += e.vz * dt / steps;
+      const hitBlock = BLOCKS[this.world.getBlock(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z))].solid;
+      const hitMob = e.age > 0.15 && [...this.entities.values()].some((m) => isMob(m) && m.dim === e.dim && Math.abs(m.x - e.x) < m.halfW + 0.2 && Math.abs(m.z - e.z) < m.halfW + 0.2 && e.y > m.y && e.y < m.y + m.height);
+      if (!hitBlock && !hitMob && e.y > -20 && e.age < 10) continue;
+      this.entities.delete(e.id);
+      this.broadcastHere({ t: 'sfx', s: 'shatter', x: e.x, y: e.y, z: e.z });
+      if (e.type === 'xp_bottle') this.spawnXP(e.x, e.y + 0.3, e.z, 3 + Math.floor(this.random() * 9));
+      else this.splash(e);
+      return;
+    }
+  }
+
+  // A splash potion breaks: everyone within 4 blocks gets its effects, less further away.
+  splash(e) {
+    const effects = POTIONS[e.potion]?.effects || [];
+    for (const p of this.here()) {
+      const d = Math.hypot(p.x - e.x, p.y + 0.9 - e.y, p.z - e.z);
+      if (d < 4) this.send(p.peerId, { t: 'effect', potion: e.potion, scale: 1 - d / 4 });
+    }
+    for (const m of [...this.entities.values()]) {
+      if (!isMob(m) || m.dim !== e.dim) continue;
+      const d = Math.hypot(m.x - e.x, m.y + m.height / 2 - e.y, m.z - e.z);
+      if (d >= 4) continue;
+      const scale = 1 - d / 4;
+      for (const [name, amp, seconds] of effects) this.mobEffect(m, name, amp, seconds * scale, scale, e.thrower);
+    }
+  }
+
+  // Potion effects on mobs: instant health and harming (reversed for the undead), poison,
+  // regeneration, slowness, speed, weakness, fire resistance, invisibility.
+  mobEffect(m, name, amp, seconds, scale = 1, by = null) {
+    const undead = POTION_UNDEAD.has(m.type);
+    const heal = (n) => { m.hp = Math.min(MOB_TYPES[m.type].hp, m.hp + n); };
+    if (name === 'instant_health' || name === 'instant_damage') {
+      const amount = (name === 'instant_health' ? 4 : 6) * 2 ** amp * scale;
+      if ((name === 'instant_health') !== undead) heal(amount);
+      else this.hurtMob(m, amount, 0, 0, by, 0);
+      return;
+    }
+    m.effects ??= {};
+    m.effects[name] = { amp, time: Math.max(seconds, m.effects[name]?.time || 0) };
+  }
+
+  tickMobEffects(e, dt) {
+    if (!e.effects) return;
+    for (const [name, ef] of Object.entries(e.effects)) {
+      ef.time -= dt;
+      ef.acc = (ef.acc || 0) + dt;
+      const every = 1.25 / 2 ** ef.amp;
+      if ((name === 'poison' || name === 'wither') && ef.acc >= every && !POTION_UNDEAD.has(e.type)) { ef.acc = 0; if (e.hp > 1 || name === 'wither') { e.hp -= 1; this.broadcastHere({ t: 'mobhurt', e: e.id }); } }
+      if (name === 'regeneration' && ef.acc >= every * 2 && !POTION_UNDEAD.has(e.type)) { ef.acc = 0; e.hp = Math.min(MOB_TYPES[e.type].hp, e.hp + 1); }
+      if (ef.time <= 0) delete e.effects[name];
+    }
+    if (e.hp <= 0) this.killMob(e);
+  }
+
   // ---------- furnaces ----------
   furnaceAt(msg) {
     if (!this.validCoords(msg)) return null;
@@ -1340,6 +1510,7 @@ export class GameHost {
     for (const dim of DIMENSIONS) {
       this.ctx = dim;
       this.tickFurnaces(dt);
+      this.tickBrewers(dt);
       this.redstone.update(dt);
       this.fluids.update(dt);
       this.tickFires(dt);
@@ -1414,6 +1585,7 @@ export class GameHost {
     let best = null, bestD = maxDist;
     for (const p of this.players.values()) {
       if (p.dim !== (e.dim ?? this.ctx)) continue;
+      if (survivalOnly && p.invisible && Math.hypot(p.x - e.x, p.z - e.z) > 2.5) continue; // invisible players go unnoticed
       if (survivalOnly && (p.mode !== 'survival' || p.dead)) continue;
       const d = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z);
       if (d < bestD) { best = p; bestD = d; }
@@ -1443,6 +1615,7 @@ export class GameHost {
       if (e.type === 'fireball' || e.type === 'small_fireball' || e.type === 'dragon_fireball') { this.tickFireball(e, dt); continue; }
       if (e.type === 'breath') { this.tickBreath(e, dt); continue; }
       if (e.type === 'eye') { this.tickEye(e, dt); continue; }
+      if (e.type === 'potion' || e.type === 'xp_bottle') { this.tickThrown(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
@@ -1462,6 +1635,8 @@ export class GameHost {
       }
 
       const t = MOB_TYPES[e.type];
+      this.tickMobEffects(e, dt);
+      if (!this.entities.has(e.id)) continue;
       e.attackCooldown = Math.max(0, e.attackCooldown - dt);
       e.panic = Math.max(0, e.panic - dt);
       e.think -= dt;
@@ -1536,7 +1711,7 @@ export class GameHost {
             targetSpeed = dist > 1.2 ? t.speed : 0;
             if (dist < 1.6 && Math.abs(p.y - e.y) < 1.8 && e.attackCooldown === 0) {
               e.attackCooldown = 1;
-              this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: `was slain by ${MOB_NAMES[e.type] || 'a Zombie'}`, by: e.id });
+              this.send(p.peerId, { t: 'hurt', amount: t.damage * (e.effects?.weakness ? 0.5 : 1), from: [e.x, e.z], cause: `was slain by ${MOB_NAMES[e.type] || 'a Zombie'}`, by: e.id, effects: ATTACK_EFFECTS[e.type] });
             }
           }
         } else if (e.type === 'creeper' && e.fuse) {
@@ -1562,6 +1737,8 @@ export class GameHost {
         targetSpeed = e.walk ? (e.panic > 0 ? t.speed * 2 : t.speed) : 0;
       }
 
+      if (e.effects?.slowness) targetSpeed *= Math.max(0, 1 - 0.15 * (e.effects.slowness.amp + 1));
+      if (e.effects?.speed) targetSpeed *= 1 + 0.2 * (e.effects.speed.amp + 1);
       const ax = -Math.sin(e.yaw) * targetSpeed, az = -Math.cos(e.yaw) * targetSpeed;
       const k = Math.min(1, dt * (e.onGround ? 8 : 2));
       e.vx += (ax - e.vx) * k;
@@ -2568,7 +2745,7 @@ export class GameHost {
     for (const p of this.players.values()) {
       if (!p.moved) continue;
       p.moved = false;
-      (moved[p.dim] ??= []).push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0]);
+      (moved[p.dim] ??= []).push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0, p.invisible ? 1 : 0]);
     }
     for (const p of this.players.values()) if (moved[p.dim]) this.send(p.peerId, { t: 'state', players: moved[p.dim] });
 
@@ -2597,11 +2774,12 @@ export class GameHost {
     this.save.time = this.time;
     this.save.furnaces = Object.fromEntries(o.furnaces);
     this.save.chests = Object.fromEntries(o.chests);
+    this.save.brewers = Object.fromEntries(o.brewers);
     const dims = this.save.dims || {};
     for (const dim of DIMENSIONS) {
       if (dim === 'overworld') continue;
       const d = this.dims[dim];
-      dims[dim] = { ...dims[dim], edits: d.world.exportEdits(), furnaces: Object.fromEntries(d.furnaces), chests: Object.fromEntries(d.chests) };
+      dims[dim] = { ...dims[dim], edits: d.world.exportEdits(), furnaces: Object.fromEntries(d.furnaces), chests: Object.fromEntries(d.chests), brewers: Object.fromEntries(d.brewers) };
     }
     Object.assign(dims.end, this.endState);
     this.save.dims = dims;

@@ -76,6 +76,7 @@ export function lightCurve(level) {
 // and the End's light map is forced a quarter of the way to full brightness.
 const AMBIENT = { overworld: 0, nether: 0.1, end: 0.25 };
 const END_SKY = new THREE.Color(0x120c1a);
+const BLACK = new THREE.Color(0x000000);
 export const toLinear = (v) => Math.pow(v, 2.2);
 
 function freeArray() {
@@ -517,7 +518,21 @@ export class Renderer {
     this.cloudUniforms.brightness.value = 0.25 + day * 0.75;
 
     this.updateFov(sprintFov);
+    this.applyEffects();
     return day;
+  }
+
+  // Night vision lights everything up; blindness closes the fog in.
+  applyEffects() {
+    const base = AMBIENT[this.dim] ?? AMBIENT.overworld;
+    const amb = this.nightVision ? 0.9 : base;
+    if (this.uniforms.ambient.value !== amb) this.uniforms.ambient.value = lighting.ambient = amb;
+    if (this.blind) {
+      this.uniforms.fogNear.value = 1;
+      this.uniforms.fogFar.value = 6;
+      this.uniforms.fogColor.value.set(0, 0, 0);
+      this.scene.background = BLACK;
+    }
   }
 
   updateFov(sprintFov) {
@@ -551,6 +566,7 @@ export class Renderer {
     this.uniforms.fogNear.value = medium === 'lava' ? 0 : medium === 'water' ? 2 : nether ? far * 0.05 : far * 0.6;
     this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : medium === 'water' ? 18 : nether ? Math.min(far, 192) * 0.5 : far * 0.95;
     this.updateFov(sprintFov);
+    this.applyEffects();
     return 0;
   }
 

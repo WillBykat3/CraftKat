@@ -21,6 +21,7 @@ import { Particles } from './particles.js';
 import { levelInfo, pointsForLevel } from './xp.js';
 import { lightCurve, toLinear } from './renderer.js';
 import { NETHER_FOG } from './terrain-nether.js';
+import { POTIONS, EFFECTS, FOOD_EFFECTS } from './effects.js';
 import { flowAt } from './fluids.js';
 import { protectionPoints, wears, level as enchLevel, tableOffers, anvilCombine, grind } from './enchant.js';
 
@@ -73,6 +74,8 @@ export class Game {
     this.useCooldown = 0;
     this.attackCooldown = 0;
     this.eating = 0;
+    this.effects = {}; // status effects: name -> {amp, time}
+    this.absorb = 0;
     this.lastTap = { KeyW: 0, Space: 0 };
     this.physicsTime = 0;
     this.lastSent = 0;
@@ -118,7 +121,7 @@ export class Game {
         return;
       case 'leave': return this.entities.removePlayer(msg.id);
       case 'state':
-        for (const [id, x, y, z, yaw, pitch] of msg.players) if (id !== this.myId) this.entities.movePlayer(id, [x, y, z], [yaw, pitch]);
+        for (const [id, x, y, z, yaw, pitch, , flags = 0] of msg.players) if (id !== this.myId) this.entities.movePlayer(id, [x, y, z], [yaw, pitch], flags);
         return;
       case 'entities': return this.entities.syncEntities(msg.list);
       case 'set':
@@ -145,8 +148,10 @@ export class Game {
         if (this.screen.isOpen) this.screen.render();
         return;
       }
+      case 'effect': return this.applyPotion(msg.potion, msg.scale);
       case 'hurt':
         if (msg.fire && this.mode === 'survival') this.onFire = Math.max(this.onFire || 0, msg.fire);
+        if (Array.isArray(msg.effects) && this.mode === 'survival') for (const [n, amp, t] of msg.effects) this.addEffect(n, amp, t);
         return this.damage(msg.amount, msg.cause, msg.from, true, msg.by);
       case 'equip': return this.entities.setArmor(msg.id, msg.armor);
       case 'xp': return this.addXP(this.mend(msg.amount));
@@ -174,6 +179,7 @@ export class Game {
         if ((msg.everywhere || Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 64) && typeof sound[msg.s] === 'function') sound[msg.s]();
         return;
       case 'furnace': return this.screen.setFurnaceState(msg);
+      case 'brewing': return this.screen.setBrewState(msg);
       case 'chest': return this.screen.setChestState(msg);
       case 'chest_gone': if (this.screen.kind === 'chest') this.closeScreen(); return;
       case 'sleeping': return this.startSleeping(msg.at);
@@ -312,6 +318,10 @@ export class Game {
     this.send({ t: 'furnace_click', x: at[0], y: at[1], z: at[2], slot, button, cursor });
   }
 
+  brewClick(at, slot, button, cursor) {
+    this.send({ t: 'brew_click', x: at[0], y: at[1], z: at[2], slot, button, cursor });
+  }
+
   chestClick(at, slot, button, cursor) {
     this.send({ t: 'chest_click', x: at[0], y: at[1], z: at[2], slot, button, cursor });
   }
@@ -448,6 +458,10 @@ export class Game {
       const [x, y, z] = this.screen.furnace.at;
       this.send({ t: 'furnace_close', x, y, z });
     }
+    if (this.screen.kind === 'brewing') {
+      const [x, y, z] = this.screen.brewer.at;
+      this.send({ t: 'brew_close', x, y, z });
+    }
     if (this.screen.kind === 'chest') {
       const [x, y, z] = this.screen.chest.at;
       this.send({ t: 'chest_close', x, y, z });
@@ -569,7 +583,7 @@ export class Game {
     const mob = this.targetMob(hit);
     if (mob) {
       if (this.attackCooldown <= 0) {
-        this.send({ t: 'attack', e: mob.id, tool: this.heldId(), ench: this.held()?.ench });
+        this.send({ t: 'attack', e: mob.id, tool: this.heldId(), ench: this.held()?.ench, str: this.effectLevel('strength') - this.effectLevel('weakness') });
         this.attackCooldown = 0.35;
         this.useTool(1);
         this.stats.exhaustion += 0.1;
@@ -615,6 +629,16 @@ export class Game {
       this.swing = 1;
       return;
     }
+    if (mob && held?.id === ITEM.BUCKET && this.entities.entities.get(mob.id)?.mob === 'cow') {
+      if (this.mode === 'survival') {
+        takeOne(this.inv, this.selected);
+        const left = addItem(this.inv, ITEM.MILK_BUCKET, 1);
+        if (left) this.dropStack({ id: ITEM.MILK_BUCKET, count: 1 });
+      }
+      sound.splash();
+      this.invDirty = true;
+      return;
+    }
     if (mob && held?.id === ITEM.SHEARS) {
       this.send({ t: 'interact', e: mob.id, tool: held.id });
       this.useTool(1);
@@ -627,6 +651,11 @@ export class Game {
       if (hit.id === BLOCK.ENCHANTING_TABLE) { this.openScreen('enchant', { at }); return; }
       if (hit.id === BLOCK.ANVIL || hit.id === BLOCK.CHIPPED_ANVIL || hit.id === BLOCK.DAMAGED_ANVIL) { this.openScreen('anvil', { at }); return; }
       if (hit.id === BLOCK.GRINDSTONE) { this.openScreen('grindstone', { at }); return; }
+      if (hit.id === BLOCK.BREWING_STAND) {
+        this.openScreen('brewing', { at });
+        this.send({ t: 'brew_open', x: hit.x, y: hit.y, z: hit.z });
+        return;
+      }
       if (isFurnace(hit.id)) {
         this.openScreen('furnace', { at, name: BLOCKS[hit.id].name });
         this.send({ t: 'furnace_open', x: hit.x, y: hit.y, z: hit.z });
@@ -666,8 +695,32 @@ export class Game {
       this.useBucket(held);
       return;
     }
+    if (held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET)) { this.eating = 0.001; return; }
+    if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE)) {
+      // throw it
+      this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });
+      if (this.mode === 'survival') takeOne(this.inv, this.selected);
+      sound.bow();
+      this.swing = 1;
+      this.useCooldown = 0.4;
+      this.invDirty = true;
+      return;
+    }
+    if (held && held.id === ITEM.GLASS_BOTTLE) {
+      // fill it with water
+      const w = this.raycast(REACH, true);
+      if (w && fluidOf(w.id) === 'water') {
+        if (this.mode === 'survival') takeOne(this.inv, this.selected);
+        const left = addItem(this.inv, ITEM.POTION, 1, undefined, { potion: 'water' });
+        if (left) this.dropStack({ id: ITEM.POTION, count: 1, potion: 'water' });
+        sound.splash();
+        this.useCooldown = 0.3;
+        this.invDirty = true;
+      }
+      return;
+    }
     if (held && ITEMS[held.id]?.food) {
-      if (this.mode === 'survival' && this.stats.food < 20) this.eating = 0.001;
+      if (this.mode === 'survival' && (this.stats.food < 20 || ITEMS[held.id].alwaysEat)) this.eating = 0.001;
       return;
     }
     if (hit && held && held.id === ITEM.OAK_DOOR) { this.placeDoor(hit); return; }
@@ -1051,6 +1104,15 @@ export class Game {
   // ---------- survival ----------
   damage(amount, cause = 'died', from = null, armored = false, by = null) {
     if (this.mode !== 'survival' || this.dead || this.stats.invuln > 0) return;
+    if (this.effects.fire_resistance && /lava|fire|flames|burn|floor was lava/.test(cause)) return;
+    if (this.effects.resistance && !/out of the world/.test(cause)) amount *= Math.max(0, 1 - 0.2 * this.effectLevel('resistance'));
+    if (this.absorb > 0) {
+      // absorption hearts go first
+      const soak = Math.min(this.absorb, amount);
+      this.absorb -= soak;
+      amount -= soak;
+      if (amount <= 0) { this.stats.invuln = 0.5; this.invDirty = true; return; }
+    }
     if (armored) amount = this.armorReduce(amount);
     // protection enchantments (4% per point, up to 80%); not against falling out of the world or starving
     const kind = /lava|fire|flames|burn/.test(cause) ? 'fire' : /blown up|Intentional/.test(cause) ? 'blast'
@@ -1081,6 +1143,8 @@ export class Game {
 
   die(cause) {
     this.dead = true;
+    this.effects = {};
+    this.absorb = 0;
     const items = this.inv.concat(this.armor).filter(Boolean);
     this.inv = new Array(INVENTORY_SIZE).fill(null);
     this.armor = [null, null, null, null];
@@ -1184,7 +1248,7 @@ export class Game {
     }
 
     // drowning
-    if (this.player.headInWater) {
+    if (this.player.headInWater && !this.effects.water_breathing) {
       s.air -= dt * 20;
       if (s.air <= -20) { s.air = 0; this.damage(2, 'drowned'); }
       const resp = enchLevel(this.armor[0], 'respiration');
@@ -1193,20 +1257,89 @@ export class Game {
       s.air = Math.min(MAX_AIR, s.air + dt * 60);
     }
 
-    // eating (hold right click for 1.6 s)
-    if (this.eating > 0) {
-      const held = this.held();
-      if (!this.mouse.right || !held || !ITEMS[held.id]?.food || s.food >= 20) this.eating = 0;
-      else {
-        this.eating += dt;
-        if (Math.floor(this.eating * 5) !== Math.floor((this.eating - dt) * 5)) sound.eat();
-        if (this.eating >= 1.6) {
-          s.food = Math.min(20, s.food + foodValue(held.id));
-          takeOne(this.inv, this.selected);
-          this.eating = 0;
-          this.invDirty = true;
-        }
-      }
+  }
+
+  // Eating and drinking: hold right click for 1.6 seconds. Potions and milk work in creative too.
+  tickEating(dt) {
+    if (this.eating <= 0) return;
+    const s = this.stats;
+    const held = this.held();
+    const drink = held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET);
+    const food = held && ITEMS[held.id]?.food && this.mode === 'survival' && (s.food < 20 || ITEMS[held.id].alwaysEat);
+    if (!this.mouse.right || (!drink && !food) || this.dead) { this.eating = 0; return; }
+    this.eating += dt;
+    if (Math.floor(this.eating * 5) !== Math.floor((this.eating - dt) * 5)) drink ? sound.drink() : sound.eat();
+    if (this.eating < 1.6) return;
+    this.eating = 0;
+    this.invDirty = true;
+    if (held.id === ITEM.MILK_BUCKET) {
+      // milk clears every effect
+      this.effects = {};
+      if (this.mode === 'survival') this.inv[this.selected] = { id: ITEM.BUCKET, count: 1 };
+      return;
+    }
+    if (held.id === ITEM.POTION) {
+      this.applyPotion(held.potion);
+      if (this.mode === 'survival') this.inv[this.selected] = { id: ITEM.GLASS_BOTTLE, count: 1 };
+      return;
+    }
+    s.food = Math.min(20, s.food + foodValue(held.id));
+    for (const [name, amp, seconds, chance = 1] of FOOD_EFFECTS[held.id] || []) if (Math.random() < chance) this.addEffect(name, amp, seconds);
+    takeOne(this.inv, this.selected);
+  }
+
+  // ---------- status effects ----------
+  addEffect(name, amp, seconds) {
+    if (name === 'instant_health') { this.stats.health = Math.min(20, this.stats.health + 4 * 2 ** amp); this.invDirty = true; return; }
+    if (name === 'instant_damage') { this.damage(6 * 2 ** amp, 'was killed by magic'); return; }
+    if (name === 'saturation') { this.stats.food = Math.min(20, this.stats.food + amp + 1); return; }
+    const cur = this.effects[name];
+    if (cur && (cur.amp > amp || (cur.amp === amp && cur.time > seconds))) return;
+    this.effects[name] = { amp, time: seconds };
+    if (name === 'absorption') this.absorb = 4 * (amp + 1);
+  }
+
+  applyPotion(potion, scale = 1) {
+    for (const [name, amp, seconds] of POTIONS[potion]?.effects || []) {
+      if (name.startsWith('instant')) {
+        if (name === 'instant_health') { this.stats.health = Math.min(20, this.stats.health + 4 * 2 ** amp * scale); this.invDirty = true; }
+        else this.damage(6 * 2 ** amp * scale, 'was killed by magic');
+      } else if (seconds * scale >= 1) this.addEffect(name, amp, Math.round(seconds * scale));
+    }
+  }
+
+  effectLevel(name) {
+    const e = this.effects[name];
+    return e ? e.amp + 1 : 0;
+  }
+
+  tickEffects(dt) {
+    for (const [name, e] of Object.entries(this.effects)) {
+      e.time -= dt;
+      e.acc = (e.acc || 0) + dt;
+      const survival = this.mode === 'survival' && !this.dead;
+      if (name === 'regeneration' && e.acc >= 2.5 / 2 ** e.amp) { e.acc = 0; if (survival && this.stats.health < 20) { this.stats.health = Math.min(20, this.stats.health + 1); this.invDirty = true; } }
+      if (name === 'poison' && e.acc >= 1.25 / 2 ** e.amp) { e.acc = 0; if (survival && this.stats.health > 1) this.damage(1, 'was poisoned', null, false, null, true); }
+      if (name === 'wither' && e.acc >= 2 / 2 ** e.amp) { e.acc = 0; if (survival) this.damage(1, 'withered away', null, false, null, true); }
+      if (name === 'hunger' && survival) this.stats.exhaustion += 0.1 * (e.amp + 1) * dt;
+      if (e.time <= 0) { delete this.effects[name]; if (name === 'absorption') this.absorb = 0; }
+    }
+    this.renderEffects();
+  }
+
+  // Effect icons in the top right corner, with the time left.
+  renderEffects() {
+    const key = Object.entries(this.effects).map(([n, e]) => `${n}${e.amp}${Math.ceil(e.time)}`).join();
+    if (key === this.lastEffectsKey) return;
+    this.lastEffectsKey = key;
+    const box = $('effects');
+    box.innerHTML = '';
+    for (const [name, e] of Object.entries(this.effects)) {
+      const d = document.createElement('div');
+      d.className = 'effect' + (EFFECTS[name][2] ? '' : ' bad');
+      const t = Math.ceil(e.time);
+      d.innerHTML = `<i style="background:${EFFECTS[name][1]}"></i><span>${EFFECTS[name][0]}${e.amp ? ' ' + ['', 'II', 'III', 'IV'][e.amp] : ''}<br>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</span>`;
+      box.appendChild(d);
     }
   }
 
@@ -1234,6 +1367,7 @@ export class Game {
     if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5 + 0.5 * Math.min(3, enchLevel(this.armor[3], 'depth_strider')) / 3;
     const under = BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))];
     if (p.onGround && under.slow) speed *= under.slow; // soul sand
+    speed *= Math.max(0, 1 + 0.2 * this.effectLevel('speed') - 0.15 * this.effectLevel('slowness'));
     p.onHot = p.onGround && !!under.hot;                 // magma blocks burn unless you sneak
     const control = p.onGround || p.flying ? 20 : p.inWater ? 6 : 5;
     const a = Math.min(1, dt * control);
@@ -1254,9 +1388,11 @@ export class Game {
       p.vy = Math.max(-3, p.vy - GRAVITY * 0.25 * dt);
       if (k.Space) p.vy = Math.min(p.vy + 30 * dt, 3.5);
     } else {
-      p.vy = Math.max(-60, p.vy - GRAVITY * dt);
+      // slow falling: drift down gently, and no fall damage
+      p.vy = Math.max(this.effects.slow_falling ? -2.4 : -60, p.vy - GRAVITY * (this.effects.slow_falling && p.vy < 0 ? 0.15 : 1) * dt);
+      if (this.effects.slow_falling) p.fallStart = null;
       if ((k.Space || this.jumpQueued) && p.onGround) {
-        p.vy = JUMP_SPEED;
+        p.vy = JUMP_SPEED + 2 * this.effectLevel('jump_boost');
         this.stats.exhaustion += p.sprinting ? 0.2 : 0.05;
         if (p.sprinting) { p.vx += wx * 2; p.vz += wz * 2; }
       }
@@ -1297,7 +1433,8 @@ export class Game {
     if (res.onGround || p.inWater || p.flying) {
       if (p.fallStart !== null && res.onGround && !p.inWater && !p.flying) {
         const dist = p.fallStart - p.y;
-        if (dist > 3.5) this.damage(Math.floor(dist - 3), 'fell from a high place');
+        const fall = Math.floor(dist - 3) - this.effectLevel('jump_boost');
+        if (dist > 3.5 && fall > 0) this.damage(fall, 'fell from a high place');
       }
       p.fallStart = null;
     }
@@ -1419,6 +1556,8 @@ export class Game {
     }
     if (stepped) this.jumpQueued = false; // a tap shorter than one frame still jumps
     this.survivalTick(dt);
+    this.tickEating(dt);
+    this.tickEffects(dt);
 
     this.attackCooldown -= dt;
     this.useCooldown -= dt;
@@ -1469,7 +1608,8 @@ export class Game {
         const b = this.breaking;
         if (!b || b.x !== hit.x || b.y !== hit.y || b.z !== hit.z) this.breaking = { x: hit.x, y: hit.y, z: hit.z, progress: 0, sound: 0 };
         const aqua = this.armor.some((a) => enchLevel(a, 'aqua_affinity'));
-        const t = breakTime(hit.id, this.heldId(), enchLevel(this.held(), 'efficiency')) * (p.onGround || p.flying ? 1 : 5) * (p.headInWater && !aqua ? 5 : 1);
+        const t = breakTime(hit.id, this.heldId(), enchLevel(this.held(), 'efficiency')) * (p.onGround || p.flying ? 1 : 5) * (p.headInWater && !aqua ? 5 : 1) /
+          (1 + 0.2 * this.effectLevel('haste')) / (this.effects.mining_fatigue ? 0.3 ** this.effectLevel('mining_fatigue') : 1);
         this.breaking.progress += t === 0 ? 1 : dt / t;
         this.breaking.sound -= dt;
         if (this.breaking.sound <= 0) {
@@ -1523,7 +1663,11 @@ export class Game {
 
     // environment
     const fogTint = this.dim === 'nether' ? NETHER_FOG[this.world.netherBiome(Math.floor(p.x), Math.floor(p.z))] : null;
+    this.r.nightVision = !!this.effects.night_vision;
+    this.r.blind = !!this.effects.blindness;
     this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking, fogTint);
+    // nausea makes the view sway
+    this.r.camera.rotation.z = this.effects.nausea ? Math.sin(performance.now() / 600) * 0.12 : 0;
     this.lightBudget = 1;
     this.time += dt * 20;
     this.entities.lightAt = (x, y, z) => this.lightAt(x, y, z);
@@ -1553,7 +1697,7 @@ export class Game {
       const state = JSON.stringify([pos, rot, this.heldId()]);
       if (state !== this.lastSentState) {
         this.lastSentState = state;
-        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId() });
+        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId(), inv: this.effects.invisibility ? 1 : 0 });
       }
     }
     this.unloadTimer = (this.unloadTimer || 0) + dt;
