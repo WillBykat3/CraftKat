@@ -40,7 +40,7 @@ newly created worlds.
 2. Under **Build and deployment** → **Source**, choose **GitHub Actions**.
 3. Go to the **Actions** tab. If the "Deploy to GitHub Pages" run failed before you did step 2,
    open it and click **Re-run all jobs** (or push any change).
-4. When it finishes, the game is live at **https://willbykat3.github.io/minecraft/**
+4. When it finishes, the game is live at **https://willbykat3.github.io/CraftKat/**
 
 Every time you push to `main` (or the current default branch), the site updates automatically.
 Tests run first, and nothing gets deployed if they fail.
@@ -50,7 +50,7 @@ Tests run first, and nothing gets deployed if they fail.
 Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After that:
 
 - The game asks everyone to log in. Friends use the **username** and password you give them; you use your email.
-- Your admin page is **https://willbykat3.github.io/minecraft/admin.html**. Only you can log in there, and it lets you
+- Your admin page is **https://willbykat3.github.io/CraftKat/admin.html**. Only you can log in there, and it lets you
   see every account, create new ones, rename them, change passwords and delete them. Nobody can sign up by themselves.
 - When a friend joins your world, your browser checks their login with Supabase, and the name everyone sees comes from
   their account.

@@ -5,7 +5,7 @@ can't store passwords safely. When you're done:
 
 - **The game asks everyone to log in.** Friends use the username and password you give them.
 - **Only you can create, edit and delete accounts**, on your private admin page:
-  `https://willbykat3.github.io/minecraft/admin.html`
+  `https://willbykat3.github.io/CraftKat/admin.html`
 - Nobody can sign themselves up, and your password is never stored in this repository.
 
 Until you finish these steps the live game shows "Almost ready" instead of the title screen.
@@ -64,7 +64,7 @@ Now accounts can only be created by your admin page.
 
 ## 6. Try it
 
-1. Open `https://willbykat3.github.io/minecraft/admin.html` and log in with your email and password.
+1. Open `https://willbykat3.github.io/CraftKat/admin.html` and log in with your email and password.
 2. Create an account for each friend (the **Generate** button makes an easy-to-type password),
    and send them their username and password.
 3. Open the game. Friends log in with their **username**, and you log in with your **email**.
