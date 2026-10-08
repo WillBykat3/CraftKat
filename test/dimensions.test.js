@@ -53,18 +53,19 @@ test('flint and steel lights an obsidian frame, and breaking the frame puts it o
   const [x, y, z] = [10, 200, 10];
   buildFrame(host, x, y, z);
   host.message('a', { t: 'pos', p: [x + 0.5, y, z + 2.5], r: [0, 0] });
-  // not a frame: lighting the air beside it does nothing
+  // not a frame: lighting the air beside it starts a fire
   host.message('a', { t: 'use', x: x + 3, y: y - 2, z: z + 2, item: ITEM.FLINT_AND_STEEL, face: [0, 1, 0] });
-  assert.equal(host.world.getBlock(x + 3, y - 1, z + 2), BLOCK.AIR);
+  assert.equal(host.world.getBlock(x + 3, y - 1, z + 2), BLOCK.FIRE);
   host.message('a', { t: 'use', x, y: y - 1, z, item: ITEM.FLINT_AND_STEEL, face: [0, 1, 0] });
   for (let i = 0; i <= 1; i++) for (let j = 0; j <= 2; j++) assert.equal(host.world.getBlock(x + i, y + j, z), BLOCK.NETHER_PORTAL, `${i},${j}`);
   assert.equal(host.portals.length, 1);
   assert.ok(p);
   host.message('a', { t: 'dig', x: x - 1, y: y + 1, z });
   for (let i = 0; i <= 1; i++) for (let j = 0; j <= 2; j++) assert.equal(host.world.getBlock(x + i, y + j, z), BLOCK.AIR);
-  // an open frame doesn't light
+  // an open frame doesn't make a portal (just a fire)
   host.message('a', { t: 'use', x, y: y - 1, z, item: ITEM.FLINT_AND_STEEL, face: [0, 1, 0] });
-  assert.equal(host.world.getBlock(x, y, z), BLOCK.AIR);
+  assert.equal(host.world.getBlock(x, y + 1, z), BLOCK.AIR);
+  assert.notEqual(BLOCKS[host.world.getBlock(x, y, z)].shape, 'portal');
 });
 
 test('standing in a portal takes you to the Nether and back to the same portal', () => {
@@ -375,8 +376,9 @@ test('water poured on lava turns it into obsidian', () => {
   host.message('a', { t: 'bucket', x: 10, y: 151, z: 10, fill: false });
   assert.equal(host.world.getBlock(10, 151, 10), BLOCK.OBSIDIAN);
   assert.deepEqual(last('a', 'set'), { t: 'set', x: 10, y: 151, z: 10, id: BLOCK.OBSIDIAN }, 'the pourer is told too');
-  // next to it
+  // next to it: the lava hardens a moment later
   host.message('a', { t: 'bucket', x: 12, y: 151, z: 10, fill: false });
+  for (let i = 0; i < 40; i++) host.tick(0.05);
   assert.equal(host.world.getBlock(11, 151, 10), BLOCK.OBSIDIAN);
   assert.equal(host.world.getBlock(12, 151, 10), BLOCK.WATER);
 });

@@ -4,7 +4,9 @@
 export const CHUNK = 16;    // chunk width/depth in blocks
 export const HEIGHT = 256;  // world height in blocks (generator 3 shows y as -64..191)
 export const SEA_LEVEL = 30; // sea level of generator versions 1-2; see World.seaLevel
-export const ITEM_BASE = 256; // ids below this are blocks, from here on items
+export const ITEM_BASE = 256; // ids below this are blocks, from here on items (up to 999)
+export const HIGH_BLOCKS = 1000; // later blocks: ids 1000 to MAX_BLOCK - 1 (chunks store 16-bit ids)
+export const MAX_BLOCK = 4096;
 
 export const BLOCK = {
   AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, COBBLE: 4, SAND: 5, GRAVEL: 6, LOG: 7, LEAVES: 8,
@@ -28,6 +30,8 @@ export const BLOCK = {
   NETHERRACK: 234, NETHER_QUARTZ_ORE: 235, SOUL_SAND: 236, GLOWSTONE: 237, NETHER_BRICKS: 238, NETHER_PORTAL: 239,
   MAGMA_BLOCK: 241, NETHER_GOLD_ORE: 242, BASALT: 243, END_STONE: 244, END_PORTAL_FRAME: 245, END_PORTAL: 247,
   DRAGON_EGG: 248, NETHER_BRICK_FENCE: 249, MOSSY_STONE_BRICKS: 250, CRACKED_STONE_BRICKS: 251,
+  // ids from 1000 on (see HIGH_BLOCKS)
+  WATER_FLOW: 1000, FALLING_WATER: 1008, LAVA_FLOW: 1010, FALLING_LAVA: 1018, FIRE: 1020,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -225,8 +229,16 @@ def(248, 'Dragon Egg', { tex: ['dragon_egg'], hardness: 3, transparent: true, sh
 def(249, 'Nether Brick Fence', { tex: ['nether_bricks'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'fence' });
 def(250, 'Mossy Stone Bricks', { tex: ['mossy_stone_bricks'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
 def(251, 'Cracked Stone Bricks', { tex: ['cracked_stone_bricks'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
+// Flowing water and lava: WATER_FLOW / LAVA_FLOW + level (1-7, further from the source = lower),
+// and FALLING_* for a column pouring down. Sources are the plain WATER and LAVA blocks.
+for (let level = 1; level <= 8; level++) {
+  const falling = level === 8;
+  def(1000 + level, 'Water', { tex: ['water'], render: 'water', liquid: 'water', tint: 'water', solid: false, transparent: true, lightFilter: 2, replaceable: true, hardness: Infinity, hidden: true, item: 0, level: falling ? 0 : level, falling });
+  def(1010 + level, 'Lava', { tex: ['lava'], render: 'water', liquid: 'lava', solid: false, transparent: true, emit: 15, replaceable: true, hardness: Infinity, hidden: true, item: 0, level: falling ? 0 : level, falling });
+}
+def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
-for (const b of B) {
+B.forEach((b) => {
   b.render ??= 'cube';
   b.solid ??= b.render === 'cube';
   if (b.shape) b.render = 'shape';
@@ -238,7 +250,7 @@ for (const b of B) {
     const [top, side = top, bottom = top, sideX = side] = b.tex;
     b.tex = [top, side, bottom, sideX];
   }
-}
+});
 export const BLOCKS = B;
 
 // Whether a block that needs support can stay on top of `below`.
@@ -290,7 +302,7 @@ export const ITEM = {
   BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
   ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
   GLOWSTONE_DUST: 335, QUARTZ: 336, BLAZE_ROD: 337, BLAZE_POWDER: 338, EYE_OF_ENDER: 339, NETHER_BRICK: 340,
-  GHAST_TEAR: 341, GOLD_NUGGET: 342,
+  GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -332,6 +344,7 @@ item(287, 'Raw Copper', { icon: 'raw_copper' });
 item(288, 'Copper Ingot', { icon: 'copper_ingot' });
 item(289, 'Bucket', { icon: 'bucket', stack: 16 });
 item(290, 'Water Bucket', { icon: 'water_bucket', stack: 1 });
+item(343, 'Lava Bucket', { icon: 'lava_bucket', stack: 1 });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -385,8 +398,18 @@ item(342, 'Gold Nugget', { icon: 'gold_nugget' });
 item(334, 'Flint and Steel', { icon: 'flint_and_steel', stack: 1, tool: { kind: 'lighter', tier: 0, speed: 1, damage: 1, durability: 64 } });
 export const ITEMS = I;
 
+// Fluids: 'water' or 'lava' (any level), else null; and how far the fluid has spread
+// (0 for sources and falling columns, 1-7 for flowing blocks).
+export function fluidOf(id) {
+  return B[id]?.liquid || null;
+}
+export function fluidLevel(id) {
+  return B[id]?.level ?? 0;
+}
+export const isSource = (id) => id === BLOCK.WATER || id === BLOCK.LAVA;
+
 export function isBlockId(id) {
-  return id > 0 && id < ITEM_BASE && !!BLOCKS[id];
+  return ((id > 0 && id < ITEM_BASE) || (id >= HIGH_BLOCKS && id < MAX_BLOCK)) && !!BLOCKS[id];
 }
 
 export function isValidId(id) {

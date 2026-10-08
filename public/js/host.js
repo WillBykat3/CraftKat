@@ -4,7 +4,7 @@
 
 import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
-  SMELTING, FUEL, SMELT_SECONDS,
+  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource,
 } from './blocks.js';
 import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
@@ -13,6 +13,7 @@ import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
 import { BIOME, FROZEN } from './biomes.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { RedstoneSim } from './redstone-sim.js';
+import { FluidSim, flowAt } from './fluids.js';
 import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 
@@ -55,6 +56,20 @@ const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
+// How readily a block catches fire and how fast it burns away ([catch, burn]), like Minecraft, or null.
+const FLAMMABLE_CACHE = new Map();
+function FLAMMABLE(id) {
+  if (FLAMMABLE_CACHE.has(id)) return FLAMMABLE_CACHE.get(id);
+  const n = BLOCKS[id]?.name || '';
+  let f = null;
+  if (id === BLOCK.TNT) f = [15, 100];
+  else if (/Leaves|Wool/.test(n)) f = [30, 60];
+  else if (/Planks|Oak Fence|Oak Slab|Oak Stairs/.test(n)) f = [5, 20];
+  else if (/Log/.test(n)) f = [5, 5];
+  else if (/Tall Grass|Fern|Dandelion|Poppy|Dead Bush|Cornflower|Tulip|Daisy|Allium|Orchid|Bluet/.test(n)) f = [60, 100];
+  FLAMMABLE_CACHE.set(id, f);
+  return f;
+}
 const STALE_AFTER_TRIP = new Set(['pos', 'set', 'dig', 'use', 'bucket', 'attack', 'interact', 'shoot', 'eye', 'sleep', 'pickup']);
 // 4 slots, each empty or one piece of armor of the right kind
 const validArmor = (a) => Array.isArray(a) && a.length === 4 && a.every((s, slot) => s === null || (validStack(s) && armorOf(s.id)?.slot === slot && s.count === 1));
@@ -163,6 +178,8 @@ export class GameHost {
         chests: new Map(Object.entries(data.chests || {})), chestViewers: new Map(),
       };
       this.dims[dim].redstone = new RedstoneSim(this, world);
+      this.dims[dim].fluids = new FluidSim(this, world, dim);
+      this.dims[dim].fires = new Set();
     }
     const end = saved.end || {};
     this.endState = { dragonKilled: !!end.dragonKilled, crystalsGone: Array.isArray(end.crystalsGone) ? end.crystalsGone.filter(isInt) : [] };
@@ -182,6 +199,8 @@ export class GameHost {
   get world() { return this.dims[this.ctx].world; }
   get crops() { return this.dims[this.ctx].crops; }
   get redstone() { return this.dims[this.ctx].redstone; }
+  get fluids() { return this.dims[this.ctx].fluids; }
+  get fires() { return this.dims[this.ctx].fires; }
   get furnaces() { return this.dims[this.ctx].furnaces; }
   get furnaceViewers() { return this.dims[this.ctx].furnaceViewers; }
   get chests() { return this.dims[this.ctx].chests; }
@@ -399,6 +418,8 @@ export class GameHost {
     const key = `${x},${y},${z}`;
     if (BLOCKS[id].crop) this.crops.add(key); else this.crops.delete(key);
     this.redstone?.changed(x, y, z, id);
+    this.fluids?.changed(x, y, z);
+    if (id === BLOCK.FIRE) this.fires.add(key); else this.fires?.delete(key);
     if (this.lightCache) {
       const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
       for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.lightCache.delete((cx + dx) + ',' + (cz + dz));
@@ -472,10 +493,8 @@ export class GameHost {
         if (BLOCKS[id].upper) dropFrom = other;
       }
     }
-    // breaking ice with something under it, or a block next to the sea, lets the water in
-    const flood = (id === BLOCK.ICE && tool !== null && this.world.getBlock(x, y - 1, z) !== BLOCK.AIR) ||
-      (y <= this.world.seaLevel && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
-        .some(([dx, dy, dz]) => this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER));
+    // ice broken with something under it melts into water (water next to a broken block flows in by itself)
+    const flood = id === BLOCK.ICE && tool !== null && this.world.getBlock(x, y - 1, z) !== BLOCK.AIR;
     this.setBlock(x, y, z, flood ? BLOCK.WATER : BLOCK.AIR, exceptPeer);
     if (flood && exceptPeer) this.send(exceptPeer, { t: 'set', x, y, z, id: BLOCK.WATER });
     if (tool !== null) {
@@ -815,7 +834,7 @@ export class GameHost {
     if (!this.world.hasSky) {
       // beds blow up in the Nether and the End
       this.setBlock(msg.x, msg.y, msg.z, BLOCK.AIR);
-      this.explode(msg.x + 0.5, msg.y + 0.5, msg.z + 0.5, 5, 'was killed by [Intentional Game Design]');
+      this.explode(msg.x + 0.5, msg.y + 0.5, msg.z + 0.5, 5, 'was killed by [Intentional Game Design]', true);
       return;
     }
     p.bed = [msg.x, msg.y, msg.z];
@@ -856,17 +875,16 @@ export class GameHost {
     const { x, y, z } = msg;
     const current = this.world.getBlock(x, y, z);
     if (msg.fill) {
-      if (current !== BLOCK.WATER) return this.correct(peerId, x, y, z);
+      // only a source block fills a bucket (with water or lava)
+      if (!isSource(current)) return this.correct(peerId, x, y, z);
       this.setBlock(x, y, z, BLOCK.AIR, peerId);
     } else {
-      if (!BLOCKS[current].replaceable || current === BLOCK.WATER || y < 1) return this.correct(peerId, x, y, z);
-      if (this.ctx === 'nether') return this.correct(peerId, x, y, z); // water boils away in the Nether
-      // like Minecraft, water on lava turns the lava into obsidian (the only way to get it in survival)
-      if (current === BLOCK.LAVA) return this.setBlock(x, y, z, BLOCK.OBSIDIAN);
-      this.setBlock(x, y, z, BLOCK.WATER, peerId);
-      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) {
-        if (this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.LAVA) this.setBlock(x + dx, y + dy, z + dz, BLOCK.OBSIDIAN);
-      }
+      const kind = msg.lava ? 'lava' : 'water';
+      if (!BLOCKS[current].replaceable || current === (msg.lava ? BLOCK.LAVA : BLOCK.WATER) || y < 1) return this.correct(peerId, x, y, z);
+      if (kind === 'water' && this.ctx === 'nether') return this.correct(peerId, x, y, z); // water boils away in the Nether
+      // water poured on lava hardens it (the fluid simulation does the same for water next to lava)
+      if (kind === 'water' && fluidOf(current) === 'lava') return this.setBlock(x, y, z, isSource(current) ? BLOCK.OBSIDIAN : BLOCK.COBBLE);
+      this.setBlock(x, y, z, msg.lava ? BLOCK.LAVA : BLOCK.WATER, peerId);
     }
   }
 
@@ -889,7 +907,8 @@ export class GameHost {
       const f = msg.face;
       if (Array.isArray(f) && f.length === 3 && f.every((v) => v === 0 || v === 1 || v === -1) && Math.abs(f[0]) + Math.abs(f[1]) + Math.abs(f[2]) === 1) {
         const ax = x + f[0], ay = y + f[1], az = z + f[2];
-        if (this.world.getBlock(ax, ay, az) === BLOCK.AIR && this.lightPortal(ax, ay, az)) return;
+        if (this.world.getBlock(ax, ay, az) !== BLOCK.AIR || this.lightPortal(ax, ay, az)) return;
+        this.setBlock(ax, ay, az, BLOCK.FIRE); // otherwise it starts a fire
       }
       return;
     }
@@ -933,7 +952,7 @@ export class GameHost {
 
   hydrated(x, y, z) {
     for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
-      for (let dy = 0; dy <= 1; dy++) if (this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER) return true;
+      for (let dy = 0; dy <= 1; dy++) if (fluidOf(this.world.getBlock(x + dx, y + dy, z + dz)) === 'water') return true;
     }
     return false;
   }
@@ -950,7 +969,8 @@ export class GameHost {
   }
 
   // ---------- explosions & arrows ----------
-  explode(x, y, z, power, cause = 'was blown up by a Creeper') {
+  // fire: ghast fireballs and beds leave fires behind
+  explode(x, y, z, power, cause = 'was blown up by a Creeper', fire = false) {
     this.broadcastHere({ t: 'boom', x, y, z });
     const r = Math.ceil(power);
     for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
@@ -963,6 +983,12 @@ export class GameHost {
       if (id === BLOCK.TNT) { this.setBlock(bx, by, bz, BLOCK.AIR); this.primeTnt(bx, by, bz, 0.5 + this.random()); continue; } // chain reaction
       // like Minecraft, only some of the blown-up blocks drop (chests and furnaces always spill their contents)
       this.breakBlock(bx, by, bz, this.random() < 1 / power ? ITEM.DIAMOND_PICKAXE : null);
+    }
+    if (fire) {
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+        const bx = Math.floor(x) + dx, by = Math.floor(y) + dy, bz = Math.floor(z) + dz;
+        if (this.random() < 1 / 3 && this.world.getBlock(bx, by, bz) === BLOCK.AIR && BLOCKS[this.world.getBlock(bx, by - 1, bz)].solid) this.setBlock(bx, by, bz, BLOCK.FIRE);
+      }
     }
     for (const p of this.here()) {
       const d = Math.hypot(p.x - x, p.y + 0.9 - y, p.z - z);
@@ -1237,6 +1263,8 @@ export class GameHost {
       this.ctx = dim;
       this.tickFurnaces(dt);
       this.redstone.update(dt);
+      this.fluids.update(dt);
+      this.tickFires(dt);
       if (crops) this.tickCrops(this.acc.spawn + dt);
     }
     this.tickEntities(dt);
@@ -1341,8 +1369,12 @@ export class GameHost {
         if (e.age > ITEM_LIFETIME) { this.entities.delete(e.id); continue; }
         e.vy -= 20 * dt;
         const inside = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.1), Math.floor(e.z));
-        if (inside === BLOCK.LAVA) { this.entities.delete(e.id); continue; } // items burn up
-        if (inside === BLOCK.WATER) e.vy = Math.max(e.vy, 1);
+        if (fluidOf(inside) === 'lava' || inside === BLOCK.FIRE) { this.entities.delete(e.id); continue; } // items burn up
+        if (fluidOf(inside) === 'water') {
+          e.vy = Math.max(e.vy, 1);
+          const [fx, fz] = flowAt(this.world, Math.floor(e.x), Math.floor(e.y + 0.1), Math.floor(e.z));
+          e.vx += fx * 12 * dt; e.vz += fz * 12 * dt; // carried along by the current
+        }
         const res = moveBody(this.world, e, dt);
         if (res.onGround) { e.vx *= 0.5; e.vz *= 0.5; } else { e.vx *= 0.98; e.vz *= 0.98; }
         if (e.y < -20) this.entities.delete(e.id);
@@ -1360,10 +1392,20 @@ export class GameHost {
         if (e.regrow <= 0) e.sheared = false;
       }
 
-      // lava burns every mob that isn't from the Nether
-      if (!t.fireproof && this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z)) === BLOCK.LAVA) {
-        e.lava = (e.lava || 0) + dt;
-        if (e.lava > 0.5) { e.lava = 0; e.hp -= 4; this.broadcast({ t: 'mobhurt', e: e.id }); }
+      // lava and fire burn every mob that isn't from the Nether, and set it alight for a while
+      if (!t.fireproof) {
+        const inside = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z));
+        if (fluidOf(inside) === 'lava') {
+          e.fireTime = 15;
+          e.lava = (e.lava || 0) + dt;
+          if (e.lava > 0.5) { e.lava = 0; e.hp -= 4; this.broadcastHere({ t: 'mobhurt', e: e.id }); }
+        } else if (inside === BLOCK.FIRE) e.fireTime = Math.max(e.fireTime || 0, 8);
+        else if (fluidOf(inside) === 'water') e.fireTime = 0;
+        if (e.fireTime > 0) {
+          e.fireTime -= dt;
+          e.burnTick = (e.burnTick || 0) + dt;
+          if (e.burnTick >= 1) { e.burnTick = 0; e.hp -= 1; this.broadcastHere({ t: 'mobhurt', e: e.id }); }
+        }
         if (e.hp <= 0) { this.killMob(e); continue; }
       }
 
@@ -1376,10 +1418,9 @@ export class GameHost {
 
       if (t.hostile) {
         // zombies and skeletons burn in sunlight when nothing is above them
-        if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y) {
-          e.burn = (e.burn || 0) + dt;
-          if (e.burn > 1) { e.burn = 0; e.hp -= 2; this.broadcast({ t: 'mobhurt', e: e.id }); }
-          if (e.hp <= 0) { this.killMob(e); continue; }
+        if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y &&
+          fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z))) !== 'water') {
+          e.fireTime = Math.max(e.fireTime || 0, 2); // catches fire (see above)
         }
         if (e.type === 'enderman') this.endermanMind(e, dt);
         const target = t.neutral && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : t.neutral ? 40 : 24, true);
@@ -1694,7 +1735,12 @@ export class GameHost {
         let y = Math.floor(f.y);
         while (y > 1 && !BLOCKS[this.world.getBlock(Math.floor(f.x), y - 1, Math.floor(f.z))].solid && y > f.y - 8) y--;
         this.addEntity({ id: this.nextEntityId++, type: 'breath', x: f.x, y, z: f.z, halfW: 3, height: 1, vx: 0, vy: 0, vz: 0, yaw: 0, age: 0 });
-      } else if (big) this.explode(f.x, f.y + 0.5, f.z, 1, f.cause);
+      } else if (big) this.explode(f.x, f.y + 0.5, f.z, 1, f.cause, true);
+      else {
+        // a blaze's fireball lights the block it hits
+        const px = Math.floor(f.x - f.vx * 0.02), py = Math.floor(f.y - f.vy * 0.02), pz = Math.floor(f.z - f.vz * 0.02);
+        if (this.world.getBlock(px, py, pz) === BLOCK.AIR) this.setBlock(px, py, pz, BLOCK.FIRE);
+      }
       return by;
     };
     for (let i = 0; i < steps; i++) {
@@ -1713,7 +1759,7 @@ export class GameHost {
         for (const p of this.here()) {
           if (p.mode !== 'survival' || p.dead) continue;
           if (Math.abs(f.x - p.x) < 0.3 + r && Math.abs(f.z - p.z) < 0.3 + r && f.y + r > p.y && f.y - r < p.y + 1.8) {
-            this.send(p.peerId, { t: 'hurt', amount: big ? 6 : 5, from: [f.x - f.vx, f.z - f.vz], cause: f.cause });
+            this.send(p.peerId, { t: 'hurt', amount: big ? 6 : 5, from: [f.x - f.vx, f.z - f.vz], cause: f.cause, fire: big ? 0 : 5 });
             return hit();
           }
         }
@@ -1722,6 +1768,61 @@ export class GameHost {
     }
   }
 
+
+  // ---------- fire ----------
+  // Every second or two each fire may burn up a neighbouring block (TNT goes off), spread
+  // to nearby air next to something flammable, or go out. It burns forever on netherrack.
+  tickFires(dt) {
+    const fires = this.fires;
+    if (!fires.size) return;
+    const d = this.dims[this.ctx];
+    d.fireAcc = (d.fireAcc || 0) + dt;
+    if (d.fireAcc < 0.5) return;
+    d.fireAcc = 0;
+    d.fireAge ??= new Map();
+    const players = this.here();
+    for (const k of [...fires]) {
+      if (this.random() > 1 / 3) continue;
+      const [x, y, z] = k.split(',').map(Number);
+      if (this.world.getBlock(x, y, z) !== BLOCK.FIRE) { fires.delete(k); d.fireAge.delete(k); continue; }
+      if (!players.some((p) => Math.abs(p.x - x) < 128 && Math.abs(p.z - z) < 128)) continue;
+      const below = this.world.getBlock(x, y - 1, z);
+      const eternal = below === BLOCK.NETHERRACK || below === BLOCK.MAGMA_BLOCK || (this.ctx === 'end' && below === BLOCK.BEDROCK);
+      const age = Math.min(15, (d.fireAge.get(k) || 0) + Math.floor(this.random() * 3));
+      d.fireAge.set(k, age);
+      const near = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+      const fuel = near.some(([dx, dy, dz]) => FLAMMABLE(this.world.getBlock(x + dx, y + dy, z + dz)));
+      if (!eternal) {
+        if (!fuel && (!BLOCKS[below].solid || age > 3)) { this.setBlock(x, y, z, BLOCK.AIR); continue; }
+        if (!FLAMMABLE(below) && age === 15 && this.random() < 0.25) { this.setBlock(x, y, z, BLOCK.AIR); continue; }
+      }
+      // burn up neighbours
+      for (const [dx, dy, dz] of near) {
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        const id = this.world.getBlock(nx, ny, nz);
+        const f = FLAMMABLE(id);
+        if (!f || this.random() * (dy ? 250 : 300) >= f[1]) continue;
+        if (id === BLOCK.TNT) { this.setBlock(nx, ny, nz, BLOCK.AIR); this.primeTnt(nx, ny, nz, 4); continue; }
+        this.setBlock(nx, ny, nz, this.random() * (age + 10) < 5 ? BLOCK.FIRE : BLOCK.AIR);
+        this.popAttached(nx, ny, nz, false);
+      }
+      // spread
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 4; dy++) {
+        if (!dx && !dy && !dz) continue;
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        if (this.world.getBlock(nx, ny, nz) !== BLOCK.AIR) continue;
+        let catchy = 0;
+        for (const [ex, ey, ez] of near) catchy = Math.max(catchy, FLAMMABLE(this.world.getBlock(nx + ex, ny + ey, nz + ez))?.[0] || 0);
+        if (!catchy) continue;
+        const chance = (catchy + 40) / (age + 30);
+        if (this.random() * (100 + (dy > 1 ? (dy - 1) * 100 : 0)) <= chance) this.setBlock(nx, ny, nz, BLOCK.FIRE);
+      }
+    }
+  }
+
+  fizz(x, y, z) {
+    this.broadcastHere({ t: 'sfx', s: 'fizz', x, y, z });
+  }
 
   // ---------- portals & dimensions ----------
   // Fills an obsidian frame around the empty block (x, y, z) with portal, like fire does in Minecraft.
@@ -2240,7 +2341,7 @@ export class GameHost {
         // flags: 1 = sheared sheep, 2 = creeper about to explode
         // (and for ghasts and blazes, 2 = about to shoot)
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
-          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 ? 2 : 0);
+          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 ? 2 : 0) | (e.fireTime > 0 ? 4 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing

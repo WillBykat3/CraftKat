@@ -43,7 +43,13 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
-- **Obsidian**: pour water on lava (it needs a diamond pickaxe to mine)
+- **Flowing water and lava**: they spread and pour down like Minecraft's (water 7 blocks, lava 3, or 7 in the
+  Nether), find the shortest way down, and two water sources make a third. Water and lava make obsidian,
+  cobblestone or stone. Buckets carry both; flowing water carries you and items along
+- **Fire**: flint and steel starts fires; fire spreads to wood, leaves, wool and grass and burns them away, sets off
+  TNT, and burns forever on netherrack. Lava and fire set you on fire (water puts it out); blaze and ghast fireballs
+  start fires
+- **Obsidian**: water meeting a lava source (it needs a diamond pickaxe to mine)
 - **Chests** for storage, **beds** to sleep through the night and set your respawn point, **buckets** for water, **shears** for wool
 - **Day and night**: a 20-minute day with sunrise, sunset, stars and drifting 3D clouds
 - **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
@@ -56,11 +62,9 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** villages, enchanting, potions, brewing, flowing water/lava, fire, and many of Minecraft's
-mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** villages, enchanting, potions, brewing, and many of Minecraft's mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
-**Nether and End differences from Minecraft:** there's no fire, so flint and steel only lights portals and TNT, and
-ghast and blaze fireballs don't set things alight; no piglins, hoglins, magma cubes or striders, crimson and warped
+**Nether and End differences from Minecraft:** no piglins, hoglins, magma cubes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
 libraries, silverfish or loot); the dragon can't be summoned again, and there are no credits. Strongholds only exist
 in worlds created with this terrain version or later (older worlds can still visit the Nether).
@@ -211,6 +215,7 @@ public/
   js/shapes.js            shapes of slabs, stairs, doors, ladders, fences, levers, pistons... (drawing, collisions, aiming)
   js/redstone.js          how redstone dust connects and looks
   js/redstone-sim.js      the redstone simulation (run by the host)
+  js/fluids.js            flowing water and lava (run by the host)
   js/xp.js                experience levels and rewards
   js/sound.js, js/music.js  synthesized sound effects and generated music
   js/auth.js, js/config.js  logins (Supabase)

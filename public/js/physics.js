@@ -108,7 +108,7 @@ export function unstick(world, body, maxY = 200) {
 }
 
 export function isWater(world, x, y, z) {
-  return world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z)) === BLOCK.WATER;
+  return BLOCKS[world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z))]?.liquid === 'water';
 }
 
 export function boxOverlapsBlock(body, bx, by, bz) {

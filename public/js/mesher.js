@@ -1,7 +1,7 @@
 // Turns a chunk of block ids into triangle data with smooth lighting and
 // ambient occlusion. Produces two meshes: opaque/cut-out blocks, and water.
 
-import { CHUNK, HEIGHT, BLOCK, BLOCKS, FACING } from './blocks.js';
+import { CHUNK, HEIGHT, BLOCK, BLOCKS, FACING, MAX_BLOCK } from './blocks.js';
 import { gatherRegion, computeLight, regionIndex, topY, SIZE } from './lighting.js';
 import { BIOMES } from './biomes.js';
 import { shapeBoxes } from './shapes.js';
@@ -21,8 +21,8 @@ export const FACES = [
 const AO_LEVELS = [0.45, 0.65, 0.82, 1.0];
 const WATER_TOP = 0.875;
 
-const OPAQUE = new Uint8Array(256);
-for (let id = 0; id < 256; id++) OPAQUE[id] = BLOCKS[id] ? (BLOCKS[id].transparent ? 0 : 1) : 1;
+const OPAQUE = new Uint8Array(MAX_BLOCK);
+for (let id = 0; id < MAX_BLOCK; id++) OPAQUE[id] = BLOCKS[id] ? (BLOCKS[id].transparent ? 0 : 1) : 1;
 const WHITE = [255, 255, 255];
 const LAYER = SIZE * SIZE;
 const BLEND = 2; // biome colours are averaged over (2 * BLEND + 1)^2 columns, like Minecraft's default
@@ -159,17 +159,36 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
 
         if (def.render === 'water') {
           // liquids: water is see-through, lava is drawn with the solid blocks
+          // the surface slopes down as the fluid spreads: each top corner is the average height
+          // of the fluid blocks around it (shared with the neighbours, so there are no gaps)
           const out = def.liquid === 'lava' ? solid : water;
-          const topLowered = get(x, y + 1, z) !== id;
+          const kind = def.liquid;
+          const same = (n) => BLOCKS[n]?.liquid === kind;
+          const heightOf = (bx, bz) => {
+            const n = get(bx, y, bz);
+            if (!same(n)) return -1;
+            if (same(get(bx, y + 1, bz))) return 1;
+            return BLOCKS[n].level ? (8 - BLOCKS[n].level) / 9 : WATER_TOP;
+          };
+          const corner = (cx, cz) => {
+            let sum = 0, n = 0;
+            for (const [ox, oz] of [[cx - 1, cz - 1], [cx, cz - 1], [cx - 1, cz], [cx, cz]]) {
+              const h = heightOf(x + ox, z + oz);
+              if (h === 1) return 1;
+              if (h >= 0) { sum += h; n++; }
+            }
+            return sum / n;
+          };
+          const tops = [[corner(0, 0), corner(0, 1)], [corner(1, 0), corner(1, 1)]];
           for (const face of FACES) {
             const [dx, dy, dz] = face.dir;
             const nid = get(x + dx, y + dy, z + dz);
-            if (nid === id || OPAQUE[nid] || (id === BLOCK.WATER && nid === BLOCK.ICE)) continue;
+            if (same(nid) || OPAQUE[nid] || (kind === 'water' && nid === BLOCK.ICE)) continue;
             const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
             const ls = skyAt(x + dx, y + dy, z + dz);
             const lb = blockAt(x + dx, y + dy, z + dz);
             for (const c of face.corners) {
-              const cy = c[1] === 1 && topLowered ? WATER_TOP : c[1];
+              const cy = c[1] === 1 ? tops[c[0]][c[2]] : 0;
               out.vertex(x + c[0], y + cy, z + c[2], c[3] ? u1 : u0, c[4] ? v1 : v0, face.shade, ls, lb, tint);
             }
             out.quad(0, 1, 2, 2, 1, 3);

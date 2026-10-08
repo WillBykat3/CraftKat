@@ -37,7 +37,7 @@ export class World {
     this.seed = seed | 0;
     this.gen = gen;
     this.dim = dim;
-    this.chunks = new Map(); // chunkKey -> Uint8Array
+    this.chunks = new Map(); // chunkKey -> Uint16Array of block ids
     this.edits = new Map();  // chunkKey -> Map(blockIndex -> block id)
     this.noiseA = makeNoise2D(this.seed);
     this.noiseB = makeNoise2D(this.seed + 1);
@@ -223,7 +223,7 @@ export class World {
 
   // Generator versions 1 and 2. Never change what this produces.
   generateLegacy(cx, cz) {
-    const data = new Uint8Array(CHUNK * CHUNK * HEIGHT);
+    const data = new Uint16Array(CHUNK * CHUNK * HEIGHT);
     const x0 = cx * CHUNK;
     const z0 = cz * CHUNK;
     const s = this.seed;

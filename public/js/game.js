@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import {
   BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  fluidOf, isSource,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -20,6 +21,7 @@ import { Particles } from './particles.js';
 import { levelInfo } from './xp.js';
 import { lightCurve, toLinear } from './renderer.js';
 import { NETHER_FOG } from './terrain-nether.js';
+import { flowAt } from './fluids.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -141,7 +143,9 @@ export class Game {
         if (this.screen.isOpen) this.screen.render();
         return;
       }
-      case 'hurt': return this.damage(msg.amount, msg.cause, msg.from, true);
+      case 'hurt':
+        if (msg.fire && this.mode === 'survival') this.onFire = Math.max(this.onFire || 0, msg.fire);
+        return this.damage(msg.amount, msg.cause, msg.from, true);
       case 'equip': return this.entities.setArmor(msg.id, msg.armor);
       case 'xp': return this.addXP(msg.amount);
       case 'hiss': if (Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 32) sound.hiss(); return;
@@ -642,7 +646,7 @@ export class Game {
     if (hit && held && ITEMS[held.id]?.plants && (hit.id === BLOCK.FARMLAND || !ITEMS[held.id].food)) { this.placeBlock(hit, held, ITEMS[held.id].plants); return; }
     if (hit && held && this.useOnBlock(hit, held)) return;
     if (held && armorOf(held.id)) { this.equipHeld(held); return; }
-    if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET)) {
+    if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET || held.id === ITEM.LAVA_BUCKET)) {
       this.useBucket(held);
       return;
     }
@@ -807,25 +811,28 @@ export class Game {
   useBucket(held) {
     const survival = this.mode === 'survival';
     if (held.id === ITEM.BUCKET) {
+      // only a source block (water or lava) can be scooped up
       const hit = this.raycast(REACH, true);
-      if (!hit || hit.id !== BLOCK.WATER) return;
+      if (!hit || !isSource(hit.id)) return;
+      const full = hit.id === BLOCK.LAVA ? ITEM.LAVA_BUCKET : ITEM.WATER_BUCKET;
       this.send({ t: 'bucket', x: hit.x, y: hit.y, z: hit.z, fill: true });
       this.applyBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
       if (survival) {
-        if (held.count > 1) { held.count--; const left = addItem(this.inv, ITEM.WATER_BUCKET, 1); if (left) this.dropStack({ id: ITEM.WATER_BUCKET, count: 1 }); }
-        else this.inv[this.selected] = { id: ITEM.WATER_BUCKET, count: 1 };
+        if (held.count > 1) { held.count--; const left = addItem(this.inv, full, 1); if (left) this.dropStack({ id: full, count: 1 }); }
+        else this.inv[this.selected] = { id: full, count: 1 };
       }
     } else {
+      const lava = held.id === ITEM.LAVA_BUCKET;
       const hit = this.raycast();
       if (!hit) return;
-      const replace = BLOCKS[hit.id].replaceable && hit.id !== BLOCK.WATER;
+      const replace = BLOCKS[hit.id].replaceable && !isSource(hit.id);
       const x = replace ? hit.x : hit.x + hit.normal[0];
       const y = replace ? hit.y : hit.y + hit.normal[1];
       const z = replace ? hit.z : hit.z + hit.normal[2];
       const current = this.world.getBlock(x, y, z);
-      if (!BLOCKS[current].replaceable || current === BLOCK.WATER || y < 1) return;
+      if (!BLOCKS[current].replaceable || isSource(current) || y < 1) return;
       if (survival) this.inv[this.selected] = { id: ITEM.BUCKET, count: 1 };
-      if (this.dim === 'nether') {
+      if (this.dim === 'nether' && !lava) {
         // water boils away in the Nether, like Minecraft
         sound.hiss();
         this.particles.breakBlock(x, y, z, BLOCK.SNOW, 1); // a puff of steam
@@ -834,8 +841,8 @@ export class Game {
         this.invDirty = true;
         return;
       }
-      this.send({ t: 'bucket', x, y, z, fill: false });
-      this.applyBlock(x, y, z, BLOCK.WATER);
+      this.send({ t: 'bucket', x, y, z, fill: false, lava });
+      if (!(fluidOf(current) && fluidOf(current) !== (lava ? 'lava' : 'water'))) this.applyBlock(x, y, z, lava ? BLOCK.LAVA : BLOCK.WATER);
     }
     sound.splash();
     this.swing = 1;
@@ -1005,6 +1012,11 @@ export class Game {
     this.lock();
   }
 
+  // Flames at the bottom of the screen while you're on fire, like Minecraft.
+  updateFireOverlay() {
+    $('fire-overlay').classList.toggle('hidden', !(this.onFire > 0) || this.mode !== 'survival' || this.dead);
+  }
+
   // Purple swirl while standing in a Nether portal, like Minecraft's nausea-free portal overlay.
   updatePortalOverlay(dt) {
     const p = this.player;
@@ -1036,7 +1048,8 @@ export class Game {
   survivalTick(dt) {
     const s = this.stats;
     s.invuln = Math.max(0, s.invuln - dt);
-    if (this.mode !== 'survival' || this.dead) { s.air = MAX_AIR; return; }
+    if (this.mode !== 'survival' || this.dead) { s.air = MAX_AIR; this.onFire = 0; this.updateFireOverlay(); return; }
+    this.updateFireOverlay();
     if (this.player.onHot && !this.player.sneaking) {
       this.hotTimer = (this.hotTimer || 0) + dt;
       if (this.hotTimer >= 0.5) { this.hotTimer = 0; this.damage(1, 'discovered the floor was lava'); }
@@ -1053,11 +1066,24 @@ export class Game {
       if (s.starve >= 4) { s.starve = 0; if (s.health > 1) this.damage(1, 'starved to death'); }
     }
 
-    // lava burns
-    if (this.player.inLava) {
+    // lava burns, and sets you on fire for 15 seconds; fire for 8; water puts it out
+    const pl = this.player;
+    if (pl.inLava) {
       s.lavaTimer = (s.lavaTimer || 0) + dt;
       if (s.lavaTimer >= 0.5) { s.lavaTimer = 0; this.damage(4, 'tried to swim in lava', null, true); }
+      this.onFire = 15;
     } else s.lavaTimer = 0.5; // the first touch hurts straight away
+    if (pl.inFire) {
+      s.fireTimer = (s.fireTimer || 0) + dt;
+      if (s.fireTimer >= 0.5) { s.fireTimer = 0; this.damage(1, 'went up in flames', null, true); }
+      this.onFire = Math.max(this.onFire || 0, 8);
+    } else s.fireTimer = 0.5;
+    if (pl.inWater && !pl.inLava) this.onFire = 0;
+    if (this.onFire > 0) {
+      this.onFire -= dt;
+      s.burnTimer = (s.burnTimer || 0) + dt;
+      if (s.burnTimer >= 1) { s.burnTimer = 0; if (!pl.inLava && !pl.inFire) this.damage(1, 'burned to death', null, true); }
+    }
 
     // drowning
     if (this.player.headInWater) {
@@ -1181,11 +1207,17 @@ export class Game {
     const feet = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z));
     const wasInWater = p.inWater;
     p.inWater = !!BLOCKS[feet].liquid; // swimming works in water and lava
-    p.inLava = [0.1, 1.0].some((dy) => this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z)) === BLOCK.LAVA);
-    if (p.inWater && !wasInWater && p.vy < -6 && feet === BLOCK.WATER) sound.splash();
+    p.inLava = [0.1, 1.0].some((dy) => fluidOf(this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z))) === 'lava');
+    p.inFire = this.touching((id) => id === BLOCK.FIRE);
+    if (p.inWater && !wasInWater && p.vy < -6 && fluidOf(feet) === 'water') sound.splash();
     const head = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + this.eyeHeight()), Math.floor(p.z));
-    p.headInWater = head === BLOCK.WATER;
-    p.headInLava = head === BLOCK.LAVA;
+    p.headInWater = fluidOf(head) === 'water';
+    p.headInLava = fluidOf(head) === 'lava';
+    // flowing water carries you along
+    if (fluidOf(feet) === 'water' && !p.flying) {
+      const [fx, fz] = flowAt(this.world, Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z));
+      p.vx += fx * 14 * dt; p.vz += fz * 14 * dt;
+    }
 
     // footsteps and sprint exhaustion
     const moved = Math.hypot(p.x - before.x, p.z - before.z);

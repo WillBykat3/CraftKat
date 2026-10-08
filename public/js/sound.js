@@ -130,6 +130,8 @@ export const sound = {
     tone({ freq: 240, endFreq: 70, duration: 4, gain: 0.2, type: 'square' });
     burst({ freq: 200, q: 0.4, duration: 4, gain: 0.5, type: 'lowpass' });
   },
+  // water meeting lava
+  fizz() { burst({ freq: 3500, q: 0.6, duration: 0.6, gain: 0.25, type: 'highpass' }); },
   // flint and steel: a scratchy strike
   ignite() { burst({ freq: 3200, q: 1.2, duration: 0.12, gain: 0.3 }); burst({ freq: 6000, q: 0.8, duration: 0.08, gain: 0.15, type: 'highpass' }); },
   // a portal: a wobbling hum when you step in (trip = false), a whoosh when you arrive (trip = true)

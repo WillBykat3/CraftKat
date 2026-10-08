@@ -326,6 +326,16 @@ function drawBlockTile(p, name) {
       for (let x = 3; x < 13; x++) { px(x, 7, [70, 70, 70]); px(x, 13, [70, 70, 70]); }
       for (let x = 4; x < 12; x++) px(x, 4, [60, 60, 60]);
       break;
+    case 'fire':
+      // flickering tongues of flame, transparent between them
+      for (let x = 0; x < S; x++) {
+        const h = 6 + Math.floor((Math.sin(x * 1.7) + Math.sin(x * 0.6 + 1) + 2) * 2.4 + rand() * 2);
+        for (let y = S - h; y < S; y++) {
+          const t = (y - (S - h)) / h;
+          px(x, y, t < 0.25 ? [255, 230, 120] : t < 0.6 ? [255, 160, 30] : [220, 80, 10]);
+        }
+      }
+      break;
     case 'torch':
       for (let y = 6; y < 16; y++) { px(7, y, [110, 80, 45]); px(8, y, [90, 65, 35]); }
       px(7, 5, [255, 230, 120]); px(8, 5, [255, 200, 60]); px(7, 4, [255, 250, 200]); px(8, 4, [255, 220, 90]);
@@ -965,11 +975,13 @@ function drawItem(p, icon) {
       for (let y = 6; y < 11; y++) for (let x = 3 + (10 - y) / 2; x < 13 - (10 - y) / 2; x++) px(Math.floor(x), y, shade([225, 125, 85], y === 6 ? 1.1 : 0.9 + rand() * 0.1));
       break;
     case 'bucket':
+    case 'lava_bucket':
     case 'water_bucket':
       for (let y = 4; y < 14; y++) for (let x = 4 + (y - 4) / 5; x < 12 - (y - 4) / 5; x++) px(Math.floor(x), y, shade([200, 200, 205], y === 4 ? 1.15 : 0.85 + rand() * 0.15));
       for (let x = 5; x < 11; x++) px(x, 2, [150, 150, 155]);
       px(4, 3, [150, 150, 155]); px(11, 3, [150, 150, 155]);
       if (icon === 'water_bucket') for (let x = 5; x < 11; x++) { px(x, 4, [60, 100, 230]); px(x, 5, [50, 85, 210]); }
+      else if (icon === 'lava_bucket') for (let x = 5; x < 11; x++) { px(x, 4, [255, 150, 30]); px(x, 5, [220, 90, 10]); }
       else for (let x = 5; x < 11; x++) px(x, 5, [70, 70, 75]);
       break;
     case 'shears':

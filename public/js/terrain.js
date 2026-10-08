@@ -5,7 +5,7 @@
 // Everything is a pure function of the seed and the block position, so any
 // chunk can be generated on its own and always comes out the same.
 
-import { CHUNK, HEIGHT, BLOCK } from './blocks.js';
+import { CHUNK, HEIGHT, BLOCK, MAX_BLOCK } from './blocks.js';
 import { makeNoise2D, makeNoise3D, hash2, mulberry32 } from './noise.js';
 import { BIOME, FROZEN } from './biomes.js';
 
@@ -179,7 +179,7 @@ export class Terrain3 {
 
   // ---------- chunks ----------
   generate(cx, cz) {
-    const data = new Uint8Array(CHUNK * CHUNK * HEIGHT);
+    const data = new Uint16Array(CHUNK * CHUNK * HEIGHT);
     const biomes = new Uint8Array(CHUNK * CHUNK);
     const heights = new Int16Array(CHUNK * CHUNK);
     const x0 = cx * CHUNK, z0 = cz * CHUNK;
@@ -325,7 +325,7 @@ export class Terrain3 {
       [BLOCK.COPPER_ORE]: BLOCK.DEEPSLATE_COPPER_ORE, [BLOCK.REDSTONE_ORE]: BLOCK.DEEPSLATE_REDSTONE_ORE,
       [BLOCK.LAPIS_ORE]: BLOCK.DEEPSLATE_LAPIS_ORE,
     };
-    const ORE_HOST = new Uint8Array(256);
+    const ORE_HOST = new Uint8Array(MAX_BLOCK);
     for (const b of [BLOCK.STONE, BLOCK.GRANITE, BLOCK.DIORITE, BLOCK.ANDESITE]) ORE_HOST[b] = 1;
     for (const [id, veins, minS, maxS, size, tri] of kinds) {
       const isOre = id !== BLOCK.GRANITE && id !== BLOCK.DIORITE && id !== BLOCK.ANDESITE && id !== BLOCK.DIRT && id !== BLOCK.GRAVEL;

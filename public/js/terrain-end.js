@@ -54,7 +54,7 @@ export class EndTerrain {
   }
 
   generate(cx, cz) {
-    const data = new Uint8Array(CHUNK * CHUNK * HEIGHT);
+    const data = new Uint16Array(CHUNK * CHUNK * HEIGHT);
     const biomes = new Uint8Array(CHUNK * CHUNK);
     const x0 = cx * CHUNK, z0 = cz * CHUNK;
     for (let lz = 0; lz < CHUNK; lz++) {

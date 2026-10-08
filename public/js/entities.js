@@ -784,6 +784,7 @@ export class EntityViews {
       const lm = this.lightAt(g.position.x, g.position.y + 1, g.position.z);
       if (v.hurt > 0) this.setMaterialTint(g, Math.max(lm, 0.3), lm * 0.2, lm * 0.2);
       else if (v.flags & 2 && Math.sin(performance.now() / 60) > 0) this.setMaterialTint(g, 2, 2, 2); // creeper about to blow
+      else if (v.flags & 4) { const f = 1.4 + Math.sin(performance.now() / 50) * 0.4; this.setMaterialTint(g, f, f * 0.55, f * 0.15); } // on fire
       else this.setMaterialTint(g, lm, lm, lm);
     }
   }

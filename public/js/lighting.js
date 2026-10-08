@@ -4,7 +4,7 @@
 // compute light over the chunk plus its 8 neighbours (16 blocks of padding),
 // which gives exact values for the chunk and the ring of cells around it.
 
-import { CHUNK, HEIGHT, BLOCKS } from './blocks.js';
+import { CHUNK, HEIGHT, BLOCKS, MAX_BLOCK } from './blocks.js';
 import { blockIndex } from './world.js';
 
 export const PAD = CHUNK;             // padding on each side
@@ -18,7 +18,7 @@ export function regionIndex(x, y, z) {
 
 // Fills a SIZE x HEIGHT x SIZE array of block ids for the 3x3 chunks around (cx, cz).
 export function gatherRegion(world, cx, cz) {
-  const ids = new Uint8Array(LAYER * HEIGHT);
+  const ids = new Uint16Array(LAYER * HEIGHT);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const data = world.getChunk(cx + dx, cz + dz);
@@ -36,10 +36,10 @@ export function gatherRegion(world, cx, cz) {
   return ids;
 }
 
-const OPAQUE = new Uint8Array(256);
-const FILTER = new Uint8Array(256);
-const EMIT = new Uint8Array(256);
-for (let id = 0; id < 256; id++) {
+const OPAQUE = new Uint8Array(MAX_BLOCK);
+const FILTER = new Uint8Array(MAX_BLOCK);
+const EMIT = new Uint8Array(MAX_BLOCK);
+for (let id = 0; id < MAX_BLOCK; id++) {
   const b = BLOCKS[id];
   OPAQUE[id] = b ? (b.transparent ? 0 : 1) : 1;
   FILTER[id] = b ? b.lightFilter : 0;
