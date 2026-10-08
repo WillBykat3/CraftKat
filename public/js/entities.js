@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { BLOCKS, isBlockId } from './blocks.js';
-import { uvOf } from './atlas-layout.js';
+import { blockGeometry, hasBlockModel } from './textures.js';
 
 const SHIRTS = [0x3b82f6, 0xef4444, 0x22c55e, 0xf59e0b, 0xa855f7, 0x14b8a6, 0xec4899, 0xf97316];
 const FACE_SHADE = [0.8, 0.8, 1.0, 0.5, 0.65, 0.65]; // +x -x +y -y +z -z
@@ -219,20 +219,8 @@ const HITBOX = {
 };
 
 function itemMesh(id, textures) {
-  if (isBlockId(id) && BLOCKS[id].render === 'cube') {
-    const geo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-    const tex = BLOCKS[id].tex;
-    // BoxGeometry face order: +x -x +y -y +z -z
-    const faceTex = [tex[3], tex[3], tex[0], tex[2], tex[1], tex[1]];
-    const uv = geo.attributes.uv;
-    for (let f = 0; f < 6; f++) {
-      const [u0, v0, u1, v1] = uvOf(faceTex[f]);
-      for (let v = 0; v < 4; v++) {
-        const i = f * 4 + v;
-        uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
-      }
-    }
-    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: textures.atlasSRGB, alphaTest: 0.5 }));
+  if (isBlockId(id) && hasBlockModel(id)) {
+    return new THREE.Mesh(blockGeometry(id, 0.25), new THREE.MeshBasicMaterial({ map: textures.atlasSRGB, alphaTest: 0.5 }));
   }
   const map = isBlockId(id) ? textures.tileTexture(BLOCKS[id].tex[0]) : textures.itemTexture(id);
   return new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.35),

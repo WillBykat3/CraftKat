@@ -436,11 +436,17 @@ export class Renderer {
 
   setTarget(hit, breakProgress) {
     this.highlight.visible = !!hit;
-    if (hit) this.highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    if (hit) {
+      // the outline hugs the block's shape (slabs, doors...)
+      const [x0, y0, z0, x1, y1, z1] = hit.box || [0, 0, 0, 1, 1, 1];
+      this.highlight.position.set(hit.x + (x0 + x1) / 2, hit.y + (y0 + y1) / 2, hit.z + (z0 + z1) / 2);
+      this.highlight.scale.set(x1 - x0, y1 - y0, z1 - z0);
+    }
     const stage = Math.min(9, Math.floor(breakProgress * 10));
     this.crack.visible = !!hit && breakProgress > 0;
     if (this.crack.visible) {
       this.crack.position.copy(this.highlight.position);
+      this.crack.scale.copy(this.highlight.scale);
       this.crack.material.map = this.textures.cracks[stage];
       this.crack.material.needsUpdate = true;
     }

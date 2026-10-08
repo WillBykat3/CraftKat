@@ -1,7 +1,7 @@
 // Inventory screens (survival inventory, crafting table, furnace, creative)
 // and the in-game HUD (hotbar, hearts, hunger, air).
 
-import { itemName, ITEMS, toolOf, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
+import { itemName, ITEMS, maxDurability, CREATIVE_BLOCKS, CREATIVE_ITEMS, maxStack } from './blocks.js';
 import {
   HOTBAR_SIZE, clickSlot, quickMove, findRecipe, consumeGrid, makeStack, addItem,
   RECIPES, recipeFits, craftableTimes, fillGrid, recipeResult,
@@ -26,10 +26,10 @@ export function paintSlot(slotEl, stack, iconURL) {
   img.src = iconURL(stack.id);
   img.draggable = false;
   if (stack.count > 1) el('span', 'count', slotEl).textContent = stack.count;
-  const tool = toolOf(stack.id);
-  if (tool && stack.dur !== undefined && stack.dur < tool.durability) {
+  const max = maxDurability(stack.id);
+  if (max && stack.dur !== undefined && stack.dur < max) {
     const bar = el('div', 'dur', slotEl);
-    const f = stack.dur / tool.durability;
+    const f = stack.dur / max;
     const fill = el('div', '', bar);
     fill.style.width = `${Math.max(0, f) * 100}%`;
     fill.style.background = `hsl(${f * 120}, 90%, 45%)`;
@@ -299,7 +299,7 @@ export class InventoryScreen {
     for (const id of ids) {
       this.slot(list, { id, count: 1 }, (button, shift) => {
         if (this.cursor) { this.cursor = null; return; } // clicking the palette deletes what you hold
-        const stack = makeStack(id, button === 2 || toolOf(id) ? 1 : maxStack(id));
+        const stack = makeStack(id, button === 2 || maxDurability(id) ? 1 : maxStack(id));
         if (shift) addItem(this.game.inv, stack.id, stack.count, stack.dur);
         else this.cursor = stack;
       });

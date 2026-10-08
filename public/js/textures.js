@@ -3,9 +3,60 @@
 
 import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
-import { TILE as S, ATLAS_TILES, TILE_NAMES, tileIndex } from './atlas-layout.js';
+import { TILE as S, ATLAS_TILES, TILE_NAMES, tileIndex, uvOf } from './atlas-layout.js';
+import { FACES } from './mesher.js';
 import { BLOCKS, ITEMS, isBlockId } from './blocks.js';
 import { DEFAULT_GRASS, DEFAULT_FOLIAGE, BIOMES, BIOME } from './biomes.js';
+import { shapeBoxes } from './shapes.js';
+
+// A 3D model of a block for your hand and for dropped items: its boxes, centred,
+// with each face's texture cropped like in the world.
+export function blockGeometry(id, size) {
+  const b = BLOCKS[id];
+  const pos = [], uv = [], idx = [];
+  for (const box of iconBoxes(id)) {
+    FACES.forEach((face, f) => {
+      const n = face.dir.findIndex((d) => d !== 0);
+      const others = [0, 1, 2].filter((a) => a !== n);
+      const axis = (k) => {
+        for (const a of others) {
+          if (face.corners.every((c) => c[a] === c[k])) return [a, 1];
+          if (face.corners.every((c) => c[a] === 1 - c[k])) return [a, -1];
+        }
+        return [others[0], 1];
+      };
+      const [ua, us] = axis(3), [va, vs] = axis(4);
+      const [u0, v0, u1, v1] = uvOf(b.tex[face.slot]);
+      const base = pos.length / 3;
+      for (const c of face.corners) {
+        const p = [c[0] ? box[3] : box[0], c[1] ? box[4] : box[1], c[2] ? box[5] : box[2]];
+        pos.push((p[0] - 0.5) * size, (p[1] - 0.5) * size, (p[2] - 0.5) * size);
+        const uf = us > 0 ? p[ua] : 1 - p[ua], vf = vs > 0 ? p[va] : 1 - p[va];
+        uv.push(u0 + (u1 - u0) * uf, v0 + (v1 - v0) * vf);
+      }
+      idx.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+    });
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+// Whether a block is held/dropped as a 3D model (otherwise as a flat picture).
+export function hasBlockModel(id) {
+  const b = BLOCKS[id];
+  return !!b && (b.render === 'cube' || (b.render === 'shape' && b.shape !== 'ladder' && b.shape !== 'door'));
+}
+
+// Boxes shown for a block in icons and in your hand (fences show rails on both sides).
+export function iconBoxes(id) {
+  const b = BLOCKS[id];
+  if (!b.shape) return [[0, 0, 0, 1, 1, 1]];
+  if (b.shape === 'fence') return shapeBoxes(id, (dx) => (dx !== 0 ? id : 0));
+  return shapeBoxes(id, () => 0);
+}
 
 // Which biome colour a tile's marked pixels take on icons and held blocks.
 function tileTint(name) {
@@ -447,8 +498,70 @@ function drawBlockTile(p, name) {
     case 'lapis_ore': drawBlockTile(p, 'stone'); p.ore([35, 75, 190]); break;
     case 'deepslate_lapis_ore': drawBlockTile(p, 'deepslate'); p.ore([35, 75, 190]); break;
     case 'emerald_ore': drawBlockTile(p, 'stone'); p.ore([40, 210, 100]); break;
+    case 'farmland':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const furrow = y % 4 === 0 || y % 4 === 3;
+        px(x, y, shade([92, 60, 38], (furrow ? 0.72 : 1) * (0.88 + rand() * 0.2)));
+      }
+      for (let x = 0; x < S; x++) { px(x, 0, [70, 46, 28]); px(x, 15, [70, 46, 28]); }
+      break;
+    case 'smooth_stone':
+      p.noisy([160, 160, 160], 0.04);
+      for (let i = 0; i < S; i++) { px(i, 0, [120, 120, 120]); px(0, i, [120, 120, 120]); px(i, 15, [120, 120, 120]); px(15, i, [120, 120, 120]); }
+      break;
+    case 'smooth_stone_slab_side':
+      p.noisy([160, 160, 160], 0.04);
+      for (let i = 0; i < S; i++) { px(i, 0, [120, 120, 120]); px(i, 7, [120, 120, 120]); px(i, 8, [120, 120, 120]); px(i, 15, [120, 120, 120]); px(0, i, [120, 120, 120]); px(15, i, [120, 120, 120]); }
+      break;
+    case 'door_top': case 'door_bottom': {
+      const top = name === 'door_top';
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const frame = x < 2 || x > 13 || y === (top ? 0 : 15) || (!top && y === 7);
+        const window = top && x > 2 && x < 13 && y > 1 && y < 10 && x !== 7 && x !== 8 && y !== 5;
+        if (window) continue; // see-through panes
+        px(x, y, shade(C.oak, frame ? 0.78 : (x % 4 === 1 ? 0.88 : 1) * (0.9 + rand() * 0.15)));
+      }
+      if (!top) { px(11, 2, [60, 60, 60]); px(11, 3, [60, 60, 60]); px(12, 2, [90, 90, 90]); }
+      break;
+    }
+    case 'ladder':
+      for (let y = 0; y < S; y++) for (const x of [2, 3, 12, 13]) px(x, y, shade(C.oak, x === 2 || x === 13 ? 0.7 : 0.95 + rand() * 0.1));
+      for (const y of [1, 5, 9, 13]) for (let x = 4; x < 12; x++) { px(x, y, shade(C.oak, 0.95 + rand() * 0.1)); px(x, y + 1, shade(C.oak, 0.7)); }
+      break;
     default:
+      if (/^(wheat|carrots|potatoes)_\d$/.test(name)) { drawCrop(p, name); break; }
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, (x < 8) === (y < 8) ? [255, 0, 255] : [0, 0, 0]);
+  }
+}
+
+// Growing crops: stalks that get taller with each stage; wheat ripens to gold,
+// carrots and potatoes show their crop at the bottom when ready.
+function drawCrop(p, name) {
+  const { px, rand } = p;
+  const [kind, stageText] = name.split('_');
+  const stage = Number(stageText);
+  const max = kind === 'wheat' ? 7 : 3;
+  const f = stage / max;
+  const height = Math.round(3 + f * 11);
+  const ripe = kind === 'wheat' ? [[60, 140, 30], [200, 180, 60]] : [[50, 150, 40], [60, 160, 45]];
+  const color = [0, 1, 2].map((k) => ripe[0][k] + (ripe[1][k] - ripe[0][k]) * f);
+  const stalks = kind === 'wheat' ? [1, 3, 5, 7, 9, 11, 13, 14] : [2, 5, 8, 11, 13];
+  for (const x0 of stalks) {
+    const h = height - Math.floor(rand() * 3);
+    for (let k = 0; k < h; k++) {
+      const x = x0 + (k > h / 2 && rand() < 0.3 ? (rand() < 0.5 ? -1 : 1) : 0);
+      px(x, 15 - k, shade(color, 0.8 + rand() * 0.35));
+    }
+    if (kind === 'wheat' && stage >= 4) {
+      for (let k = h - 3; k < h; k++) px(x0, 15 - k, shade([220, 190, 80].map((v, i) => color[i] + (v - color[i]) * f), 0.85 + rand() * 0.3));
+    } else if (kind !== 'wheat') {
+      // leafy tops
+      px(x0 - 1, 15 - h, shade(color, 1.1)); px(x0 + 1, 15 - h, shade(color, 1.1)); px(x0, 14 - h, shade(color, 1.15));
+    }
+  }
+  if (kind !== 'wheat' && stage === max) {
+    const crop = kind === 'carrots' ? [235, 130, 30] : [200, 160, 90];
+    for (const x of [3, 7, 11]) { px(x, 14, crop); px(x + 1, 14, crop); px(x, 15, shade(crop, 0.85)); px(x + 1, 15, shade(crop, 0.85)); }
   }
 }
 
@@ -510,6 +623,24 @@ const TOOL_PATTERNS = {
     '......SSSS......',
     '................',
   ],
+  hoe: [
+    '................',
+    '.....HHHH.......',
+    '......HHHS......',
+    '..........S.....',
+    '..........S.....',
+    '.........S......',
+    '.........S......',
+    '........S.......',
+    '........S.......',
+    '.......S........',
+    '.......S........',
+    '......S.........',
+    '......S.........',
+    '.....S..........',
+    '.....S..........',
+    '................',
+  ],
   sword: [
     '.......HH.......',
     '......HHHH......',
@@ -530,9 +661,17 @@ const TOOL_PATTERNS = {
   ],
 };
 
+const ARMOR_COLORS = { leather: [150, 90, 50], iron: [215, 215, 215], gold: [245, 205, 60], diamond: [90, 225, 215] };
+const ARMOR_PATTERNS = {
+  helmet: ['', '', '', '....LAAAAAAL....', '...LAAAAAAAAL...', '...AAAAAAAAAA...', '...AAD....DAA...', '...AAD....DAA...', '...AD......DA...'],
+  chestplate: ['', '..LAA....AAL....', '..AAAA..AAAA....', '..AAAAAAAAAA....', '...AAAAAAAA.....', '....AAAAAA......', '....AAAAAA......', '....AAAAAA......', '....AADDAA......', '....AAAAAA......', '....AAAAAA......', '.....DDDD.......'].map((r) => '..' + r),
+  leggings: ['', '', '....LAAAAAAL....', '....AAAAAAAA....', '....AAADDAAA....', '....AAA..AAA....', '....AAA..AAA....', '....AAA..AAA....', '....AAA..AAA....', '....AAA..AAA....', '....AAA..AAA....', '....DDD..DDD....'],
+  boots: ['', '', '', '', '', '', '', '...LAA....AAL...', '...AAA....AAA...', '...AAA....AAA...', '..AAAA....AAAA..', '..DDDD....DDDD..'],
+};
+
 function drawItem(p, icon) {
   const { px, rand } = p;
-  const tool = icon.match(/^(wood|stone|iron|diamond)_(pickaxe|axe|shovel|sword)$/);
+  const tool = icon.match(/^(wood|stone|iron|diamond)_(pickaxe|axe|shovel|sword|hoe)$/);
   if (tool) {
     const head = TOOL_HEAD[tool[1]];
     p.pattern(TOOL_PATTERNS[tool[2]], {
@@ -548,7 +687,50 @@ function drawItem(p, icon) {
       if (d < 1) px(x, y, shade(color, 1 - varied / 2 + rand() * varied - d * 0.15));
     }
   };
+  const armor = icon.match(/^(leather|iron|gold|diamond)_(helmet|chestplate|leggings|boots)$/);
+  if (armor) {
+    const base = ARMOR_COLORS[armor[1]];
+    p.pattern(ARMOR_PATTERNS[armor[2]], { A: () => shade(base, 0.85 + rand() * 0.3), D: () => shade(base, 0.6), L: () => shade(base, 1.25) });
+    return;
+  }
   switch (icon) {
+    case 'bow':
+      for (let i = 0; i < 12; i++) {
+        const t = i / 11, x = Math.round(3 + t * 9 + Math.sin(t * Math.PI) * -2.5), y = Math.round(12 - t * 9 - Math.sin(t * Math.PI) * 2.5);
+        px(x, y, shade([120, 80, 40], 0.9 + rand() * 0.2)); px(x + 1, y, shade([90, 60, 30], 1));
+      }
+      for (let i = 0; i < 10; i++) px(3 + i, 12 - i, [220, 220, 220]);
+      break;
+    case 'wheat_seeds':
+      for (const [x, y] of [[5, 6], [9, 5], [7, 9], [11, 9], [4, 11], [8, 12], [10, 7]]) { px(x, y, [70, 140, 40]); px(x + 1, y, [110, 170, 60]); px(x, y + 1, [50, 110, 30]); }
+      break;
+    case 'wheat':
+      for (let i = 0; i < 11; i++) { px(4 + i, 14 - i, [190, 160, 60]); px(5 + i, 14 - i, [150, 120, 40]); }
+      for (const [x, y] of [[10, 3], [12, 2], [13, 4], [11, 5], [9, 6], [12, 6], [8, 4]]) px(x, y, [230, 200, 90]);
+      break;
+    case 'carrot':
+      for (let i = 0; i < 9; i++) for (let w = 0; w < 3 - Math.floor(i / 4); w++) px(4 + i + w, 13 - i + w, shade([235, 130, 30], 0.85 + rand() * 0.3));
+      for (const [x, y] of [[12, 3], [13, 2], [11, 2], [13, 4], [14, 3]]) px(x, y, [60, 160, 40]);
+      break;
+    case 'potato': blob([200, 160, 90], 8, 9, 5, 4, 0.3); p.specks([140, 110, 60], 5); break;
+    case 'baked_potato': blob([215, 160, 60], 8, 9, 5, 4, 0.3); blob([250, 225, 150], 8, 8, 2.5, 1.5, 0.1); break;
+    case 'bone_meal':
+      for (let i = 0; i < 26; i++) { const a = rand() * 6.28, r = Math.sqrt(rand()) * 4.5; px(Math.round(8 + Math.cos(a) * r), Math.round(9 + Math.sin(a) * r * 0.7), shade([240, 240, 230], 0.8 + rand() * 0.25)); }
+      break;
+    case 'ender_pearl':
+      blob([20, 90, 80], 8, 8, 5, 5, 0.2); blob([40, 160, 140], 8, 8, 3, 3, 0.2); px(6, 6, [180, 255, 240]);
+      break;
+    case 'flint':
+      for (let y = 3; y < 14; y++) for (let x = 4 + Math.abs(8 - y) / 2; x < 12 - Math.abs(6 - y) / 3; x++) px(Math.floor(x), y, shade([60, 60, 65], 0.8 + rand() * 0.4));
+      px(7, 5, [130, 130, 135]);
+      break;
+    case 'oak_door':
+      for (let y = 1; y < 15; y++) for (let x = 4; x < 12; x++) {
+        const window = y > 2 && y < 7 && x > 4 && x < 11 && x !== 7;
+        px(x, y, window ? [190, 210, 220] : shade(C.oak, x === 4 || x === 11 || y === 1 || y === 14 || y === 8 ? 0.75 : 0.95 + rand() * 0.1));
+      }
+      px(10, 10, [60, 60, 60]);
+      break;
     case 'stick':
       for (let i = 0; i < 12; i++) { px(3 + i, 13 - i, STICK); px(3 + i, 14 - i, shade(STICK, 0.75)); }
       break;
@@ -707,11 +889,11 @@ export function createTextures() {
     ctx.imageSmoothingEnabled = false;
     if (isBlockId(id)) {
       const b = BLOCKS[id];
-      if (b.render === 'cross') {
+      if (b.render === 'cross' || b.render === 'crop' || b.shape === 'ladder' || b.shape === 'door') {
         const [sx, sy] = tileRect(b.tex[0]);
         ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, size, size);
       } else {
-        drawIsoCube(ctx, size, b);
+        drawIsoCube(ctx, size, b, iconBoxes(id));
       }
     } else {
       ctx.drawImage(itemCanvases[ITEMS[id].icon], 0, 0, size, size);
@@ -721,28 +903,30 @@ export function createTextures() {
     return url;
   }
 
-  // Isometric cube: top face plus two shaded side faces.
-  function drawIsoCube(ctx, size, b) {
-    const h = size / 2;
-    const q = size / 4;
-    const face = (tex, transform, darken) => {
+  // Isometric view of a block's boxes (a full cube for most blocks): for each box the top
+  // and the two front faces, with the texture cropped to the box, drawn back to front.
+  function drawIsoCube(ctx, size, b, boxes = [[0, 0, 0, 1, 1, 1]]) {
+    const h = size / 2, q = size / 4;
+    const P = (x, y, z) => [h * (x - z) + h, q * (x + z) - h * y + h];
+    const face = (tex, O, A, B, sub, darken) => {
       const [sx, sy] = tileRect(tex);
+      const [u0, v0, u1, v1] = sub; // fractions of the tile, v from the top
+      const sw = Math.max(1e-3, (u1 - u0) * S), sh = Math.max(1e-3, (v1 - v0) * S);
       ctx.save();
-      ctx.setTransform(...transform);
-      ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, S, S);
+      ctx.setTransform((A[0] - O[0]) / sw, (A[1] - O[1]) / sw, (B[0] - O[0]) / sh, (B[1] - O[1]) / sh, O[0], O[1]);
+      ctx.drawImage(tintedCanvas, sx + u0 * S, sy + v0 * S, sw, sh, 0, 0, sw, sh);
       if (darken > 0) {
         ctx.fillStyle = `rgba(0,0,0,${darken})`;
-        ctx.fillRect(0, 0, S, S);
+        ctx.fillRect(0, 0, sw, sh);
       }
       ctx.restore();
     };
-    const k = 1 / S;
-    // top: maps the tile onto the rhombus (h,0) (size,q) (h,h) (0,q)
-    face(b.tex[0], [h * k, q * k, -h * k, q * k, h, 0.5], 0);
-    // left side: (0,q) -> (h,h) across, down to (0,3q)
-    face(b.tex[1], [h * k, q * k, 0, h * k, 0, q], 0.2);
-    // right side: (h,h) -> (size,q) across
-    face(b.tex[3], [h * k, -q * k, 0, h * k, h, h], 0.4);
+    const sorted = [...boxes].sort((m, n) => m[1] - n[1] || (m[0] + m[2]) - (n[0] + n[2]));
+    for (const [x0, y0, z0, x1, y1, z1] of sorted) {
+      face(b.tex[0], P(x0, y1, z0), P(x1, y1, z0), P(x0, y1, z1), [x0, z0, x1, z1], 0);
+      face(b.tex[1], P(x0, y1, z1), P(x1, y1, z1), P(x0, y0, z1), [x0, 1 - y1, x1, 1 - y0], 0.2);
+      face(b.tex[3], P(x1, y1, z1), P(x1, y1, z0), P(x1, y0, z1), [1 - z1, 1 - y1, 1 - z0, 1 - y0], 0.4);
+    }
   }
 
   // Item texture for the held item / dropped item sprites.

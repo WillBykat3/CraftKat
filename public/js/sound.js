@@ -89,6 +89,13 @@ export const sound = {
     burst({ freq: 400, q: 0.5, duration: 0.6, gain: 0.5, type: 'lowpass' });
   },
   click() { tone({ freq: 900, duration: 0.04, gain: 0.08, type: 'triangle' }); },
+  // a wooden door: a creak opening, a thud closing
+  door(open) {
+    if (open) { tone({ freq: 240, endFreq: 380, duration: 0.25, gain: 0.12, type: 'sawtooth' }); burst({ freq: 600, q: 3, duration: 0.12, gain: 0.3 }); }
+    else burst({ freq: 300, q: 1.5, duration: 0.18, gain: 0.6, type: 'lowpass' });
+  },
+  // a bow being released
+  bow() { burst({ freq: 2200, q: 2, duration: 0.15, gain: 0.25 }); tone({ freq: 500, endFreq: 200, duration: 0.12, gain: 0.08, type: 'triangle' }); },
   // menu button: a short wooden "tock"
   button() { burst({ freq: 1400, q: 4, duration: 0.05, gain: 0.35 }); tone({ freq: 700, endFreq: 500, duration: 0.05, gain: 0.08, type: 'triangle' }); },
   // experience orb: a bright ding at a random pitch

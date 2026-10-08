@@ -20,7 +20,15 @@ export const BLOCK = {
   DARK_OAK_LOG: 57, DARK_OAK_LEAVES: 58, DARK_OAK_PLANKS: 59, JUNGLE_LOG: 60, JUNGLE_LEAVES: 61, JUNGLE_PLANKS: 62,
   CACTUS: 63, DEAD_BUSH: 64, SUGAR_CANE: 65, ICE: 66, LAVA: 67, REDSTONE_ORE: 68, DEEPSLATE_REDSTONE_ORE: 69,
   LAPIS_ORE: 70, DEEPSLATE_LAPIS_ORE: 71, EMERALD_ORE: 72, FERN: 73, CORNFLOWER: 74,
+  FARMLAND: 75, WHEAT: 76, CARROTS: 84, POTATOES: 88, OAK_DOOR: 92, LADDER: 108, OAK_FENCE: 112,
+  OAK_SLAB: 113, COBBLESTONE_SLAB: 114, STONE_SLAB: 115, OAK_STAIRS: 116, COBBLESTONE_STAIRS: 120,
 };
+// Blocks with variants take a run of ids:
+//   WHEAT + stage (0-7), CARROTS / POTATOES + stage (0-3)
+//   OAK_DOOR + (upper ? 8 : 0) + (open ? 4 : 0) + facing
+//   LADDER, OAK_STAIRS, COBBLESTONE_STAIRS + facing
+// facing: 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x)
+export const FACING = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
 
 // Block properties (defaults filled in below):
 //  tex        [top, side, bottom, sideX?] texture names; sideX is used for the +-x faces
@@ -38,6 +46,12 @@ export const BLOCK = {
 //  height     visual height of a partial cube (beds); collision is still a full block
 //  tint       'grass' | 'foliage' | 'water': coloured by the biome (only pixels marked as tintable in the texture)
 //  translucent  drawn see-through with the water (ice)
+//  shape      'slab' | 'stairs' | 'door' | 'ladder' | 'fence' | 'farmland' | 'bed': not a full cube (see shapes.js)
+//  facing, open, upper   variant details for shaped blocks
+//  item       what the block drops / is picked as (variants share one), defaults to itself
+//  hidden     a variant that isn't listed in the creative inventory
+//  crop       {kind, stage, max} for growing plants
+//  climbable  ladders
 //  liquid     'water' | 'lava'
 const B = [];
 function def(id, name, props) {
@@ -92,7 +106,7 @@ def(45, 'Cherry Log', { tex: ['cherry_log_top', 'cherry_log_side', 'cherry_log_t
 def(46, 'Cherry Leaves', { tex: ['cherry_leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
 def(47, 'Cherry Planks', { tex: ['cherry_planks'], hardness: 2, tool: 'axe' });
 def(48, 'Chest', { tex: ['chest_top', 'chest_side', 'chest_top', 'chest_front'], hardness: 2.5, tool: 'axe' });
-def(49, 'Bed', { tex: ['bed_top', 'bed_side', 'planks'], hardness: 0.2, transparent: true, height: 9 / 16 });
+def(49, 'Bed', { tex: ['bed_top', 'bed_side', 'planks'], hardness: 0.2, transparent: true, height: 9 / 16, shape: 'bed' });
 def(50, 'Block of Copper', { tex: ['copper_block'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
 def(51, 'Spruce Log', { tex: ['spruce_log_top', 'spruce_log_side', 'spruce_log_top'], hardness: 2, tool: 'axe' });
 def(52, 'Spruce Leaves', { tex: ['spruce_leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
@@ -119,9 +133,35 @@ def(72, 'Emerald Ore', { tex: ['emerald_ore'], hardness: 3, tool: 'pickaxe', nee
 def(73, 'Fern', { tex: ['fern'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: true, tint: 'grass' });
 def(74, 'Cornflower', { tex: ['cornflower'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
 
+def(75, 'Farmland', { tex: ['farmland', 'dirt', 'dirt'], hardness: 0.6, tool: 'shovel', transparent: true, shape: 'farmland' });
+for (let i = 0; i < 8; i++) {
+  def(76 + i, 'Wheat Crops', { tex: ['wheat_' + i], render: 'crop', solid: false, transparent: true, hardness: 0, needsSupport: true, hidden: i > 0, crop: { kind: 'wheat', stage: i, max: 7 } });
+}
+for (const [base, kind, name] of [[84, 'carrots', 'Carrots'], [88, 'potatoes', 'Potatoes']]) {
+  for (let i = 0; i < 4; i++) {
+    def(base + i, name, { tex: [`${kind}_${i}`], render: 'crop', solid: false, transparent: true, hardness: 0, needsSupport: true, hidden: i > 0, crop: { kind, stage: i, max: 3 } });
+  }
+}
+for (let i = 0; i < 16; i++) {
+  const upper = i >= 8, open = (i & 4) !== 0, facing = i & 3;
+  def(92 + i, 'Oak Door', { tex: [upper ? 'door_top' : 'door_bottom'], hardness: 3, tool: 'axe', transparent: true, shape: 'door', upper, open, facing, hidden: true, needsSupport: true });
+}
+for (let f = 0; f < 4; f++) {
+  def(108 + f, 'Ladder', { tex: ['ladder'], hardness: 0.4, tool: 'axe', transparent: true, shape: 'ladder', facing: f, climbable: true, hidden: f > 0, item: 108 });
+}
+def(112, 'Oak Fence', { tex: ['planks'], hardness: 2, tool: 'axe', transparent: true, shape: 'fence' });
+def(113, 'Oak Slab', { tex: ['planks'], hardness: 2, tool: 'axe', transparent: true, shape: 'slab', full: 9 });
+def(114, 'Cobblestone Slab', { tex: ['cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'slab', full: 4 });
+def(115, 'Stone Slab', { tex: ['smooth_stone', 'smooth_stone_slab_side', 'smooth_stone'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'slab', full: 3 });
+for (let f = 0; f < 4; f++) {
+  def(116 + f, 'Oak Stairs', { tex: ['planks'], hardness: 2, tool: 'axe', transparent: true, shape: 'stairs', facing: f, hidden: f > 0, item: 116 });
+  def(120 + f, 'Cobblestone Stairs', { tex: ['cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'stairs', facing: f, hidden: f > 0, item: 120 });
+}
+
 for (const b of B) {
   b.render ??= 'cube';
   b.solid ??= b.render === 'cube';
+  if (b.shape) b.render = 'shape';
   b.transparent = !!b.transparent;
   b.lightFilter ??= 0;
   b.emit ??= 0;
@@ -138,6 +178,8 @@ export function isSupported(id, below) {
   if (!B[id].needsSupport) return true;
   if (id === BLOCK.SUGAR_CANE && below === BLOCK.SUGAR_CANE) return true;
   if (id === BLOCK.CACTUS) return below === BLOCK.CACTUS || below === BLOCK.SAND;
+  if (B[id].crop) return below === BLOCK.FARMLAND;
+  if (B[id].shape === 'door') return B[id].upper ? B[below].shape === 'door' && !B[below].upper : B[below].solid && B[below].shape !== 'door';
   return B[below].solid && below !== BLOCK.CACTUS;
 }
 
@@ -154,6 +196,13 @@ export const ITEM = {
   RAW_CHICKEN: 292, COOKED_CHICKEN: 293, RAW_MUTTON: 294, COOKED_MUTTON: 295,
   FEATHER: 296, BONE: 297, ARROW: 298, GUNPOWDER: 299, STRING: 300,
   REDSTONE: 301, LAPIS_LAZULI: 302, EMERALD: 303,
+  WOODEN_HOE: 304, STONE_HOE: 305, IRON_HOE: 306, DIAMOND_HOE: 307,
+  LEATHER_HELMET: 308, LEATHER_CHESTPLATE: 309, LEATHER_LEGGINGS: 310, LEATHER_BOOTS: 311,
+  IRON_HELMET: 312, IRON_CHESTPLATE: 313, IRON_LEGGINGS: 314, IRON_BOOTS: 315,
+  GOLDEN_HELMET: 316, GOLDEN_CHESTPLATE: 317, GOLDEN_LEGGINGS: 318, GOLDEN_BOOTS: 319,
+  DIAMOND_HELMET: 320, DIAMOND_CHESTPLATE: 321, DIAMOND_LEGGINGS: 322, DIAMOND_BOOTS: 323,
+  BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
+  ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -208,6 +257,35 @@ item(300, 'String', { icon: 'string' });
 item(301, 'Redstone Dust', { icon: 'redstone' });
 item(302, 'Lapis Lazuli', { icon: 'lapis' });
 item(303, 'Emerald', { icon: 'emerald' });
+MATERIALS.forEach(([matName, mat, tier, speed, durability], m) => {
+  item(304 + m, `${matName} Hoe`, { icon: `${mat}_hoe`, stack: 1, tool: { kind: 'hoe', tier, speed, damage: 1, durability } });
+});
+// armor: [slot (0 helmet, 1 chestplate, 2 leggings, 3 boots), defense points, durability]
+const ARMOR_MATERIALS = [
+  ['Leather', 'leather', [1, 3, 2, 1], [55, 80, 75, 65], 0],
+  ['Iron', 'iron', [2, 6, 5, 2], [165, 240, 225, 195], 0],
+  ['Golden', 'gold', [2, 5, 3, 1], [77, 112, 105, 91], 0],
+  ['Diamond', 'diamond', [3, 8, 6, 3], [363, 528, 495, 429], 2],
+];
+const ARMOR_PIECES = [['Helmet', 'helmet'], ['Chestplate', 'chestplate'], ['Leggings', 'leggings'], ['Boots', 'boots']];
+ARMOR_MATERIALS.forEach(([matName, mat, defense, durability, toughness], m) => {
+  ARMOR_PIECES.forEach(([pieceName, piece], slot) => {
+    item(308 + m * 4 + slot, `${matName} ${pieceName}`, {
+      icon: `${mat}_${piece}`, stack: 1,
+      armor: { slot, material: mat, defense: defense[slot], toughness, durability: durability[slot] },
+    });
+  });
+});
+item(324, 'Bow', { icon: 'bow', stack: 1, tool: { kind: 'bow', tier: 0, speed: 1, damage: 1, durability: 384 } });
+item(325, 'Wheat Seeds', { icon: 'wheat_seeds', plants: 76 });
+item(326, 'Wheat', { icon: 'wheat' });
+item(327, 'Carrot', { icon: 'carrot', food: 3, plants: 84 });
+item(328, 'Potato', { icon: 'potato', food: 1, plants: 88 });
+item(329, 'Baked Potato', { icon: 'baked_potato', food: 5 });
+item(330, 'Bone Meal', { icon: 'bone_meal' });
+item(331, 'Ender Pearl', { icon: 'ender_pearl', stack: 16 });
+item(332, 'Flint', { icon: 'flint' });
+item(333, 'Oak Door', { icon: 'oak_door' });
 export const ITEMS = I;
 
 export function isBlockId(id) {
@@ -230,6 +308,23 @@ export function toolOf(id) {
   return ITEMS[id]?.tool ?? null;
 }
 
+// Durability of tools and armor (undefined for everything else).
+export function maxDurability(id) {
+  return ITEMS[id]?.tool?.durability ?? ITEMS[id]?.armor?.durability;
+}
+
+export function armorOf(id) {
+  return ITEMS[id]?.armor ?? null;
+}
+
+// The item a block gives when broken or picked (door halves, rotated ladders and stairs...).
+export function blockItem(id) {
+  const b = BLOCKS[id];
+  if (b.shape === 'door') return ITEM.OAK_DOOR;
+  if (b.crop) return null;
+  return b.item ?? id;
+}
+
 export function isSolid(id) {
   return BLOCKS[id].solid;
 }
@@ -240,7 +335,7 @@ export function isTransparent(id) {
 
 // Blocks a player can place from the creative inventory.
 export const CREATIVE_BLOCKS = B.map((_, id) => id).filter(
-  (id) => id !== BLOCK.AIR && id !== BLOCK.BEDROCK && id !== BLOCK.WATER && id !== BLOCK.LAVA,
+  (id) => id !== BLOCK.AIR && id !== BLOCK.BEDROCK && id !== BLOCK.WATER && id !== BLOCK.LAVA && !B[id].hidden && !B[id].crop,
 ).concat([BLOCK.WATER, BLOCK.LAVA]);
 export const CREATIVE_ITEMS = Object.keys(I).map(Number);
 
@@ -289,17 +384,28 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     case BLOCK.SPRUCE_LEAVES:
     case BLOCK.ACACIA_LEAVES:
     case BLOCK.JUNGLE_LEAVES:
+    case BLOCK.TALL_GRASS: return rand() < 0.125 ? [[ITEM.WHEAT_SEEDS, 1]] : [];
+    case BLOCK.GRAVEL: return rand() < 0.1 ? [[ITEM.FLINT, 1]] : [[BLOCK.GRAVEL, 1]];
+    case BLOCK.FARMLAND: return [[BLOCK.DIRT, 1]];
     case BLOCK.FERN:
     case BLOCK.ICE:
     case BLOCK.LAVA:
     case BLOCK.GLASS:
-    case BLOCK.TALL_GRASS:
     case BLOCK.WATER:
     case BLOCK.BEDROCK: return [];
     case BLOCK.CLAY: return [[BLOCK.CLAY, 1]];
     case BLOCK.SNOW: return [[BLOCK.SNOW, 1]];
-    default: return [[blockId, 1]];
+    default: break;
   }
+  if (b.crop) {
+    const { kind, stage, max } = b.crop;
+    const ripe = stage === max;
+    if (kind === 'wheat') return ripe ? [[ITEM.WHEAT, 1], [ITEM.WHEAT_SEEDS, Math.floor(rand() * 4)]].filter(([, n]) => n > 0) : [[ITEM.WHEAT_SEEDS, 1]];
+    const crop = kind === 'carrots' ? ITEM.CARROT : ITEM.POTATO;
+    return [[crop, ripe ? 2 + Math.floor(rand() * 4) : 1]];
+  }
+  if (b.shape === 'door') return b.upper ? [] : [[ITEM.OAK_DOOR, 1]];
+  return [[blockItem(blockId), 1]];
 }
 
 // Furnace recipes: input -> output, and how many items a fuel smelts.
@@ -322,6 +428,7 @@ export const SMELTING = {
   [ITEM.RAW_CHICKEN]: ITEM.COOKED_CHICKEN,
   [ITEM.RAW_MUTTON]: ITEM.COOKED_MUTTON,
   [BLOCK.COBBLED_DEEPSLATE]: BLOCK.DEEPSLATE,
+  [ITEM.POTATO]: ITEM.BAKED_POTATO,
 };
 export const FUEL = {
   [ITEM.COAL]: 8,
@@ -335,6 +442,7 @@ export const FUEL = {
   [BLOCK.CHEST]: 1.5,
   [ITEM.STICK]: 0.5,
 };
+for (const id of [BLOCK.OAK_FENCE, BLOCK.OAK_SLAB, BLOCK.OAK_STAIRS, BLOCK.LADDER, ITEM.OAK_DOOR, ITEM.BOW]) FUEL[id] = id === BLOCK.OAK_SLAB ? 0.75 : 1.5;
 for (const wood of ['SPRUCE', 'ACACIA', 'DARK_OAK', 'JUNGLE']) {
   FUEL[BLOCK[wood + '_LOG']] = 1.5;
   FUEL[BLOCK[wood + '_PLANKS']] = 1.5;

@@ -4,6 +4,7 @@
 import { CHUNK, HEIGHT, BLOCK, BLOCKS } from './blocks.js';
 import { gatherRegion, computeLight, regionIndex, topY, SIZE } from './lighting.js';
 import { BIOMES } from './biomes.js';
+import { shapeBoxes } from './shapes.js';
 
 // slot: index into a block's tex array ([top, side, bottom, sideX])
 // corners [x, y, z, u, v] are ordered so triangles (0,1,2) and (2,1,3) face outwards.
@@ -175,6 +176,15 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
           continue;
         }
 
+        if (def.render === 'shape') {
+          addShape(solid, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint);
+          continue;
+        }
+        if (def.render === 'crop') {
+          addPlanes(solid, CROP_PLANES, x, y - 1 / 16, z, uvOf(def.tex[0]), skyAt(x, y, z), blockAt(x, y, z), tint);
+          continue;
+        }
+
         const mesh = def.translucent ? water : solid;
 
         const h = def.height || 1; // partial blocks (beds) are shorter
@@ -235,6 +245,70 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
   }
 
   return { solid: solid.finish(), water: water.finish() };
+}
+
+// For each face: the axis it faces along, and which axes (and directions) its texture u and v follow.
+const FACE_AXES = FACES.map((face) => {
+  const n = face.dir.findIndex((d) => d !== 0);
+  const others = [0, 1, 2].filter((a) => a !== n);
+  const find = (k) => {
+    for (const a of others) {
+      if (face.corners.every((c) => c[a] === c[k])) return [a, 1];
+      if (face.corners.every((c) => c[a] === 1 - c[k])) return [a, -1];
+    }
+    return [others[0], 1];
+  };
+  const [u, su] = find(3), [v, sv] = find(4);
+  return { n, u, su, v, sv, positive: face.dir[n] > 0 };
+});
+
+// A shaped block: each of its boxes is drawn with the texture cropped to the box,
+// like Minecraft's block models. Faces against an opaque neighbour are left out.
+function addShape(mesh, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint) {
+  const boxes = shapeBoxes(id, (dx, dy, dz) => get(x + dx, y + dy, z + dz), false);
+  const ownSky = skyAt(x, y, z), ownBlock = blockAt(x, y, z);
+  const p = [0, 0, 0];
+  for (const box of boxes) {
+    for (let f = 0; f < 6; f++) {
+      const face = FACES[f];
+      const ax = FACE_AXES[f];
+      const [dx, dy, dz] = face.dir;
+      const onEdge = ax.positive ? box[ax.n + 3] >= 1 : box[ax.n] <= 0;
+      let ls = ownSky, lb = ownBlock;
+      if (onEdge) {
+        if (OPAQUE[get(x + dx, y + dy, z + dz)]) continue;
+        ls = skyAt(x + dx, y + dy, z + dz);
+        lb = blockAt(x + dx, y + dy, z + dz);
+      }
+      const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
+      for (const c of face.corners) {
+        p[0] = c[0] ? box[3] : box[0];
+        p[1] = c[1] ? box[4] : box[1];
+        p[2] = c[2] ? box[5] : box[2];
+        const uf = ax.su > 0 ? p[ax.u] : 1 - p[ax.u];
+        const vf = ax.sv > 0 ? p[ax.v] : 1 - p[ax.v];
+        mesh.vertex(x + p[0], y + p[1], z + p[2], u0 + (u1 - u0) * uf, v0 + (v1 - v0) * vf, face.shade, ls, lb, tint);
+      }
+      mesh.quad(0, 1, 2, 2, 1, 3);
+    }
+  }
+}
+
+// Crops: four upright planes in a # pattern, like Minecraft's wheat.
+const CROP_PLANES = [
+  [[0.25, 0], [0.25, 1]], [[0.75, 0], [0.75, 1]], [[0, 0.25], [1, 0.25]], [[0, 0.75], [1, 0.75]],
+];
+function addPlanes(mesh, planes, x, y, z, uv, sky, block, tint) {
+  const [u0, v0, u1, v1] = uv;
+  for (const [[ax, az], [bx, bz]] of planes) {
+    for (const [[sx, sz], [ex, ez]] of [[[ax, az], [bx, bz]], [[bx, bz], [ax, az]]]) {
+      mesh.vertex(x + sx, y + 1, z + sz, u0, v1, 0.9, sky, block, tint);
+      mesh.vertex(x + sx, y, z + sz, u0, v0, 0.9, sky, block, tint);
+      mesh.vertex(x + ex, y + 1, z + ez, u1, v1, 0.9, sky, block, tint);
+      mesh.vertex(x + ex, y, z + ez, u1, v0, 0.9, sky, block, tint);
+      mesh.quad(0, 1, 2, 2, 1, 3);
+    }
+  }
 }
 
 // Two crossed quads (each drawn from both sides) for plants and torches.

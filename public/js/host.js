@@ -121,6 +121,9 @@ export class GameHost {
     this.gen = save.genVersion ?? 1; // worlds made before generator versions existed use version 1
     this.world = new World(save.seed, this.gen);
     this.world.importEdits(save.edits || []);
+    // growing crops (only ever planted by players, so they're all in the edits)
+    this.crops = new Set();
+    for (const [x, y, z, id] of this.world.exportEdits()) if (BLOCKS[id]?.crop) this.crops.add(`${x},${y},${z}`);
     this.players = new Map();   // peerId -> player
     this.entities = new Map();  // id -> entity
     this.nextPlayerId = 1;
@@ -212,6 +215,7 @@ export class GameHost {
       case 'wake': p.sleeping = false; return;
       case 'bucket': return this.onBucket(peerId, p, msg);
       case 'interact': return this.onInteract(p, msg);
+      case 'use': return this.onUse(peerId, p, msg);
     }
   }
 
@@ -297,6 +301,8 @@ export class GameHost {
   // Changes a block, keeps the world consistent and tells everyone.
   setBlock(x, y, z, id, exceptPeer = null) {
     this.world.setBlock(x, y, z, id);
+    const key = `${x},${y},${z}`;
+    if (BLOCKS[id].crop) this.crops.add(key); else this.crops.delete(key);
     this.dirty = true;
     this.broadcast({ t: 'set', x, y, z, id }, exceptPeer);
   }
@@ -343,6 +349,16 @@ export class GameHost {
   // Removes a block (dropping items unless tool === null) and handles what that causes.
   breakBlock(x, y, z, tool, exceptPeer = null) {
     const id = this.world.getBlock(x, y, z);
+    let dropFrom = id;
+    if (BLOCKS[id].shape === 'door') {
+      // a door is two blocks: both go, and it drops one door
+      const oy = BLOCKS[id].upper ? y - 1 : y + 1;
+      const other = this.world.getBlock(x, oy, z);
+      if (BLOCKS[other].shape === 'door') {
+        this.setBlock(x, oy, z, BLOCK.AIR);
+        if (BLOCKS[id].upper) dropFrom = other;
+      }
+    }
     // breaking ice with something under it, or a block next to the sea, lets the water in
     const flood = (id === BLOCK.ICE && tool !== null && this.world.getBlock(x, y - 1, z) !== BLOCK.AIR) ||
       (y <= this.world.seaLevel && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
@@ -350,7 +366,7 @@ export class GameHost {
     this.setBlock(x, y, z, flood ? BLOCK.WATER : BLOCK.AIR, exceptPeer);
     if (flood && exceptPeer) this.send(exceptPeer, { t: 'set', x, y, z, id: BLOCK.WATER });
     if (tool !== null) {
-      const drops = getDrops(id, tool, this.random);
+      const drops = getDrops(dropFrom, tool, this.random);
       for (const [dropId, count] of drops) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, dropId, count);
       const xp = ORE_XP[id];
       if (xp && drops.length) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
@@ -647,6 +663,58 @@ export class GameHost {
     }
   }
 
+  // ---------- using things on blocks ----------
+  // Opening doors, tilling soil with a hoe, bone meal on crops.
+  onUse(peerId, p, msg) {
+    if (!this.validCoords(msg) || !this.inReach(p, msg.x, msg.y, msg.z) || !p.canBuild()) return;
+    const { x, y, z } = msg;
+    const id = this.world.getBlock(x, y, z);
+    const def = BLOCKS[id];
+    if (def.shape === 'door' && msg.item === undefined) {
+      const lowerY = def.upper ? y - 1 : y;
+      for (const yy of [lowerY, lowerY + 1]) {
+        const d = this.world.getBlock(x, yy, z);
+        if (BLOCKS[d].shape === 'door') this.setBlock(x, yy, z, BLOCK.OAK_DOOR + ((d - BLOCK.OAK_DOOR) ^ 4), peerId);
+      }
+      return;
+    }
+    if (toolOf(msg.item)?.kind === 'hoe' && (id === BLOCK.GRASS || id === BLOCK.DIRT) && this.world.getBlock(x, y + 1, z) === BLOCK.AIR) {
+      this.setBlock(x, y, z, BLOCK.FARMLAND, peerId);
+      return;
+    }
+    if (msg.item === ITEM.BONE_MEAL && def.crop && def.crop.stage < def.crop.max) {
+      // bone meal: 2-5 growth stages at once, like Minecraft
+      const add = def.crop.max === 7 ? 2 + Math.floor(this.random() * 4) : 1 + Math.floor(this.random() * 2);
+      const stage = Math.min(def.crop.max, def.crop.stage + add);
+      this.setBlock(x, y, z, id - def.crop.stage + stage);
+      return;
+    }
+    this.correct(peerId, x, y, z);
+  }
+
+  // Crops grow a stage every so often: faster on farmland with water within 4 blocks,
+  // and only near players (like Minecraft's loaded chunks).
+  tickCrops(dt) {
+    for (const key of this.crops) {
+      const [x, y, z] = key.split(',').map(Number);
+      const near = [...this.players.values()].some((p) => Math.abs(p.x - x) < 160 && Math.abs(p.z - z) < 160);
+      if (!near) continue;
+      const id = this.world.getBlock(x, y, z);
+      const def = BLOCKS[id];
+      if (!def.crop) { this.crops.delete(key); continue; }
+      if (def.crop.stage >= def.crop.max) continue;
+      const stageTime = (def.crop.max === 7 ? 1 : 2) * (this.hydrated(x, y - 1, z) ? 40 : 90); // seconds per stage, on average
+      if (this.random() < dt / stageTime) this.setBlock(x, y, z, id + 1);
+    }
+  }
+
+  hydrated(x, y, z) {
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+      for (let dy = 0; dy <= 1; dy++) if (this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER) return true;
+    }
+    return false;
+  }
+
   // ---------- using items on mobs ----------
   onInteract(p, msg) {
     const e = this.entities.get(msg.e);
@@ -900,6 +968,7 @@ export class GameHost {
 
     this.acc.spawn += dt;
     if (this.acc.spawn >= 1) {
+      this.tickCrops(this.acc.spawn);
       this.acc.spawn = 0;
       this.spawnMobs();
       this.mergeItems();
@@ -1073,7 +1142,7 @@ export class GameHost {
       const headIn = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + e.height * 0.6), Math.floor(e.z));
       if (BLOCKS[headIn].liquid) e.vy = Math.min(e.vy + 25 * dt, 2);
       else e.vy = Math.max(-40, e.vy - 28 * dt);
-      const res = moveBody(this.world, e, dt);
+      const res = moveBody(this.world, e, dt, 0.6);
       e.onGround = res.onGround;
       if (res.hitWall && targetSpeed !== 0) {
         if (e.type === 'spider') e.vy = 5;            // spiders climb walls

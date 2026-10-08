@@ -17,6 +17,9 @@ export const TILE_NAMES = [
   'dark_oak_log_top', 'dark_oak_log_side', 'dark_oak_leaves', 'dark_oak_planks', 'jungle_log_top', 'jungle_log_side', 'jungle_leaves', 'jungle_planks',
   'cactus_top', 'cactus_side', 'dead_bush', 'sugar_cane', 'ice', 'lava', 'redstone_ore', 'deepslate_redstone_ore',
   'lapis_ore', 'deepslate_lapis_ore', 'emerald_ore', 'fern', 'cornflower',
+  'farmland', 'wheat_0', 'wheat_1', 'wheat_2', 'wheat_3', 'wheat_4', 'wheat_5', 'wheat_6', 'wheat_7',
+  'carrots_0', 'carrots_1', 'carrots_2', 'carrots_3', 'potatoes_0', 'potatoes_1', 'potatoes_2', 'potatoes_3',
+  'door_top', 'door_bottom', 'ladder', 'smooth_stone', 'smooth_stone_slab_side',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

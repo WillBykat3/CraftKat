@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -12,7 +12,8 @@ import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE } f
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD } from './ui.js';
 import { sound } from './sound.js';
-import { uvOf } from './atlas-layout.js';
+import { blockGeometry, hasBlockModel } from './textures.js';
+import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
 import { BIOMES } from './biomes.js';
 import { VERSION } from './version.js';
 import { Particles } from './particles.js';
@@ -456,7 +457,18 @@ export class Game {
     let t = 0;
     while (t <= maxDist) {
       const id = this.world.getBlock(x, y, z);
-      if (id !== BLOCK.AIR && (hitWater || !BLOCKS[id].liquid) && y >= 0 && y < HEIGHT) return { x, y, z, id, normal: [...normal], dist: t };
+      if (id !== BLOCK.AIR && (hitWater || !BLOCKS[id].liquid) && y >= 0 && y < HEIGHT) {
+        const def = BLOCKS[id];
+        if (def.render === 'cube' || def.liquid) return { x, y, z, id, normal: [...normal], dist: t, box: [0, 0, 0, 1, 1, 1] };
+        // smaller blocks (slabs, doors, plants...): only their actual boxes can be hit
+        const boxes = selectionBoxes(id, (dx, dy, dz) => this.world.getBlock(x + dx, y + dy, z + dz));
+        let best = null;
+        for (const box of boxes) {
+          const r = rayBox([o.x, o.y, o.z], [d.x, d.y, d.z], box, x, y, z);
+          if (r && r.t <= maxDist && (!best || r.t < best.t)) best = r;
+        }
+        if (best) return { x, y, z, id, normal: best.normal, dist: best.t, box: boundsOf(boxes) };
+      }
       if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; normal[0] = -sx; normal[1] = 0; normal[2] = 0; }
       else if (ty < tz) { y += sy; t = ty; ty += tdy; normal[0] = 0; normal[1] = -sy; normal[2] = 0; }
       else { z += sz; t = tz; tz += tdz; normal[0] = 0; normal[1] = 0; normal[2] = -sz; }
@@ -549,7 +561,21 @@ export class Game {
         this.send({ t: 'sleep', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
+      if (BLOCKS[hit.id].shape === 'door') {
+        // open or close both halves right away; the host does the same for everyone
+        const lowerY = BLOCKS[hit.id].upper ? hit.y - 1 : hit.y;
+        for (const yy of [lowerY, lowerY + 1]) {
+          const d = this.world.getBlock(hit.x, yy, hit.z);
+          if (BLOCKS[d].shape === 'door') this.applyBlock(hit.x, yy, hit.z, BLOCK.OAK_DOOR + ((d - BLOCK.OAK_DOOR) ^ 4));
+        }
+        this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z });
+        sound.door(!BLOCKS[hit.id].open);
+        this.swing = 1;
+        this.useCooldown = 0.25;
+        return;
+      }
     }
+    if (hit && held && this.useOnBlock(hit, held)) return;
     if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET)) {
       this.useBucket(held);
       return;
@@ -558,12 +584,71 @@ export class Game {
       if (this.mode === 'survival' && this.stats.food < 20) this.eating = 0.001;
       return;
     }
+    if (hit && held && held.id === ITEM.OAK_DOOR) { this.placeDoor(hit); return; }
+    if (hit && held && ITEMS[held.id]?.plants) { this.placeBlock(hit, held, ITEMS[held.id].plants); return; }
     if (!hit || !held || !isBlockId(held.id)) return;
     this.placeBlock(hit, held);
   }
 
-  placeBlock(hit, held) {
-    const id = held.id;
+  // Hoes till soil, bone meal grows crops. Returns true if the item was used.
+  useOnBlock(hit, held) {
+    const tool = toolOf(held.id);
+    const above = this.world.getBlock(hit.x, hit.y + 1, hit.z);
+    let id = null;
+    if (tool?.kind === 'hoe' && (hit.id === BLOCK.GRASS || hit.id === BLOCK.DIRT) && hit.normal[1] >= 0 && above === BLOCK.AIR) {
+      id = BLOCK.FARMLAND;
+      this.useTool(1);
+      sound.place(BLOCK.DIRT);
+    } else if (held.id === ITEM.BONE_MEAL && BLOCKS[hit.id].crop && BLOCKS[hit.id].crop.stage < BLOCKS[hit.id].crop.max) {
+      if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
+      sound.place(BLOCK.TALL_GRASS);
+    } else {
+      return false;
+    }
+    if (id !== null) this.applyBlock(hit.x, hit.y, hit.z, id);
+    this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z, item: held.id });
+    this.swing = 1;
+    this.useCooldown = 0.25;
+    return true;
+  }
+
+  // Doors take two blocks and face away from the player.
+  placeDoor(hit) {
+    const replace = BLOCKS[hit.id].replaceable;
+    const x = replace ? hit.x : hit.x + hit.normal[0];
+    const y = replace ? hit.y : hit.y + hit.normal[1];
+    const z = replace ? hit.z : hit.z + hit.normal[2];
+    if (y < 1 || y + 1 >= HEIGHT) return;
+    if (!BLOCKS[this.world.getBlock(x, y, z)].replaceable || !BLOCKS[this.world.getBlock(x, y + 1, z)].replaceable) return;
+    if (!BLOCKS[this.world.getBlock(x, y - 1, z)].solid) return;
+    if (boxOverlapsBlock(this.player, x, y, z) || boxOverlapsBlock(this.player, x, y + 1, z)) return;
+    const facing = facingFromYaw(this.player.yaw);
+    for (const [yy, id] of [[y, BLOCK.OAK_DOOR + facing], [y + 1, BLOCK.OAK_DOOR + 8 + facing]]) {
+      this.send({ t: 'set', x, y: yy, z, id });
+      this.applyBlock(x, yy, z, id);
+    }
+    sound.place(BLOCK.PLANKS);
+    this.swing = 1;
+    this.useCooldown = 0.25;
+    if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
+  }
+
+  placeBlock(hit, held, placeId = held.id) {
+    let id = placeId;
+    // a slab on top of the same slab makes a full block
+    if (BLOCKS[id].shape === 'slab' && hit.id === id && hit.normal[1] === 1) {
+      this.send({ t: 'set', x: hit.x, y: hit.y, z: hit.z, id: BLOCKS[id].full });
+      this.applyBlock(hit.x, hit.y, hit.z, BLOCKS[id].full);
+      this.afterPlace(id);
+      return;
+    }
+    if (BLOCKS[id].shape === 'stairs') id += facingFromYaw(this.player.yaw);
+    if (BLOCKS[id].shape === 'ladder') {
+      // ladders go on the side of a full block, facing away from it
+      const f = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]].findIndex(([nx, , nz]) => nx === hit.normal[0] && nz === hit.normal[2] && hit.normal[1] === 0);
+      if (f < 0 || BLOCKS[hit.id].render !== 'cube' || !BLOCKS[hit.id].solid) return;
+      id += f;
+    }
     const replace = BLOCKS[hit.id].replaceable && hit.id !== id;
     const x = replace ? hit.x : hit.x + hit.normal[0];
     const y = replace ? hit.y : hit.y + hit.normal[1];
@@ -581,6 +666,10 @@ export class Game {
     }
     this.send({ t: 'set', x, y, z, id });
     this.applyBlock(x, y, z, id);
+    this.afterPlace(id);
+  }
+
+  afterPlace(id) {
     sound.place(id);
     this.swing = 1;
     this.useCooldown = 0.25;
@@ -646,10 +735,11 @@ export class Game {
   pickBlock() {
     const hit = this.raycast();
     if (!hit) return;
-    const id = hit.id;
+    const id = blockItem(hit.id);
+    if (!id) return;
     const found = this.inv.slice(0, HOTBAR_SIZE).findIndex((s) => s && s.id === id);
     if (found >= 0) { this.selected = found; return; }
-    if (this.mode === 'creative' && CREATIVE_BLOCKS.includes(id)) {
+    if (this.mode === 'creative' && (CREATIVE_BLOCKS.includes(id) || ITEMS[id])) {
       const empty = this.inv.slice(0, HOTBAR_SIZE).findIndex((s) => !s);
       if (empty >= 0) this.selected = empty;
       this.inv[this.selected] = makeStack(id, 64);
@@ -802,7 +892,14 @@ export class Game {
     p.vx += (wx * speed - p.vx) * a;
     p.vz += (wz * speed - p.vz) * a;
 
-    if (p.flying) {
+    // ladders: climb by walking into them or jumping, hold sneak to stay put
+    p.onLadder = !p.flying && this.touching((id) => BLOCKS[id].climbable);
+    if (p.onLadder) {
+      p.fallStart = null;
+      if (forward || strafe || k.Space) p.vy = 2.35;
+      else if (p.sneaking) p.vy = 0;
+      else p.vy = Math.max(p.vy - GRAVITY * dt, -3);
+    } else if (p.flying) {
       const up = (k.Space ? 1 : 0) - (k.ShiftLeft || k.ShiftRight ? 1 : 0);
       p.vy += (up * FLY * 0.75 - p.vy) * Math.min(1, dt * 12);
     } else if (p.inWater) {
@@ -821,7 +918,7 @@ export class Game {
 
     const before = { x: p.x, z: p.z };
     const wasOnGround = p.onGround;
-    const res = moveBody(this.world, p, dt);
+    const res = moveBody(this.world, p, dt, p.flying ? 0 : 0.6);
 
     // Swimming into a wall pushes you up, so you can climb out onto a bank (like Minecraft).
     // Checked against any part of the body touching water, not just the feet, because at the
@@ -886,6 +983,19 @@ export class Game {
     }
   }
 
+  // Whether any block the player's body is in matches test(id).
+  touching(test) {
+    const p = this.player;
+    for (let y = Math.floor(p.y); y <= Math.floor(p.y + p.height - 0.01); y++) {
+      for (let z = Math.floor(p.z - p.halfW); z <= Math.floor(p.z + p.halfW); z++) {
+        for (let x = Math.floor(p.x - p.halfW); x <= Math.floor(p.x + p.halfW); x++) {
+          if (test(this.world.getBlock(x, y, z))) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // ---------- held item ----------
   buildHand() {
     this.handScene = new THREE.Scene();
@@ -911,16 +1021,8 @@ export class Game {
         mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xd8a47f }));
         mesh.position.set(0.42, -0.42, -0.55);
         mesh.rotation.set(0.2, -0.15, 0);
-      } else if (isBlockId(id) && BLOCKS[id].render === 'cube') {
-        const geo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
-        const tex = BLOCKS[id].tex;
-        const faces = [tex[3], tex[3], tex[0], tex[2], tex[1], tex[1]];
-        const uv = geo.attributes.uv;
-        for (let f = 0; f < 6; f++) {
-          const [u0, v0, u1, v1] = uvOf(faces[f]);
-          for (let v = 0; v < 4; v++) uv.setXY(f * 4 + v, uv.getX(f * 4 + v) ? u1 : u0, uv.getY(f * 4 + v) ? v1 : v0);
-        }
-        mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this.textures.atlasSRGB, alphaTest: 0.5 }));
+      } else if (isBlockId(id) && hasBlockModel(id)) {
+        mesh = new THREE.Mesh(blockGeometry(id, 0.28), new THREE.MeshBasicMaterial({ map: this.textures.atlasSRGB, alphaTest: 0.5 }));
         mesh.position.set(0.46, -0.4, -0.72);
         mesh.rotation.set(0.1, Math.PI / 4, 0);
       } else {

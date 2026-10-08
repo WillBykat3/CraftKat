@@ -1,14 +1,14 @@
 // Inventory slots, Minecraft-style click handling and crafting recipes.
 // A slot is null or {id, count, dur?} (dur = remaining tool durability).
 
-import { BLOCK, ITEM, ITEMS, maxStack, toolOf } from './blocks.js';
+import { BLOCK, ITEM, ITEMS, maxStack, maxDurability } from './blocks.js';
 
 export const HOTBAR_SIZE = 9;
 export const INVENTORY_SIZE = 36; // 0-8 hotbar, 9-35 backpack
 
 export function makeStack(id, count = 1) {
-  const tool = toolOf(id);
-  return tool ? { id, count: 1, dur: tool.durability } : { id, count };
+  const dur = maxDurability(id);
+  return dur ? { id, count: 1, dur } : { id, count };
 }
 
 function canMerge(a, b) {
@@ -159,6 +159,33 @@ for (const [material, pickaxe] of TOOL_MATERIALS) {
   RECIPES.push({ pattern: ['M', 'S', 'S'], keys: m, result: [pickaxe + 2, 1] });        // shovel
   RECIPES.push({ pattern: ['M', 'M', 'S'], keys: m, result: [pickaxe + 3, 1] });        // sword
 }
+
+TOOL_MATERIALS.forEach(([material], m) => {
+  RECIPES.push({ pattern: ['MM', '.S', '.S'], keys: { M: material, S: [ITEM.STICK] }, result: [ITEM.WOODEN_HOE + m, 1] });
+});
+// armor from leather, iron, gold and diamonds
+[[ITEM.LEATHER], [ITEM.IRON_INGOT], [ITEM.GOLD_INGOT], [ITEM.DIAMOND]].forEach((material, m) => {
+  const keys = { M: material };
+  const first = ITEM.LEATHER_HELMET + m * 4;
+  RECIPES.push({ pattern: ['MMM', 'M.M'], keys, result: [first, 1] });
+  RECIPES.push({ pattern: ['M.M', 'MMM', 'MMM'], keys, result: [first + 1, 1] });
+  RECIPES.push({ pattern: ['MMM', 'M.M', 'M.M'], keys, result: [first + 2, 1] });
+  RECIPES.push({ pattern: ['M.M', 'M.M'], keys, result: [first + 3, 1] });
+});
+RECIPES.push(
+  { pattern: ['WWW'], keys: { W: [ITEM.WHEAT] }, result: [ITEM.BREAD, 1] },
+  { pattern: ['.ST', 'S.T', '.ST'], keys: { S: [ITEM.STICK], T: [ITEM.STRING] }, result: [ITEM.BOW, 1] },
+  { pattern: ['F', 'S', 'E'], keys: { F: [ITEM.FLINT], S: [ITEM.STICK], E: [ITEM.FEATHER] }, result: [ITEM.ARROW, 4] },
+  { pattern: ['B'], keys: { B: [ITEM.BONE] }, result: [ITEM.BONE_MEAL, 3] },
+  { pattern: ['PP', 'PP', 'PP'], keys: { P: PLANKS }, result: [ITEM.OAK_DOOR, 3] },
+  { pattern: ['S.S', 'SSS', 'S.S'], keys: { S: [ITEM.STICK] }, result: [BLOCK.LADDER, 3] },
+  { pattern: ['PSP', 'PSP'], keys: { P: PLANKS, S: [ITEM.STICK] }, result: [BLOCK.OAK_FENCE, 3] },
+  { pattern: ['PPP'], keys: { P: PLANKS }, result: [BLOCK.OAK_SLAB, 6] },
+  { pattern: ['CCC'], keys: { C: [BLOCK.COBBLE] }, result: [BLOCK.COBBLESTONE_SLAB, 6] },
+  { pattern: ['SSS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_SLAB, 6] },
+  { pattern: ['P..', 'PP.', 'PPP'], keys: { P: PLANKS }, result: [BLOCK.OAK_STAIRS, 4] },
+  { pattern: ['C..', 'CC.', 'CCC'], keys: { C: [BLOCK.COBBLE] }, result: [BLOCK.COBBLESTONE_STAIRS, 4] },
+);
 
 // Trims empty rows/columns: returns {w, h, cells} for a square grid of slots.
 function trim(grid, size) {

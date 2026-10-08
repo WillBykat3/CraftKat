@@ -452,3 +452,49 @@ test('the host frees terrain far from every player, keeping edits', () => {
   assert.ok(host.world.hasChunk(Math.floor(p.x / 16), Math.floor(p.z / 16)), 'chunks near the player stay');
   assert.equal(host.world.getBlock(2000, 150, 2000), BLOCK.BRICK, 'edits survive');
 });
+
+test('doors open for everyone and break as one; hoes till, crops grow, bone meal speeds them up', () => {
+  const { host, join, last } = setup();
+  join('a', 'A'); join('b', 'B');
+  const [x, y, z] = standAtSpawn(host, 'a');
+  const dx = x + 2;
+  host.world.setBlock(dx, y - 1, z, BLOCK.STONE);
+  host.message('a', { t: 'set', x: dx, y, z, id: BLOCK.OAK_DOOR + 1 });
+  host.message('a', { t: 'set', x: dx, y: y + 1, z, id: BLOCK.OAK_DOOR + 9 });
+  assert.equal(host.world.getBlock(dx, y + 1, z), BLOCK.OAK_DOOR + 9, 'top half placed on the bottom half');
+  host.message('a', { t: 'use', x: dx, y: y + 1, z });
+  assert.equal(host.world.getBlock(dx, y, z), BLOCK.OAK_DOOR + 5, 'both halves open');
+  assert.equal(host.world.getBlock(dx, y + 1, z), BLOCK.OAK_DOOR + 13);
+  assert.equal(last('b', 'set').id, BLOCK.OAK_DOOR + 13, 'the other player sees it');
+  host.message('a', { t: 'dig', x: dx, y: y + 1, z, tool: 0 });
+  assert.equal(host.world.getBlock(dx, y, z), BLOCK.AIR, 'breaking the top removes the bottom');
+  const doors = [...host.entities.values()].filter((e) => e.type === 'item' && e.item === ITEM.OAK_DOOR);
+  assert.equal(doors.length, 1, 'one door drops');
+
+  // farming
+  const fx = x - 2;
+  host.world.setBlock(fx, y - 1, z, BLOCK.GRASS);
+  host.world.setBlock(fx, y, z, BLOCK.AIR);
+  host.message('a', { t: 'use', x: fx, y: y - 1, z, item: ITEM.WOODEN_HOE });
+  assert.equal(host.world.getBlock(fx, y - 1, z), BLOCK.FARMLAND);
+  host.message('a', { t: 'set', x: fx, y, z, id: BLOCK.WHEAT });
+  assert.equal(host.world.getBlock(fx, y, z), BLOCK.WHEAT);
+  assert.ok(host.crops.has(`${fx},${y},${z}`));
+  host.message('a', { t: 'use', x: fx, y, z, item: ITEM.BONE_MEAL });
+  const stage = host.world.getBlock(fx, y, z) - BLOCK.WHEAT;
+  assert.ok(stage >= 2 && stage <= 5, `bone meal grew it to stage ${stage}`);
+  for (let i = 0; i < 2000 && host.world.getBlock(fx, y, z) !== BLOCK.WHEAT + 7; i++) host.tick(1);
+  assert.equal(host.world.getBlock(fx, y, z), BLOCK.WHEAT + 7, 'wheat ripens over time');
+  host.message('a', { t: 'dig', x: fx, y, z, tool: 0 });
+  const wheat = [...host.entities.values()].filter((e) => e.type === 'item' && e.item === ITEM.WHEAT);
+  assert.equal(wheat.length, 1, 'ripe wheat drops wheat');
+  // crops on farmland that's dug up pop off
+  host.message('a', { t: 'set', x: fx, y, z, id: BLOCK.CARROTS });
+  host.message('a', { t: 'dig', x: fx, y: y - 1, z, tool: 0 });
+  assert.equal(host.world.getBlock(fx, y, z), BLOCK.AIR);
+  // crops survive a save and load
+  host.world.setBlock(fx, y - 1, z, BLOCK.FARMLAND);
+  host.setBlock(fx, y, z, BLOCK.POTATOES);
+  const reloaded = new GameHost(structuredClone(host.serialize()), () => {});
+  assert.ok(reloaded.crops.has(`${fx},${y},${z}`));
+});
