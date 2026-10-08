@@ -389,3 +389,48 @@ test('water boils away in the Nether', () => {
   host.message('a', { t: 'bucket', x: 2, y: 70, z: 0, fill: false });
   assert.equal(host.dims.nether.world.getBlock(2, 70, 0), BLOCK.AIR);
 });
+
+test('review fixes: blasts spare End portals, no double kills, dragon keeps flying, boss bar for late arrivals, stale actions dropped', async () => {
+  const { portalCenter, strongholdSpots } = await import('../public/js/stronghold.js');
+  const { host, join, last, all } = setup();
+  const p = join('a', 'Steve');
+  const [cx, cy, cz] = portalCenter(strongholdSpots(1234)[0]);
+  const w = host.dims.overworld.world;
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if (w.getBlock(cx + dx, cy, cz + dz) === BLOCK.END_PORTAL_FRAME) w.setBlock(cx + dx, cy, cz + dz, BLOCK.END_PORTAL_FRAME + 1);
+  host.checkEndPortal(cx - 2, cy, cz);
+  host.explode(cx + 0.5, cy + 1, cz + 0.5, 4);
+  assert.equal(w.getBlock(cx, cy, cz), BLOCK.END_PORTAL);
+  assert.equal(w.getBlock(cx - 2, cy, cz), BLOCK.END_PORTAL_FRAME + 1);
+  // a crystal blowing up inside another blast doesn't kill a mob twice
+  host.changeDim(p, 'end', [100.5, 49, 0.5]);
+  host.endState.dragonKilled = true;
+  const deaths = () => all('a', 'mobdeath').length;
+  host.inDim('end', () => {
+    const c = host.spawnMob('end_crystal', 200.5, 70, 0.5);
+    const m = host.spawnMob('enderman', 202.5, 70, 0.5);
+    m.hp = 15; // survives the first blast alone, not the crystal's
+    const before = deaths();
+    host.explode(199.5, 70, 0.5, 4);
+    assert.ok(!host.entities.has(c.id) && !host.entities.has(m.id));
+    assert.equal(deaths() - before, 2, 'crystal and enderman, once each');
+  });
+  // the dragon flies even when the only player is on the far platform
+  host.endState.dragonKilled = false;
+  host.entities.clear();
+  host.tick(0.05);
+  const d = [...host.entities.values()].find((e) => e.type === 'ender_dragon');
+  d.x = -15; d.z = 48; d.y = 80;
+  const at = d.x;
+  for (let i = 0; i < 10; i++) host.tick(0.05);
+  assert.notEqual(d.x, at);
+  // a second player arriving gets the boss bar
+  const q = join('b', 'Alex');
+  host.changeDim(q, 'end', [100.5, 49, 0.5]);
+  host.tick(0.05);
+  assert.equal(last('b', 'boss').hp, Math.round(d.hp));
+  // a dig sent before a trip is ignored afterwards
+  host.setBlock(100, 48, 2, BLOCK.STONE);
+  host.inDim('end', () => host.setBlock(100, 48, 2, BLOCK.END_STONE));
+  host.message('b', { t: 'dig', x: 100, y: 48, z: 2, ds: 0 });
+  assert.equal(host.dims.end.world.getBlock(100, 48, 2), BLOCK.END_STONE);
+});

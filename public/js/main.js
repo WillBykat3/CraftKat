@@ -431,7 +431,7 @@ async function quitToTitle(reason) {
     hostNet = null;
     currentSave = null;
   }
-  for (const id of ['hud', 'pause', 'death', 'sleep', 'screen', 'water-overlay', 'friends-badge']) $(id).classList.add('hidden');
+  for (const id of ['hud', 'pause', 'death', 'sleep', 'screen', 'water-overlay', 'portal-overlay', 'bossbar', 'friends-badge']) $(id).classList.add('hidden');
   loading(null);
   show('title-screen');
   $('title-message').textContent = typeof reason === 'string' ? reason : '';

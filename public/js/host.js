@@ -55,6 +55,7 @@ const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
 const isMob = (e) => !!MOB_TYPES[e.type];
+const STALE_AFTER_TRIP = new Set(['pos', 'set', 'dig', 'use', 'bucket', 'attack', 'interact', 'shoot', 'eye', 'sleep', 'pickup']);
 // 4 slots, each empty or one piece of armor of the right kind
 const validArmor = (a) => Array.isArray(a) && a.length === 4 && a.every((s, slot) => s === null || (validStack(s) && armorOf(s.id)?.slot === slot && s.count === 1));
 
@@ -275,6 +276,8 @@ export class GameHost {
       return;
     }
     this.ctx = p.dim;
+    // actions in the world sent before the player changed dimension are dropped
+    if (msg.ds !== undefined && msg.ds !== p.ds && STALE_AFTER_TRIP.has(msg.t)) return;
     switch (msg.t) {
       case 'pos': return this.onPos(p, msg);
       case 'set': return this.onSet(peerId, p, msg);
@@ -371,7 +374,6 @@ export class GameHost {
   }
 
   onPos(p, msg) {
-    if (msg.ds !== undefined && msg.ds !== p.ds) return; // sent before the player changed dimension
     const { p: pos, r } = msg;
     if (!Array.isArray(pos) || pos.length !== 3 || !pos.every(isNum)) return;
     if (!Array.isArray(r) || r.length !== 2 || !r.every(isNum)) return;
@@ -956,7 +958,8 @@ export class GameHost {
       const bx = Math.floor(x) + dx, by = Math.floor(y) + dy, bz = Math.floor(z) + dz;
       if (by < 1 || by >= HEIGHT) continue;
       const id = this.world.getBlock(bx, by, bz);
-      if (id === BLOCK.AIR || BLOCKS[id].liquid || id === BLOCK.BEDROCK || id === BLOCK.OBSIDIAN) continue;
+      // bedrock, obsidian, End portals and their frames survive (Nether portals don't, like Minecraft)
+      if (id === BLOCK.AIR || BLOCKS[id].liquid || id === BLOCK.OBSIDIAN || (!Number.isFinite(BLOCKS[id].hardness) && BLOCKS[id].shape !== 'portal')) continue;
       if (id === BLOCK.TNT) { this.setBlock(bx, by, bz, BLOCK.AIR); this.primeTnt(bx, by, bz, 0.5 + this.random()); continue; } // chain reaction
       // like Minecraft, only some of the blown-up blocks drop (chests and furnaces always spill their contents)
       this.breakBlock(bx, by, bz, this.random() < 1 / power ? ITEM.DIAMOND_PICKAXE : null);
@@ -966,7 +969,7 @@ export class GameHost {
       if (d < power * 2) this.send(p.peerId, { t: 'hurt', amount: Math.round((1 - d / (power * 2)) * 22), from: [x, z], cause });
     }
     for (const e of [...this.entities.values()]) {
-      if (!isMob(e) || e.dim !== this.ctx) continue;
+      if (!isMob(e) || e.dim !== this.ctx || !this.entities.has(e.id)) continue; // (a crystal's blast may have got it)
       const d = Math.hypot(e.x - x, e.y - y, e.z - z);
       if (d < power * 2) { e.hp -= Math.round((1 - d / (power * 2)) * 22); if (e.hp <= 0) this.killMob(e); }
     }
@@ -1320,7 +1323,7 @@ export class GameHost {
       const near = this.nearestPlayer(e, 128);
       if (e.type === 'tnt') { this.tickTnt(e, dt); continue; } // lit TNT always goes off
       if (e.type === 'end_crystal') continue;                  // crystals just sit there
-      if (e.type === 'ender_dragon') { if (near) this.tickDragon(e, dt); continue; } // waits for you to come back
+      if (e.type === 'ender_dragon') { if (this.here().length) this.tickDragon(e, dt); continue; } // waits for you to come back
       if (!near) {
         // nobody around: items keep ageing, mobs vanish
         if (e.type !== 'item' || e.age > ITEM_LIFETIME) this.entities.delete(e.id);
@@ -1922,6 +1925,7 @@ export class GameHost {
     p.moved = true;
     p.sentEntities = true; // so the next entity list clears what they saw before
     this.inDim(dim, () => {
+      p.bossSent = false;
       this.send(p.peerId, {
         t: 'dimension', dim, ds: p.ds, edits: this.world.exportEdits(), pos,
         players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
@@ -2001,10 +2005,7 @@ export class GameHost {
     this.ctx = 'end';
     const here = this.here();
     const dragon = [...this.entities.values()].find((e) => e.type === 'ender_dragon');
-    if (!here.length || this.endState.dragonKilled) {
-      if (this.bossShown && !here.length) this.bossShown = false;
-      return;
-    }
+    if (!here.length || this.endState.dragonKilled) return;
     if (!dragon) {
       const d = this.spawnMob('ender_dragon', DRAGON_HOME[0] + 40, DRAGON_HOME[1], DRAGON_HOME[2]);
       d.phase = 'circle'; d.phaseTime = 0; d.angle = 0;
@@ -2018,10 +2019,13 @@ export class GameHost {
     }
     // the boss bar, for everyone in the End
     const hp = Math.max(0, Math.round(dragon.hp));
-    if (hp !== this.bossHp || !this.bossShown) {
-      this.bossHp = hp;
-      this.bossShown = true;
-      this.broadcastHere({ t: 'boss', name: 'Ender Dragon', hp, max: MOB_TYPES.ender_dragon.hp });
+    const changed = hp !== this.bossHp;
+    this.bossHp = hp;
+    // everyone in the End sees it, including players who just arrived or joined
+    for (const p of here) {
+      if (!changed && p.bossSent) continue;
+      p.bossSent = true;
+      this.send(p.peerId, { t: 'boss', name: 'Ender Dragon', hp, max: MOB_TYPES.ender_dragon.hp });
     }
   }
 
@@ -2152,7 +2156,6 @@ export class GameHost {
       for (const [x, y, z] of EndTerrain.portalCells()) this.setBlock(x, y, z, BLOCK.END_PORTAL);
       if (first) this.setBlock(0, FOUNTAIN_Y + 4, 0, BLOCK.DRAGON_EGG);
     });
-    this.bossShown = false;
     this.sys(`${e.angryAt ? `${e.angryAt} defeated the Ender Dragon!` : 'The Ender Dragon is dead!'} The way home is open.`);
   }
 

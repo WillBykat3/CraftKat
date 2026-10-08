@@ -101,7 +101,7 @@ export class Game {
 
   // ---------- networking ----------
   send(msg) {
-    this.conn.send(msg);
+    this.conn.send({ ...msg, ds: this.ds }); // which trip between dimensions it belongs to (see host.js)
   }
 
   handle(msg) {
@@ -189,6 +189,8 @@ export class Game {
     this.name = msg.name;
     this.dim = msg.dim || 'overworld';
     this.ds = 0;
+    $('bossbar').classList.add('hidden');
+    $('portal-overlay').classList.add('hidden');
     this.world = new World(msg.seed, msg.gen || 1, this.dim);
     this.world.importEdits(msg.edits);
     this.spawn = msg.spawn;
@@ -1418,7 +1420,7 @@ export class Game {
       const state = JSON.stringify([pos, rot, this.heldId()]);
       if (state !== this.lastSentState) {
         this.lastSentState = state;
-        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId(), ds: this.ds });
+        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId() });
       }
     }
     this.unloadTimer = (this.unloadTimer || 0) + dt;
