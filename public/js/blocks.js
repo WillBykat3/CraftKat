@@ -2,8 +2,8 @@
 // IDs are saved in worlds, so only ever append new entries; never reorder.
 
 export const CHUNK = 16;    // chunk width/depth in blocks
-export const HEIGHT = 96;   // world height in blocks
-export const SEA_LEVEL = 30;
+export const HEIGHT = 256;  // world height in blocks (generator 3 shows y as -64..191)
+export const SEA_LEVEL = 30; // sea level of generator versions 1-2; see World.seaLevel
 export const ITEM_BASE = 256; // ids below this are blocks, from here on items
 
 export const BLOCK = {
@@ -16,6 +16,10 @@ export const BLOCK = {
   DEEPSLATE_GOLD_ORE: 38, DEEPSLATE_DIAMOND_ORE: 39, COPPER_ORE: 40, DEEPSLATE_COPPER_ORE: 41,
   GRANITE: 42, DIORITE: 43, ANDESITE: 44, CHERRY_LOG: 45, CHERRY_LEAVES: 46, CHERRY_PLANKS: 47,
   CHEST: 48, BED: 49, COPPER_BLOCK: 50,
+  SPRUCE_LOG: 51, SPRUCE_LEAVES: 52, SPRUCE_PLANKS: 53, ACACIA_LOG: 54, ACACIA_LEAVES: 55, ACACIA_PLANKS: 56,
+  DARK_OAK_LOG: 57, DARK_OAK_LEAVES: 58, DARK_OAK_PLANKS: 59, JUNGLE_LOG: 60, JUNGLE_LEAVES: 61, JUNGLE_PLANKS: 62,
+  CACTUS: 63, DEAD_BUSH: 64, SUGAR_CANE: 65, ICE: 66, LAVA: 67, REDSTONE_ORE: 68, DEEPSLATE_REDSTONE_ORE: 69,
+  LAPIS_ORE: 70, DEEPSLATE_LAPIS_ORE: 71, EMERALD_ORE: 72, FERN: 73, CORNFLOWER: 74,
 };
 
 // Block properties (defaults filled in below):
@@ -32,19 +36,22 @@ export const BLOCK = {
 //  replaceable  placing a block here replaces it (water, tall grass)
 //  needsSupport breaks when the block underneath disappears (plants, torches)
 //  height     visual height of a partial cube (beds); collision is still a full block
+//  tint       'grass' | 'foliage' | 'water': coloured by the biome (only pixels marked as tintable in the texture)
+//  translucent  drawn see-through with the water (ice)
+//  liquid     'water' | 'lava'
 const B = [];
 function def(id, name, props) {
   B[id] = { name, ...props };
 }
 def(0, 'Air', { render: 'none', solid: false, transparent: true, replaceable: true, hardness: 0 });
-def(1, 'Grass Block', { tex: ['grass_top', 'grass_side', 'dirt'], hardness: 0.6, tool: 'shovel' });
+def(1, 'Grass Block', { tex: ['grass_top', 'grass_side', 'dirt'], hardness: 0.6, tool: 'shovel', tint: 'grass' });
 def(2, 'Dirt', { tex: ['dirt'], hardness: 0.5, tool: 'shovel' });
 def(3, 'Stone', { tex: ['stone'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
 def(4, 'Cobblestone', { tex: ['cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0 });
 def(5, 'Sand', { tex: ['sand'], hardness: 0.5, tool: 'shovel', gravity: true });
 def(6, 'Gravel', { tex: ['gravel'], hardness: 0.6, tool: 'shovel', gravity: true });
 def(7, 'Oak Log', { tex: ['log_top', 'log_side', 'log_top'], hardness: 2, tool: 'axe' });
-def(8, 'Oak Leaves', { tex: ['leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
+def(8, 'Oak Leaves', { tex: ['leaves'], hardness: 0.2, transparent: true, lightFilter: 1, tint: 'foliage' });
 def(9, 'Oak Planks', { tex: ['planks'], hardness: 2, tool: 'axe' });
 def(10, 'Glass', { tex: ['glass'], hardness: 0.3, transparent: true, cullSame: true });
 def(11, 'Bedrock', { tex: ['bedrock'], hardness: Infinity });
@@ -54,7 +61,7 @@ def(14, 'Coal Ore', { tex: ['coal_ore'], hardness: 3, tool: 'pickaxe', needsTier
 def(15, 'Iron Ore', { tex: ['iron_ore'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
 def(16, 'Gold Ore', { tex: ['gold_ore'], hardness: 3, tool: 'pickaxe', needsTier: 2 });
 def(17, 'Diamond Ore', { tex: ['diamond_ore'], hardness: 3, tool: 'pickaxe', needsTier: 2 });
-def(18, 'Water', { tex: ['water'], render: 'water', solid: false, transparent: true, lightFilter: 2, replaceable: true, hardness: Infinity });
+def(18, 'Water', { tex: ['water'], render: 'water', liquid: 'water', tint: 'water', solid: false, transparent: true, lightFilter: 2, replaceable: true, hardness: Infinity });
 def(19, 'Birch Log', { tex: ['birch_log_top', 'birch_log_side', 'birch_log_top'], hardness: 2, tool: 'axe' });
 def(20, 'Birch Leaves', { tex: ['birch_leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
 def(21, 'Birch Planks', { tex: ['birch_planks'], hardness: 2, tool: 'axe' });
@@ -63,7 +70,7 @@ def(23, 'Furnace', { tex: ['furnace_top', 'furnace_side', 'furnace_top', 'furnac
 def(24, 'Torch', { tex: ['torch'], render: 'cross', solid: false, transparent: true, emit: 14, hardness: 0, needsSupport: true });
 def(25, 'Dandelion', { tex: ['dandelion'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: false });
 def(26, 'Poppy', { tex: ['poppy'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
-def(27, 'Tall Grass', { tex: ['tall_grass'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: true });
+def(27, 'Tall Grass', { tex: ['tall_grass'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: true, tint: 'grass' });
 def(28, 'Sandstone', { tex: ['sandstone_top', 'sandstone_side', 'sandstone_top'], hardness: 0.8, tool: 'pickaxe', needsTier: 0 });
 def(29, 'White Wool', { tex: ['wool'], hardness: 0.8 });
 def(30, 'Stone Bricks', { tex: ['stone_bricks'], hardness: 1.5, tool: 'pickaxe', needsTier: 0 });
@@ -87,6 +94,30 @@ def(47, 'Cherry Planks', { tex: ['cherry_planks'], hardness: 2, tool: 'axe' });
 def(48, 'Chest', { tex: ['chest_top', 'chest_side', 'chest_top', 'chest_front'], hardness: 2.5, tool: 'axe' });
 def(49, 'Bed', { tex: ['bed_top', 'bed_side', 'planks'], hardness: 0.2, transparent: true, height: 9 / 16 });
 def(50, 'Block of Copper', { tex: ['copper_block'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
+def(51, 'Spruce Log', { tex: ['spruce_log_top', 'spruce_log_side', 'spruce_log_top'], hardness: 2, tool: 'axe' });
+def(52, 'Spruce Leaves', { tex: ['spruce_leaves'], hardness: 0.2, transparent: true, lightFilter: 1 });
+def(53, 'Spruce Planks', { tex: ['spruce_planks'], hardness: 2, tool: 'axe' });
+def(54, 'Acacia Log', { tex: ['acacia_log_top', 'acacia_log_side', 'acacia_log_top'], hardness: 2, tool: 'axe' });
+def(55, 'Acacia Leaves', { tex: ['acacia_leaves'], hardness: 0.2, transparent: true, lightFilter: 1, tint: 'foliage' });
+def(56, 'Acacia Planks', { tex: ['acacia_planks'], hardness: 2, tool: 'axe' });
+def(57, 'Dark Oak Log', { tex: ['dark_oak_log_top', 'dark_oak_log_side', 'dark_oak_log_top'], hardness: 2, tool: 'axe' });
+def(58, 'Dark Oak Leaves', { tex: ['dark_oak_leaves'], hardness: 0.2, transparent: true, lightFilter: 1, tint: 'foliage' });
+def(59, 'Dark Oak Planks', { tex: ['dark_oak_planks'], hardness: 2, tool: 'axe' });
+def(60, 'Jungle Log', { tex: ['jungle_log_top', 'jungle_log_side', 'jungle_log_top'], hardness: 2, tool: 'axe' });
+def(61, 'Jungle Leaves', { tex: ['jungle_leaves'], hardness: 0.2, transparent: true, lightFilter: 1, tint: 'foliage' });
+def(62, 'Jungle Planks', { tex: ['jungle_planks'], hardness: 2, tool: 'axe' });
+def(63, 'Cactus', { tex: ['cactus_top', 'cactus_side', 'cactus_top'], hardness: 0.4, transparent: true, needsSupport: true });
+def(64, 'Dead Bush', { tex: ['dead_bush'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: true });
+def(65, 'Sugar Cane', { tex: ['sugar_cane'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
+def(66, 'Ice', { tex: ['ice'], hardness: 0.5, tool: 'pickaxe', transparent: true, cullSame: true, translucent: true });
+def(67, 'Lava', { tex: ['lava'], render: 'water', liquid: 'lava', solid: false, transparent: true, emit: 15, replaceable: true, hardness: Infinity });
+def(68, 'Redstone Ore', { tex: ['redstone_ore'], hardness: 3, tool: 'pickaxe', needsTier: 2 });
+def(69, 'Deepslate Redstone Ore', { tex: ['deepslate_redstone_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 2 });
+def(70, 'Lapis Lazuli Ore', { tex: ['lapis_ore'], hardness: 3, tool: 'pickaxe', needsTier: 1 });
+def(71, 'Deepslate Lapis Lazuli Ore', { tex: ['deepslate_lapis_ore'], hardness: 4.5, tool: 'pickaxe', needsTier: 1 });
+def(72, 'Emerald Ore', { tex: ['emerald_ore'], hardness: 3, tool: 'pickaxe', needsTier: 2 });
+def(73, 'Fern', { tex: ['fern'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, replaceable: true, tint: 'grass' });
+def(74, 'Cornflower', { tex: ['cornflower'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
 
 for (const b of B) {
   b.render ??= 'cube';
@@ -102,6 +133,14 @@ for (const b of B) {
 }
 export const BLOCKS = B;
 
+// Whether a block that needs support can stay on top of `below`.
+export function isSupported(id, below) {
+  if (!B[id].needsSupport) return true;
+  if (id === BLOCK.SUGAR_CANE && below === BLOCK.SUGAR_CANE) return true;
+  if (id === BLOCK.CACTUS) return below === BLOCK.CACTUS || below === BLOCK.SAND;
+  return B[below].solid && below !== BLOCK.CACTUS;
+}
+
 // ---------- items ----------
 export const ITEM = {
   STICK: 256, COAL: 257, RAW_IRON: 258, IRON_INGOT: 259, RAW_GOLD: 260, GOLD_INGOT: 261, DIAMOND: 262,
@@ -114,6 +153,7 @@ export const ITEM = {
   RAW_COPPER: 287, COPPER_INGOT: 288, BUCKET: 289, WATER_BUCKET: 290, SHEARS: 291,
   RAW_CHICKEN: 292, COOKED_CHICKEN: 293, RAW_MUTTON: 294, COOKED_MUTTON: 295,
   FEATHER: 296, BONE: 297, ARROW: 298, GUNPOWDER: 299, STRING: 300,
+  REDSTONE: 301, LAPIS_LAZULI: 302, EMERALD: 303,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -165,6 +205,9 @@ item(297, 'Bone', { icon: 'bone' });
 item(298, 'Arrow', { icon: 'arrow' });
 item(299, 'Gunpowder', { icon: 'gunpowder' });
 item(300, 'String', { icon: 'string' });
+item(301, 'Redstone Dust', { icon: 'redstone' });
+item(302, 'Lapis Lazuli', { icon: 'lapis' });
+item(303, 'Emerald', { icon: 'emerald' });
 export const ITEMS = I;
 
 export function isBlockId(id) {
@@ -197,8 +240,8 @@ export function isTransparent(id) {
 
 // Blocks a player can place from the creative inventory.
 export const CREATIVE_BLOCKS = B.map((_, id) => id).filter(
-  (id) => id !== BLOCK.AIR && id !== BLOCK.BEDROCK && id !== BLOCK.WATER,
-).concat([BLOCK.WATER]);
+  (id) => id !== BLOCK.AIR && id !== BLOCK.BEDROCK && id !== BLOCK.WATER && id !== BLOCK.LAVA,
+).concat([BLOCK.WATER, BLOCK.LAVA]);
 export const CREATIVE_ITEMS = Object.keys(I).map(Number);
 
 // Seconds to break a block with the given held item (Minecraft's formula, simplified).
@@ -233,9 +276,22 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     case BLOCK.DEEPSLATE_DIAMOND_ORE: return [[ITEM.DIAMOND, 1]];
     case BLOCK.COPPER_ORE:
     case BLOCK.DEEPSLATE_COPPER_ORE: return [[ITEM.RAW_COPPER, 2 + Math.floor(rand() * 4)]];
-    case BLOCK.LEAVES: return rand() < 0.05 ? [[ITEM.APPLE, 1]] : [];
+    case BLOCK.REDSTONE_ORE:
+    case BLOCK.DEEPSLATE_REDSTONE_ORE: return [[ITEM.REDSTONE, 4 + Math.floor(rand() * 2)]];
+    case BLOCK.LAPIS_ORE:
+    case BLOCK.DEEPSLATE_LAPIS_ORE: return [[ITEM.LAPIS_LAZULI, 4 + Math.floor(rand() * 6)]];
+    case BLOCK.EMERALD_ORE: return [[ITEM.EMERALD, 1]];
+    case BLOCK.LEAVES:
+    case BLOCK.DARK_OAK_LEAVES: return rand() < 0.05 ? [[ITEM.APPLE, 1]] : [];
+    case BLOCK.DEAD_BUSH: return rand() < 0.5 ? [[ITEM.STICK, 1 + Math.floor(rand() * 2)]] : [];
     case BLOCK.BIRCH_LEAVES:
     case BLOCK.CHERRY_LEAVES:
+    case BLOCK.SPRUCE_LEAVES:
+    case BLOCK.ACACIA_LEAVES:
+    case BLOCK.JUNGLE_LEAVES:
+    case BLOCK.FERN:
+    case BLOCK.ICE:
+    case BLOCK.LAVA:
     case BLOCK.GLASS:
     case BLOCK.TALL_GRASS:
     case BLOCK.WATER:
@@ -258,6 +314,10 @@ export const SMELTING = {
   [BLOCK.BIRCH_LOG]: ITEM.COAL,
   [BLOCK.CLAY]: BLOCK.BRICK,
   [BLOCK.CHERRY_LOG]: ITEM.COAL,
+  [BLOCK.SPRUCE_LOG]: ITEM.COAL,
+  [BLOCK.ACACIA_LOG]: ITEM.COAL,
+  [BLOCK.DARK_OAK_LOG]: ITEM.COAL,
+  [BLOCK.JUNGLE_LOG]: ITEM.COAL,
   [ITEM.RAW_COPPER]: ITEM.COPPER_INGOT,
   [ITEM.RAW_CHICKEN]: ITEM.COOKED_CHICKEN,
   [ITEM.RAW_MUTTON]: ITEM.COOKED_MUTTON,
@@ -275,6 +335,10 @@ export const FUEL = {
   [BLOCK.CHEST]: 1.5,
   [ITEM.STICK]: 0.5,
 };
+for (const wood of ['SPRUCE', 'ACACIA', 'DARK_OAK', 'JUNGLE']) {
+  FUEL[BLOCK[wood + '_LOG']] = 1.5;
+  FUEL[BLOCK[wood + '_PLANKS']] = 1.5;
+}
 for (const id of Object.keys(I).map(Number)) {
   if (I[id].tool && I[id].tool.tier === 0) FUEL[id] = 1;
 }

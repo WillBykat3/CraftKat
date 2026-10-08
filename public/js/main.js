@@ -4,6 +4,7 @@ import { Renderer } from './renderer.js';
 import { createTextures } from './textures.js';
 import { Game } from './game.js';
 import { GameHost, newWorldSave } from './host.js';
+import { World, LATEST_GEN } from './world.js';
 import { HostNetwork, joinFriend, randomRoomId } from './net.js';
 import { listWorlds, loadWorld, saveWorld, deleteWorld, requestPersistence } from './storage.js';
 import { setVolume, sound } from './sound.js';
@@ -457,10 +458,18 @@ function closeOptionsInGame() {
 // ---------- title screen background: a slowly turning view of a world ----------
 let titleActive = false;
 let titleAngle = 0;
+const TITLE_SEED = 20240607;
+let titleSpot = [0, 80, 0];
 function startTitleBackground() {
   titleActive = true;
   renderer.setRenderDistance(4);
-  renderer.startWorld(20240607, [], 2);
+  renderer.startWorld(TITLE_SEED, [], LATEST_GEN);
+  // look around from above the first stretch of land near the origin
+  const w = new World(TITLE_SEED, LATEST_GEN);
+  for (let r = 0; r < 2000; r += 16) {
+    const h = w.heightAt(r, 0);
+    if (h > w.seaLevel + 3) { titleSpot = [r, h + 22, 0]; break; }
+  }
 }
 
 // ---------- main loop ----------
@@ -479,10 +488,11 @@ function frame(now) {
   } else if (titleActive) {
     titleAngle += dt * 0.03;
     const cam = renderer.camera;
-    cam.position.set(Math.sin(titleAngle) * 16, 62, Math.cos(titleAngle) * 16);
+    const [tx, ty, tz] = titleSpot;
+    cam.position.set(tx + Math.sin(titleAngle) * 16, ty, tz + Math.cos(titleAngle) * 16);
     cam.rotation.set(-0.3, titleAngle, 0);
-    renderer.updateChunks(0, 0);
-    renderer.updateEnvironment(4000, false, false);
+    renderer.updateChunks(tx, tz);
+    renderer.updateEnvironment(4000, null, false);
     renderer.render();
   } else {
     renderer.render();

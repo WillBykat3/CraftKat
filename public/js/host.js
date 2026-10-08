@@ -3,7 +3,7 @@
 // themselves, through plain message objects.
 
 import {
-  BLOCK, BLOCKS, ITEM, HEIGHT, SEA_LEVEL, getDrops, isBlockId, isValidId, maxStack, toolOf,
+  BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, isBlockId, isValidId, maxStack, toolOf,
   SMELTING, FUEL, SMELT_SECONDS,
 } from './blocks.js';
 import { World, LATEST_GEN } from './world.js';
@@ -52,21 +52,27 @@ export function newWorldSave({ name, seed, mode = 'survival', cheats = true }) {
   };
 }
 
-// A dry land spot near the origin.
-function findSpawn(world) {
-  for (let r = 0; r < 200; r += 4) {
-    for (let a = 0; a < 16; a++) {
-      const x = Math.round(Math.cos(a / 16 * Math.PI * 2) * r);
-      const z = Math.round(Math.sin(a / 16 * Math.PI * 2) * r);
+// A dry land spot near the origin, preferably on grass.
+export function findSpawn(world) {
+  const tall = world.yOffset > 0; // tall worlds have big oceans, so look further
+  const maxR = tall ? 1600 : 200, step = tall ? 8 : 4;
+  let fallback = null;
+  for (let r = 0; r < maxR; r += step) {
+    const n = Math.max(16, Math.round(r / 6));
+    for (let a = 0; a < n; a++) {
+      const x = Math.round(Math.cos(a / n * Math.PI * 2) * r);
+      const z = Math.round(Math.sin(a / n * Math.PI * 2) * r);
       const h = world.heightAt(x, z);
+      if (h <= world.seaLevel) continue;
       const top = world.getBlock(x, h, z);
-      if (h > SEA_LEVEL && (top === BLOCK.GRASS || top === BLOCK.SAND || top === BLOCK.SNOWY_GRASS) &&
-          ![BLOCK.LOG, BLOCK.BIRCH_LOG, BLOCK.CHERRY_LOG].includes(world.getBlock(x, h + 1, z))) {
-        return [x + 0.5, h + 1, z + 0.5];
-      }
+      const above = world.getBlock(x, h + 1, z);
+      if (!BLOCKS[above].replaceable || BLOCKS[world.getBlock(x, h + 2, z)].solid) continue;
+      if (top === BLOCK.GRASS) return [x + 0.5, h + 1, z + 0.5];
+      if (!fallback && (top === BLOCK.SAND || top === BLOCK.SNOWY_GRASS)) fallback = [x + 0.5, h + 1, z + 0.5];
     }
+    if (fallback && r > 64) return fallback;
   }
-  return [0.5, world.heightAt(0, 0) + 1, 0.5];
+  return fallback || [0.5, world.heightAt(0, 0) + 1, 0.5];
 }
 
 // 0 at night, 1 at day, smooth at dawn and dusk.
@@ -301,7 +307,7 @@ export class GameHost {
     const { x, y, z, id } = msg;
     const current = this.world.getBlock(x, y, z);
     const ok = isBlockId(id) && (id !== BLOCK.BEDROCK || p.mode === 'creative') &&
-      (id !== BLOCK.WATER || p.mode === 'creative') &&
+      (!BLOCKS[id].liquid || p.mode === 'creative') &&
       BLOCKS[current].replaceable && current !== id && this.inReach(p, x, y, z) && y >= 1 &&
       !this.blockedByEntity(x, y, z, id) && p.canBuild();
     if (!ok) return this.correct(peerId, x, y, z);
@@ -324,7 +330,7 @@ export class GameHost {
     const { x, y, z } = msg;
     const current = this.world.getBlock(x, y, z);
     const creative = p.mode === 'creative';
-    const ok = current !== BLOCK.AIR && current !== BLOCK.WATER &&
+    const ok = current !== BLOCK.AIR && !BLOCKS[current].liquid &&
       (current !== BLOCK.BEDROCK || creative) && this.inReach(p, x, y, z) && p.canBuild();
     if (!ok) return this.correct(peerId, x, y, z);
     const held = isValidId(msg.tool) ? msg.tool : 0;
@@ -334,8 +340,10 @@ export class GameHost {
   // Removes a block (dropping items unless tool === null) and handles what that causes.
   breakBlock(x, y, z, tool, exceptPeer = null) {
     const id = this.world.getBlock(x, y, z);
-    const flood = y <= SEA_LEVEL && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
-      .some(([dx, dy, dz]) => this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER);
+    // breaking ice with something under it, or a block next to the sea, lets the water in
+    const flood = (id === BLOCK.ICE && tool !== null && this.world.getBlock(x, y - 1, z) !== BLOCK.AIR) ||
+      (y <= this.world.seaLevel && [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]
+        .some(([dx, dy, dz]) => this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER));
     this.setBlock(x, y, z, flood ? BLOCK.WATER : BLOCK.AIR, exceptPeer);
     if (flood && exceptPeer) this.send(exceptPeer, { t: 'set', x, y, z, id: BLOCK.WATER });
     if (tool !== null) {
@@ -364,7 +372,7 @@ export class GameHost {
     for (let guard = 0; guard < HEIGHT && y < HEIGHT; guard++) {
       const id = this.world.getBlock(x, y, z);
       const below = this.world.getBlock(x, y - 1, z);
-      if (BLOCKS[id].needsSupport && !BLOCKS[below].solid) {
+      if (!isSupported(id, below)) {
         this.setBlock(x, y, z, BLOCK.AIR);
         if (drops) for (const [d, c] of getDrops(id, 0, this.random)) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, d, c);
         y++;
@@ -609,7 +617,7 @@ export class GameHost {
       const bx = Math.floor(x) + dx, by = Math.floor(y) + dy, bz = Math.floor(z) + dz;
       if (by < 1 || by >= HEIGHT) continue;
       const id = this.world.getBlock(bx, by, bz);
-      if (id === BLOCK.AIR || id === BLOCK.WATER || id === BLOCK.BEDROCK || id === BLOCK.OBSIDIAN) continue;
+      if (id === BLOCK.AIR || BLOCKS[id].liquid || id === BLOCK.BEDROCK || id === BLOCK.OBSIDIAN) continue;
       // like Minecraft, only some of the blown-up blocks drop (chests and furnaces always spill their contents)
       this.breakBlock(bx, by, bz, this.random() < 1 / power ? ITEM.DIAMOND_PICKAXE : null);
     }
@@ -918,8 +926,9 @@ export class GameHost {
       if (e.type === 'item') {
         if (e.age > ITEM_LIFETIME) { this.entities.delete(e.id); continue; }
         e.vy -= 20 * dt;
-        const inWater = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.1), Math.floor(e.z)) === BLOCK.WATER;
-        if (inWater) e.vy = Math.max(e.vy, 1);
+        const inside = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.1), Math.floor(e.z));
+        if (inside === BLOCK.LAVA) { this.entities.delete(e.id); continue; } // items burn up
+        if (inside === BLOCK.WATER) e.vy = Math.max(e.vy, 1);
         const res = moveBody(this.world, e, dt);
         if (res.onGround) { e.vx *= 0.5; e.vz *= 0.5; } else { e.vx *= 0.98; e.vz *= 0.98; }
         if (e.y < -20) this.entities.delete(e.id);
@@ -935,6 +944,13 @@ export class GameHost {
       if (e.type === 'sheep' && e.sheared) {
         e.regrow -= dt;
         if (e.regrow <= 0) e.sheared = false;
+      }
+
+      // lava burns every mob
+      if (this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z)) === BLOCK.LAVA) {
+        e.lava = (e.lava || 0) + dt;
+        if (e.lava > 0.5) { e.lava = 0; e.hp -= 4; this.broadcast({ t: 'mobhurt', e: e.id }); }
+        if (e.hp <= 0) { this.killMob(e); continue; }
       }
 
       if (t.hostile) {
@@ -997,8 +1013,8 @@ export class GameHost {
       const k = Math.min(1, dt * (e.onGround ? 8 : 2));
       e.vx += (ax - e.vx) * k;
       e.vz += (az - e.vz) * k;
-      const headInWater = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + e.height * 0.6), Math.floor(e.z)) === BLOCK.WATER;
-      if (headInWater) e.vy = Math.min(e.vy + 25 * dt, 2);
+      const headIn = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + e.height * 0.6), Math.floor(e.z));
+      if (BLOCKS[headIn].liquid) e.vy = Math.min(e.vy + 25 * dt, 2);
       else e.vy = Math.max(-40, e.vy - 28 * dt);
       const res = moveBody(this.world, e, dt);
       e.onGround = res.onGround;

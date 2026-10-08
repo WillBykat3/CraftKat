@@ -16,7 +16,7 @@ function work() {
   const { solid, water } = buildChunkMesh(world, job.cx, job.cz, uvOf);
   const transfer = [];
   for (const m of [solid, water]) {
-    if (m) transfer.push(m.positions.buffer, m.uvs.buffer, m.shade.buffer, m.light.buffer, m.indices.buffer);
+    if (m) transfer.push(m.positions.buffer, m.uvs.buffer, m.shade.buffer, m.light.buffer, m.tint.buffer, m.indices.buffer);
   }
   postMessage({ t: 'mesh', cx: job.cx, cz: job.cz, version: job.version, solid, water }, transfer);
   if (queue.length) schedule();

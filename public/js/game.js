@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -13,6 +13,7 @@ import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD } from './ui.js';
 import { sound } from './sound.js';
 import { uvOf } from './atlas-layout.js';
+import { BIOMES } from './biomes.js';
 import { lightCurve, toLinear } from './renderer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -438,7 +439,7 @@ export class Game {
     let t = 0;
     while (t <= maxDist) {
       const id = this.world.getBlock(x, y, z);
-      if (id !== BLOCK.AIR && (hitWater || id !== BLOCK.WATER) && y >= 0 && y < HEIGHT) return { x, y, z, id, normal: [...normal], dist: t };
+      if (id !== BLOCK.AIR && (hitWater || !BLOCKS[id].liquid) && y >= 0 && y < HEIGHT) return { x, y, z, id, normal: [...normal], dist: t };
       if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; normal[0] = -sx; normal[1] = 0; normal[2] = 0; }
       else if (ty < tz) { y += sy; t = ty; ty += tdy; normal[0] = 0; normal[1] = -sy; normal[2] = 0; }
       else { z += sz; t = tz; tz += tdz; normal[0] = 0; normal[1] = 0; normal[2] = -sz; }
@@ -554,7 +555,7 @@ export class Game {
     const current = this.world.getBlock(x, y, z);
     if (!BLOCKS[current].replaceable || current === id) return;
     if (BLOCKS[id].solid && boxOverlapsBlock(this.player, x, y, z)) return;
-    if (BLOCKS[id].needsSupport && !BLOCKS[this.world.getBlock(x, y - 1, z)].solid) return;
+    if (!isSupported(id, this.world.getBlock(x, y - 1, z))) return;
     for (const v of this.entities.entities.values()) {
       if (v.mob && BLOCKS[id].solid) {
         const p = v.group.position;
@@ -708,6 +709,12 @@ export class Game {
       if (s.starve >= 4) { s.starve = 0; if (s.health > 1) this.damage(1, 'starved to death'); }
     }
 
+    // lava burns
+    if (this.player.inLava) {
+      s.lavaTimer = (s.lavaTimer || 0) + dt;
+      if (s.lavaTimer >= 0.5) { s.lavaTimer = 0; this.damage(4, 'tried to swim in lava'); }
+    } else s.lavaTimer = 0.5; // the first touch hurts straight away
+
     // drowning
     if (this.player.headInWater) {
       s.air -= dt * 20;
@@ -754,7 +761,7 @@ export class Game {
     if (len > 0) { wx /= len; wz /= len; }
 
     let speed = p.flying ? (p.sprinting ? FLY * 2 : FLY) : p.sneaking ? SNEAK : p.sprinting ? SPRINT : WALK;
-    if (p.inWater && !p.flying) speed *= 0.5;
+    if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5;
     const control = p.onGround || p.flying ? 20 : p.inWater ? 6 : 5;
     const a = Math.min(1, dt * control);
     p.vx += (wx * speed - p.vx) * a;
@@ -785,7 +792,7 @@ export class Game {
     // Checked against any part of the body touching water, not just the feet, because at the
     // surface your feet bob in and out of the water.
     if (res.hitWall && !p.flying && (forward || strafe || k.Space)) {
-      const touchingWater = [0.1, 0.5, 1.0].some((dy) => this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z)) === BLOCK.WATER);
+      const touchingWater = [0.1, 0.5, 1.0].some((dy) => BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z))].liquid);
       if (touchingWater) p.vy = Math.max(p.vy, JUMP_SPEED);
     }
 
@@ -819,9 +826,12 @@ export class Game {
 
     const feet = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + 0.4), Math.floor(p.z));
     const wasInWater = p.inWater;
-    p.inWater = feet === BLOCK.WATER;
-    if (p.inWater && !wasInWater && p.vy < -6) sound.splash();
-    p.headInWater = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + this.eyeHeight()), Math.floor(p.z)) === BLOCK.WATER;
+    p.inWater = !!BLOCKS[feet].liquid; // swimming works in water and lava
+    p.inLava = [0.1, 1.0].some((dy) => this.world.getBlock(Math.floor(p.x), Math.floor(p.y + dy), Math.floor(p.z)) === BLOCK.LAVA);
+    if (p.inWater && !wasInWater && p.vy < -6 && feet === BLOCK.WATER) sound.splash();
+    const head = this.world.getBlock(Math.floor(p.x), Math.floor(p.y + this.eyeHeight()), Math.floor(p.z));
+    p.headInWater = head === BLOCK.WATER;
+    p.headInLava = head === BLOCK.LAVA;
 
     // footsteps and sprint exhaustion
     const moved = Math.hypot(p.x - before.x, p.z - before.z);
@@ -977,7 +987,7 @@ export class Game {
     if (this.pickupTried.size > 200) this.pickupTried.clear();
 
     // environment
-    this.r.updateEnvironment(this.time, p.headInWater, p.sprinting && !p.sneaking);
+    this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking);
     this.lightBudget = 1;
     this.time += dt * 20;
     this.entities.lightAt = (x, y, z) => this.lightAt(x, y, z);
@@ -1015,7 +1025,9 @@ export class Game {
     const dbg = $('debug');
     dbg.classList.toggle('hidden', !this.showDebug);
     if (this.showDebug) {
-      dbg.textContent = `XYZ ${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)}\n` +
+      const biome = BIOMES[this.world.biomeAt(Math.floor(p.x), Math.floor(p.z))]?.name || '?';
+      dbg.textContent = `XYZ ${p.x.toFixed(2)} ${(p.y - this.world.yOffset).toFixed(2)} ${p.z.toFixed(2)}\n` +
+        `Biome minecraft:${biome}\n` +
         `Facing ${((p.yaw * 180 / Math.PI) % 360).toFixed(0)}°  Time ${Math.floor(this.time)}  ${this.fps || 0} fps\n` +
         `Chunks ${this.r.meshes.size} (${this.r.pending.size} loading)  Players ${this.entities.players.size + 1}  Entities ${this.entities.entities.size}`;
     }
@@ -1033,7 +1045,7 @@ export class Game {
     let light = this.lightCache.get(key);
     if (!light && this.lightBudget > 0) {
       this.lightBudget--;
-      if (this.lightCache.size > 24) this.lightCache.clear();
+      if (this.lightCache.size > 12) this.lightCache.clear();
       light = computeLight(gatherRegion(this.world, cx, cz));
       this.lightCache.set(key, light);
     }

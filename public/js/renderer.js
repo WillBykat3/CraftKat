@@ -2,7 +2,7 @@
 // sun/moon, stars, clouds, block highlight and breaking cracks.
 
 import * as THREE from 'three';
-import { CHUNK, HEIGHT } from './blocks.js';
+import { CHUNK } from './blocks.js';
 import { chunkKey } from './world.js';
 import { DAY_TICKS, daylight as daylightAt } from './host.js';
 import { mulberry32 } from './noise.js';
@@ -10,6 +10,8 @@ import { mulberry32 } from './noise.js';
 const CHUNK_VERTEX = /* glsl */ `
 attribute float shade;
 attribute vec2 light;
+attribute vec3 tint;
+varying vec3 vTint;
 varying vec2 vUv;
 varying float vShade;
 varying vec2 vLight;
@@ -18,6 +20,7 @@ void main() {
   vUv = uv;
   vShade = shade;
   vLight = light;
+  vTint = tint;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vDist = length(mv.xyz);
   gl_Position = projectionMatrix * mv;
@@ -35,6 +38,7 @@ varying vec2 vUv;
 varying float vShade;
 varying vec2 vLight;
 varying float vDist;
+varying vec3 vTint;
 float curve(float l) {
   // Minecraft's light table: steep falloff so caves get properly dark,
   // lifted by the brightness setting (0 = moody, 1 = bright)
@@ -45,6 +49,7 @@ float curve(float l) {
 void main() {
   vec4 tex = texture2D(map, vUv);
   if (tex.a < 0.5) discard;
+  if (tex.a < 0.99) tex.rgb *= vTint; // pixels marked for the biome colour (alpha 250)
   float sky = curve(vLight.x * skyFactor);
   float blk = curve(vLight.y);
   vec3 light = max(vec3(sky), vec3(blk) * vec3(1.0, 0.92, 0.78)); // torches are warm
@@ -65,10 +70,15 @@ export function lightCurve(level) {
 }
 export const toLinear = (v) => Math.pow(v, 2.2);
 
+function freeArray() {
+  this.array = null;
+}
+
 const SKY_DAY = new THREE.Color(0x87b8ff);
 const SKY_NIGHT = new THREE.Color(0x05070f);
 const SKY_SUNSET = new THREE.Color(0xe8865a);
 const WATER_FOG = new THREE.Color(0x163a7a);
+const LAVA_FOG = new THREE.Color(0xc04a08);
 
 export class Renderer {
   constructor(container, textures) {
@@ -106,6 +116,7 @@ export class Renderer {
     this.versions = new Map();
     this.pending = new Set();
     this.renderDistance = 6;
+    this.cloudY = 126;
     this.worker = null;
 
     this.buildSky();
@@ -123,6 +134,7 @@ export class Renderer {
   // ---------- chunks ----------
   startWorld(seed, edits, gen = 1) {
     this.clearChunks();
+    this.cloudY = gen >= 3 ? 192.33 + 64 : 126; // Minecraft's cloud height in tall worlds
     if (this.worker) this.worker.terminate();
     this.worker = new Worker(new URL('./mesh-worker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => this.onMesh(e.data);
@@ -157,12 +169,16 @@ export class Renderer {
   makeMesh(data, material, cx, cz) {
     if (!data) return null;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
-    geo.setAttribute('shade', new THREE.BufferAttribute(data.shade, 1));
-    geo.setAttribute('light', new THREE.BufferAttribute(data.light, 2));
-    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(CHUNK / 2, HEIGHT / 2, CHUNK / 2), Math.hypot(CHUNK, HEIGHT, CHUNK) / 2);
+    // the GPU keeps its own copy, so free the arrays once they're uploaded
+    const attr = (array, size, normalized = false) => new THREE.BufferAttribute(array, size, normalized).onUpload(freeArray);
+    geo.setAttribute('position', attr(data.positions, 3));
+    geo.setAttribute('uv', attr(data.uvs, 2, true));
+    geo.setAttribute('shade', attr(data.shade, 1, true));
+    geo.setAttribute('light', attr(data.light, 2, true));
+    geo.setAttribute('tint', attr(data.tint, 3, true));
+    geo.setIndex(attr(data.indices, 1));
+    const half = (data.maxY - data.minY) / 2;
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(CHUNK / 2, data.minY + half, CHUNK / 2), Math.hypot(CHUNK / 2, half, CHUNK / 2));
     const mesh = new THREE.Mesh(geo, material);
     mesh.position.set(cx * CHUNK, 0, cz * CHUNK);
     mesh.matrixAutoUpdate = false;
@@ -361,8 +377,9 @@ export class Renderer {
   }
 
   // ---------- per frame ----------
-  // time: world ticks; underwater: camera is in water
-  updateEnvironment(time, underwater, sprintFov) {
+  // time: world ticks; medium: 'water' or 'lava' when the camera is inside one, else null
+  updateEnvironment(time, medium, sprintFov) {
+    const underwater = medium === 'water';
     const t = ((time % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
     const day = daylightAt(t);
     const skyFactor = 4 / 15 + day * 11 / 15; // night sky light ~4, like Minecraft
@@ -372,14 +389,14 @@ export class Renderer {
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day);
     const sunsetAmount = Math.max(0, 1 - Math.abs(t - 12900) / 1300) + Math.max(0, 1 - Math.abs(t - 23100) / 1300);
     sky.lerp(SKY_SUNSET, Math.min(0.55, sunsetAmount * 0.55));
-    const fog = underwater ? WATER_FOG : sky;
+    const fog = medium === 'lava' ? LAVA_FOG : underwater ? WATER_FOG : sky;
     this.scene.background = sky;
     const srgb = {};
     fog.getRGB(srgb, THREE.SRGBColorSpace);
     this.uniforms.fogColor.value.set(srgb.r, srgb.g, srgb.b);
     const far = this.renderDistance * CHUNK;
-    this.uniforms.fogNear.value = underwater ? 2 : far * 0.6;
-    this.uniforms.fogFar.value = underwater ? 18 : far * 0.95;
+    this.uniforms.fogNear.value = medium === 'lava' ? 0 : underwater ? 2 : far * 0.6;
+    this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : underwater ? 18 : far * 0.95;
 
     // sun travels east to west; t=0 is sunrise
     const angle = (t / DAY_TICKS) * Math.PI * 2;
@@ -392,7 +409,7 @@ export class Renderer {
     this.stars.position.copy(cam);
     this.stars.rotation.z = angle;
     this.stars.material.opacity = Math.max(0, 1 - day * 1.5);
-    this.clouds.position.set(cam.x, HEIGHT + 30, cam.z);
+    this.clouds.position.set(cam.x, this.cloudY, cam.z);
     this.cloudUniforms.offset.value.set(performance.now() / 768000, 0); // slow drift
     this.cloudUniforms.brightness.value = 0.25 + day * 0.75;
 

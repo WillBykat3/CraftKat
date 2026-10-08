@@ -30,7 +30,7 @@ test('a lone block in the sky has 6 faces, fully lit by the sky', () => {
   for (let i = 0; i < solid.positions.length / 3; i++) {
     if (solid.positions[i * 3 + 1] === y + 1 && solid.positions[i * 3] >= 4 && solid.positions[i * 3] <= 5 &&
         solid.positions[i * 3 + 2] >= 4 && solid.positions[i * 3 + 2] <= 5) {
-      assert.equal(solid.light[i * 2], 1);
+      assert.equal(solid.light[i * 2], 255);
     }
   }
 });

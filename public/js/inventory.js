@@ -118,7 +118,8 @@ export function quickMove(stack, to, targets) {
 }
 
 // ---------- crafting ----------
-const PLANKS = [BLOCK.PLANKS, BLOCK.BIRCH_PLANKS, BLOCK.CHERRY_PLANKS];
+const PLANKS = [BLOCK.PLANKS, BLOCK.BIRCH_PLANKS, BLOCK.CHERRY_PLANKS, BLOCK.SPRUCE_PLANKS, BLOCK.ACACIA_PLANKS,
+  BLOCK.DARK_OAK_PLANKS, BLOCK.JUNGLE_PLANKS];
 const STONES = [BLOCK.COBBLE, BLOCK.COBBLED_DEEPSLATE]; // like Minecraft, either works for stone tools
 const TOOL_MATERIALS = [
   [PLANKS, ITEM.WOODEN_PICKAXE],
@@ -135,6 +136,10 @@ export const RECIPES = [
   { pattern: ['PP', 'PP'], keys: { P: PLANKS }, result: [BLOCK.CRAFTING_TABLE, 1] },
   { pattern: ['C', 'S'], keys: { C: [ITEM.COAL], S: [ITEM.STICK] }, result: [BLOCK.TORCH, 4] },
   { pattern: ['L'], keys: { L: [BLOCK.CHERRY_LOG] }, result: [BLOCK.CHERRY_PLANKS, 4] },
+  { pattern: ['L'], keys: { L: [BLOCK.SPRUCE_LOG] }, result: [BLOCK.SPRUCE_PLANKS, 4] },
+  { pattern: ['L'], keys: { L: [BLOCK.ACACIA_LOG] }, result: [BLOCK.ACACIA_PLANKS, 4] },
+  { pattern: ['L'], keys: { L: [BLOCK.DARK_OAK_LOG] }, result: [BLOCK.DARK_OAK_PLANKS, 4] },
+  { pattern: ['L'], keys: { L: [BLOCK.JUNGLE_LOG] }, result: [BLOCK.JUNGLE_PLANKS, 4] },
   { pattern: ['CCC', 'C.C', 'CCC'], keys: { C: STONES }, result: [BLOCK.FURNACE, 1] },
   { pattern: ['PPP', 'P.P', 'PPP'], keys: { P: PLANKS }, result: [BLOCK.CHEST, 1] },
   { pattern: ['WWW', 'PPP'], keys: { W: [BLOCK.WOOL], P: PLANKS }, result: [BLOCK.BED, 1] },

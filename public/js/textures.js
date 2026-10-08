@@ -5,6 +5,15 @@ import * as THREE from 'three';
 import { mulberry32 } from './noise.js';
 import { TILE as S, ATLAS_TILES, TILE_NAMES, tileIndex } from './atlas-layout.js';
 import { BLOCKS, ITEMS, isBlockId } from './blocks.js';
+import { DEFAULT_GRASS, DEFAULT_FOLIAGE, BIOMES, BIOME } from './biomes.js';
+
+// Which biome colour a tile's marked pixels take on icons and held blocks.
+function tileTint(name) {
+  if (name === 'water') return BIOMES[BIOME.PLAINS].water;
+  if (/^(grass_top|grass_side|tall_grass|fern)$/.test(name)) return DEFAULT_GRASS;
+  if (/^(leaves|acacia_leaves|dark_oak_leaves|jungle_leaves)$/.test(name)) return DEFAULT_FOLIAGE;
+  return null;
+}
 
 function css([r, g, b], a = 1) {
   return `rgba(${Math.round(Math.max(0, Math.min(255, r)))},${Math.round(Math.max(0, Math.min(255, g)))},${Math.round(Math.max(0, Math.min(255, b)))},${a})`;
@@ -15,12 +24,17 @@ const shade = ([r, g, b], f) => [r * f, g * f, b * f];
 function painter(ctx, ox, oy, rand) {
   const px = (x, y, color, a = 1) => {
     if (x < 0 || y < 0 || x >= S || y >= S) return;
+    ctx.clearRect(ox + x, oy + y, 1, 1); // replace the pixel (alpha would otherwise blend)
     ctx.fillStyle = css(color, a);
     ctx.fillRect(ox + x, oy + y, 1, 1);
   };
   return {
     px,
     rand,
+    // a grey pixel that the chunk shader colours with the biome (alpha TINT_ALPHA marks it)
+    tinted(x, y, grey) {
+      px(x, y, [grey, grey, grey], TINT_ALPHA / 255);
+    },
     noisy(base, amount) {
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade(base, 1 - amount + rand() * amount * 2));
     },
@@ -51,24 +65,38 @@ function painter(ctx, ox, oy, rand) {
   };
 }
 
+// Pixels with this alpha get the biome's grass/foliage/water colour (see renderer.js).
+export const TINT_ALPHA = 250;
+
 const C = {
   dirt: [134, 96, 67], grass: [102, 168, 60], stone: [125, 125, 125], snow: [240, 246, 250],
   oak: [162, 130, 78], oakBark: [102, 81, 51], birch: [196, 179, 123], birchBark: [216, 215, 210],
   sand: [219, 207, 163], sandstone: [216, 203, 155], water: [52, 95, 218],
 };
 
+const WOODS = {
+  spruce: { bark: [60, 40, 20], inner: [120, 88, 52], planks: [115, 85, 50] },
+  acacia: { bark: [105, 98, 88], inner: [175, 95, 52], planks: [170, 92, 50] },
+  dark_oak: { bark: [58, 44, 26], inner: [85, 58, 30], planks: [68, 45, 22] },
+  jungle: { bark: [88, 70, 28], inner: [165, 120, 82], planks: [160, 115, 80] },
+};
+
 function drawBlockTile(p, name) {
   const { px, rand } = p;
   switch (name) {
-    case 'grass_top': p.noisy(C.grass, 0.14); break;
+    case 'grass_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) p.tinted(x, y, 150 + rand() * 50);
+      break;
     case 'dirt': p.noisy(C.dirt, 0.12); p.specks(shade(C.dirt, 0.7), 10); break;
     case 'grass_side':
     case 'snow_side': {
       drawBlockTile(p, 'dirt');
-      const top = name === 'grass_side' ? C.grass : C.snow;
       for (let x = 0; x < S; x++) {
         const depth = 3 + Math.floor(rand() * 3);
-        for (let y = 0; y < depth; y++) px(x, y, shade(top, 0.88 + rand() * 0.24));
+        for (let y = 0; y < depth; y++) {
+          if (name === 'grass_side') p.tinted(x, y, 150 + rand() * 50);
+          else px(x, y, shade(C.snow, 0.88 + rand() * 0.24));
+        }
       }
       break;
     }
@@ -125,11 +153,17 @@ function drawBlockTile(p, name) {
       }
       break;
     }
-    case 'leaves':
-    case 'birch_leaves': {
-      const base = name === 'leaves' ? [58, 125, 40] : [96, 140, 60];
+    case 'leaves': case 'acacia_leaves': case 'dark_oak_leaves': case 'jungle_leaves':
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        if (rand() < 0.18) continue; // see-through gaps
+        if (rand() < (name === 'dark_oak_leaves' ? 0.1 : name === 'acacia_leaves' ? 0.24 : 0.18)) continue; // see-through gaps
+        p.tinted(x, y, (name === 'jungle_leaves' ? 120 : 105) + rand() * 90);
+      }
+      break;
+    case 'birch_leaves':
+    case 'spruce_leaves': {
+      const base = name === 'birch_leaves' ? [112, 150, 70] : [80, 120, 80];
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (rand() < (name === 'spruce_leaves' ? 0.14 : 0.18)) continue;
         px(x, y, shade(base, 0.72 + rand() * 0.5));
       }
       break;
@@ -183,7 +217,7 @@ function drawBlockTile(p, name) {
     case 'water':
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
         const wave = Math.sin((x + y * 0.5) * 0.8) * 0.05;
-        px(x, y, shade(C.water, 0.92 + wave + rand() * 0.08));
+        p.tinted(x, y, 255 * (0.84 + wave + rand() * 0.08));
       }
       break;
     case 'table_top':
@@ -237,8 +271,39 @@ function drawBlockTile(p, name) {
       for (let i = 0; i < 9; i++) {
         const x = 1 + Math.floor(rand() * 14);
         const h = 5 + Math.floor(rand() * 9);
-        for (let y = 15; y > 15 - h; y--) px(x + (y < 8 && rand() < 0.3 ? 1 : 0), y, shade(C.grass, 0.7 + rand() * 0.4));
+        for (let y = 15; y > 15 - h; y--) p.tinted(x + (y < 8 && rand() < 0.3 ? 1 : 0), y, 140 + rand() * 70);
       }
+      break;
+    case 'fern':
+      for (const [bx, lean] of [[4, -1], [8, 0], [11, 1]]) {
+        for (let y = 15; y > 3; y--) {
+          const x = bx + Math.round(lean * (15 - y) / 6);
+          p.tinted(x, y, 120 + rand() * 50);
+          if (y % 2 === 0 && y < 14) { p.tinted(x - 1, y, 150 + rand() * 60); p.tinted(x + 1, y - 1, 150 + rand() * 60); }
+        }
+      }
+      break;
+    case 'dead_bush':
+      for (const [x0, dx] of [[8, -1], [8, 1], [7, -0.5], [9, 0.6]]) {
+        for (let k = 0; k < 9; k++) px(Math.round(x0 + dx * k * 0.6), 15 - k, shade([140, 95, 40], 0.8 + rand() * 0.3));
+      }
+      px(4, 8, [120, 80, 35]); px(12, 7, [120, 80, 35]); px(5, 6, [120, 80, 35]); px(11, 9, [120, 80, 35]);
+      break;
+    case 'sugar_cane':
+      for (const x of [3, 8, 12]) {
+        for (let y = 0; y < S; y++) {
+          const joint = (y + x) % 5 === 0;
+          px(x, y, joint ? [120, 160, 70] : shade([170, 215, 105], 0.9 + rand() * 0.15));
+          px(x + 1, y, joint ? [100, 140, 60] : shade([140, 190, 85], 0.9 + rand() * 0.15));
+        }
+        px(x + 2, (x * 3) % 12 + 2, [120, 180, 70]); px(x + 3, (x * 3) % 12 + 1, [120, 180, 70]);
+      }
+      break;
+    case 'cornflower':
+      for (let y = 9; y < 16; y++) px(8, y, [70, 140, 40]);
+      px(7, 13, [70, 140, 40]); px(9, 11, [70, 140, 40]);
+      for (const [x, y] of [[8, 4], [7, 5], [8, 5], [9, 5], [6, 6], [7, 6], [9, 6], [10, 6], [7, 7], [8, 7], [9, 7], [8, 8]]) px(x, y, [80, 120, 235]);
+      px(8, 6, [230, 230, 120]);
       break;
     case 'sandstone_top': p.noisy(C.sandstone, 0.05); break;
     case 'sandstone_side':
@@ -328,6 +393,60 @@ function drawBlockTile(p, name) {
       p.noisy([200, 110, 75], 0.08);
       for (let i = 0; i < S; i++) { px(i, 0, [230, 140, 100]); px(0, i, [230, 140, 100]); px(i, 15, [150, 80, 55]); px(15, i, [150, 80, 55]); }
       break;
+    case 'spruce_log_side': case 'acacia_log_side': case 'dark_oak_log_side': case 'jungle_log_side': {
+      const bark = WOODS[name.replace('_log_side', '')].bark;
+      for (let x = 0; x < S; x++) {
+        const stripe = 0.82 + rand() * 0.3;
+        for (let y = 0; y < S; y++) px(x, y, shade(bark, stripe * (0.92 + rand() * 0.14)));
+      }
+      if (name === 'jungle_log_side') for (let i = 0; i < 6; i++) { const x = Math.floor(rand() * 15), y = Math.floor(rand() * 15); px(x, y, [120, 110, 50]); px(x + 1, y + 1, [120, 110, 50]); }
+      break;
+    }
+    case 'spruce_log_top': case 'acacia_log_top': case 'dark_oak_log_top': case 'jungle_log_top': {
+      const w = WOODS[name.replace('_log_top', '')];
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+        px(x, y, d > 6.5 ? shade(w.bark, 0.9 + rand() * 0.2) : shade(w.inner, (Math.floor(d) % 2 ? 0.85 : 1) * (0.95 + rand() * 0.1)));
+      }
+      break;
+    }
+    case 'spruce_planks': case 'acacia_planks': case 'dark_oak_planks': case 'jungle_planks': {
+      const wood = WOODS[name.replace('_planks', '')].planks;
+      for (let y = 0; y < S; y++) {
+        const seam = Math.floor(y / 4) % 2 ? 4 : 11;
+        for (let x = 0; x < S; x++) px(x, y, shade(wood, y % 4 === 3 || x === seam ? 0.68 : 0.92 + rand() * 0.12));
+      }
+      break;
+    }
+    case 'cactus_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const edge = x === 0 || x === 15;
+        const stripe = x % 4 === 1 ? 0.8 : 1;
+        px(x, y, edge ? [40, 75, 20] : shade([85, 135, 40], stripe * (0.9 + rand() * 0.15)));
+      }
+      for (let i = 0; i < 10; i++) px(1 + Math.floor(rand() * 14), Math.floor(rand() * S), [220, 220, 180]);
+      break;
+    case 'cactus_top':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+        px(x, y, d > 6.5 ? [40, 75, 20] : shade([100, 150, 50], (Math.floor(d) % 3 ? 1 : 0.82) * (0.92 + rand() * 0.12)));
+      }
+      break;
+    case 'ice':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([150, 190, 250], 0.92 + rand() * 0.1));
+      for (let i = 0; i < 5; i++) { const x = Math.floor(rand() * 12), y = Math.floor(rand() * 12); for (let k = 0; k < 4; k++) px(x + k, y + k, [220, 235, 255]); }
+      break;
+    case 'lava':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const v = Math.sin(x * 0.9 + Math.sin(y * 0.7) * 2) + Math.sin(y * 0.8 - x * 0.3);
+        px(x, y, v > 1.1 ? [255, 210, 70] : v > 0.2 ? shade([240, 120, 20], 0.95 + rand() * 0.1) : shade([200, 70, 10], 0.9 + rand() * 0.15));
+      }
+      break;
+    case 'redstone_ore': drawBlockTile(p, 'stone'); p.ore([230, 20, 20]); break;
+    case 'deepslate_redstone_ore': drawBlockTile(p, 'deepslate'); p.ore([230, 20, 20]); break;
+    case 'lapis_ore': drawBlockTile(p, 'stone'); p.ore([35, 75, 190]); break;
+    case 'deepslate_lapis_ore': drawBlockTile(p, 'deepslate'); p.ore([35, 75, 190]); break;
+    case 'emerald_ore': drawBlockTile(p, 'stone'); p.ore([40, 210, 100]); break;
     default:
       for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, (x < 8) === (y < 8) ? [255, 0, 255] : [0, 0, 0]);
   }
@@ -491,6 +610,23 @@ function drawItem(p, icon) {
       for (const [x, y] of [[2, 12], [3, 13], [2, 13], [4, 13], [2, 11]]) px(x, y, [230, 230, 230]);
       break;
     case 'gunpowder': blob([90, 90, 90], 8, 9, 5, 3.5, 0.6); break;
+    case 'redstone':
+      for (let i = 0; i < 26; i++) {
+        const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * 4.5;
+        px(Math.round(8 + Math.cos(a) * r), Math.round(9 + Math.sin(a) * r * 0.7), shade([200, 10, 10], 0.7 + rand() * 0.5));
+      }
+      break;
+    case 'lapis':
+      blob([40, 80, 200], 8, 8, 4.5, 5, 0.35);
+      px(6, 6, [120, 160, 255]); px(10, 10, [20, 40, 120]);
+      break;
+    case 'emerald':
+      for (let y = 3; y < 14; y++) {
+        const w = 5 - Math.abs(y - 8) * 0.8;
+        for (let x = Math.ceil(8 - w); x < 8 + w; x++) px(x, y, shade([50, 215, 110], x < 8 ? 1.1 : 0.85));
+      }
+      px(6, 6, [200, 255, 220]); px(7, 5, [200, 255, 220]);
+      break;
     case 'string':
       for (let i = 0; i < 12; i++) px(2 + i, 8 + Math.round(Math.sin(i * 0.9) * 2), [235, 235, 235]);
       break;
@@ -504,17 +640,37 @@ export function createTextures() {
 
   const atlasCanvas = document.createElement('canvas');
   atlasCanvas.width = atlasCanvas.height = S * ATLAS_TILES;
-  const actx = atlasCanvas.getContext('2d');
+  const actx = atlasCanvas.getContext('2d', { willReadFrequently: true });
   TILE_NAMES.forEach((name, i) => {
     drawBlockTile(painter(actx, (i % ATLAS_TILES) * S, Math.floor(i / ATLAS_TILES) * S, rand), name);
   });
+  // The same atlas with the default (plains) biome colours applied, for icons,
+  // held blocks and dropped items, which aren't in any particular biome.
+  const tintedCanvas = document.createElement('canvas');
+  tintedCanvas.width = tintedCanvas.height = atlasCanvas.width;
+  const tctx = tintedCanvas.getContext('2d');
+  tctx.drawImage(atlasCanvas, 0, 0);
+  TILE_NAMES.forEach((name, i) => {
+    const color = tileTint(name);
+    if (!color) return;
+    const x = (i % ATLAS_TILES) * S, y = Math.floor(i / ATLAS_TILES) * S;
+    const img = actx.getImageData(x, y, S, S);
+    const d = img.data;
+    for (let k = 0; k < d.length; k += 4) {
+      if (d[k + 3] !== TINT_ALPHA) continue;
+      d[k] = d[k] * color[0] / 255; d[k + 1] = d[k + 1] * color[1] / 255; d[k + 2] = d[k + 2] * color[2] / 255;
+      d[k + 3] = 255;
+    }
+    tctx.putImageData(img, x, y);
+  });
+
   const atlas = new THREE.CanvasTexture(atlasCanvas);
   atlas.magFilter = THREE.NearestFilter;
   atlas.minFilter = THREE.NearestFilter;
   atlas.generateMipmaps = false;
   atlas.colorSpace = THREE.NoColorSpace; // shaders treat colors as already display-ready
   // the same pixels for regular three.js materials (held and dropped blocks)
-  const atlasSRGB = new THREE.CanvasTexture(atlasCanvas);
+  const atlasSRGB = new THREE.CanvasTexture(tintedCanvas);
   atlasSRGB.magFilter = THREE.NearestFilter;
   atlasSRGB.minFilter = THREE.NearestFilter;
   atlasSRGB.generateMipmaps = false;
@@ -547,7 +703,7 @@ export function createTextures() {
       const b = BLOCKS[id];
       if (b.render === 'cross') {
         const [sx, sy] = tileRect(b.tex[0]);
-        ctx.drawImage(atlasCanvas, sx, sy, S, S, 0, 0, size, size);
+        ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, size, size);
       } else {
         drawIsoCube(ctx, size, b);
       }
@@ -567,7 +723,7 @@ export function createTextures() {
       const [sx, sy] = tileRect(tex);
       ctx.save();
       ctx.setTransform(...transform);
-      ctx.drawImage(atlasCanvas, sx, sy, S, S, 0, 0, S, S);
+      ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, S, S);
       if (darken > 0) {
         ctx.fillStyle = `rgba(0,0,0,${darken})`;
         ctx.fillRect(0, 0, S, S);
@@ -603,7 +759,7 @@ export function createTextures() {
     const c = document.createElement('canvas');
     c.width = c.height = S;
     const [sx, sy] = tileRect(name);
-    c.getContext('2d').drawImage(atlasCanvas, sx, sy, S, S, 0, 0, S, S);
+    c.getContext('2d').drawImage(tintedCanvas, sx, sy, S, S, 0, 0, S, S);
     const tex = new THREE.CanvasTexture(c);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameHost, newWorldSave, daylight } from '../public/js/host.js';
 import { World } from '../public/js/world.js';
-import { BLOCK, ITEM, HEIGHT, SEA_LEVEL } from '../public/js/blocks.js';
+import { BLOCK, BLOCKS, ITEM, HEIGHT, SEA_LEVEL } from '../public/js/blocks.js';
 import { mulberry32 } from '../public/js/noise.js';
 
 // A host with a fake network: every message sent to a peer is recorded.
@@ -31,11 +31,15 @@ function standAtSpawn(host, peer) {
 }
 
 test('new worlds spawn players on dry land', () => {
-  const save = newWorldSave({ name: 'W', seed: 99 });
-  const w = new World(99);
-  const [x, y, z] = save.spawn;
-  assert.ok(y > SEA_LEVEL);
-  assert.notEqual(w.getBlock(Math.floor(x), y - 1, Math.floor(z)), BLOCK.WATER);
+  for (const seed of [99, 1, 2, 3, 4]) {
+    const save = newWorldSave({ name: 'W', seed });
+    const w = new World(seed, save.genVersion);
+    const [x, y, z] = save.spawn;
+    assert.ok(y > w.seaLevel, `seed ${seed}`);
+    const ground = w.getBlock(Math.floor(x), y - 1, Math.floor(z));
+    assert.ok([BLOCK.GRASS, BLOCK.SAND, BLOCK.SNOWY_GRASS].includes(ground), `seed ${seed}: ground ${ground}`);
+    assert.ok(!BLOCKS[w.getBlock(Math.floor(x), y, Math.floor(z))].solid);
+  }
 });
 
 test('players join, see each other and get unique names', () => {
@@ -64,12 +68,14 @@ test('placing blocks is relayed, validated and corrected', () => {
   host.message('a', { t: 'set', x: x + 2, y: y + 1, z, id: BLOCK.PLANKS });
   assert.deepEqual(last('b', 'set'), { t: 'set', x: x + 2, y: y + 1, z, id: BLOCK.PLANKS });
   // far away: refused, and the sender is told the real block
-  host.message('a', { t: 'set', x: x + 50, y: 60, z, id: BLOCK.STONE });
+  host.message('a', { t: 'set', x: x + 50, y: 250, z, id: BLOCK.STONE });
   assert.equal(last('a', 'set').x, x + 50);
   assert.equal(last('a', 'set').id, BLOCK.AIR);
   // survival players can't place water
   host.message('a', { t: 'set', x: x + 2, y: y + 2, z, id: BLOCK.WATER });
-  assert.equal(host.world.getBlock(x + 2, y + 2, z), BLOCK.AIR);
+  assert.notEqual(host.world.getBlock(x + 2, y + 2, z), BLOCK.WATER);
+  host.message('a', { t: 'set', x: x + 2, y: y + 2, z, id: BLOCK.LAVA });
+  assert.notEqual(host.world.getBlock(x + 2, y + 2, z), BLOCK.LAVA);
 });
 
 test('mining drops items only with the right tool, and items can be picked up', () => {

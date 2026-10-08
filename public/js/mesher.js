@@ -2,7 +2,8 @@
 // ambient occlusion. Produces two meshes: opaque/cut-out blocks, and water.
 
 import { CHUNK, HEIGHT, BLOCK, BLOCKS } from './blocks.js';
-import { gatherRegion, computeLight, regionIndex, topY } from './lighting.js';
+import { gatherRegion, computeLight, regionIndex, topY, SIZE } from './lighting.js';
+import { BIOMES } from './biomes.js';
 
 // slot: index into a block's tex array ([top, side, bottom, sideX])
 // corners [x, y, z, u, v] are ordered so triangles (0,1,2) and (2,1,3) face outwards.
@@ -20,32 +21,101 @@ const WATER_TOP = 0.875;
 
 const OPAQUE = new Uint8Array(256);
 for (let id = 0; id < 256; id++) OPAQUE[id] = BLOCKS[id] ? (BLOCKS[id].transparent ? 0 : 1) : 1;
+const WHITE = [255, 255, 255];
+const LAYER = SIZE * SIZE;
+const BLEND = 2; // biome colours are averaged over (2 * BLEND + 1)^2 columns, like Minecraft's default
 
+// Blended grass/foliage/water colours for each column of a chunk.
+function columnTints(world, cx, cz) {
+  const W = CHUNK + 2 * BLEND;
+  const biomes = new Uint8Array(W * W);
+  let mixed = false;
+  for (let z = 0; z < W; z++) {
+    for (let x = 0; x < W; x++) {
+      biomes[z * W + x] = world.biomeAt(cx * CHUNK + x - BLEND, cz * CHUNK + z - BLEND);
+      if (biomes[z * W + x] !== biomes[0]) mixed = true;
+    }
+  }
+  const out = { grass: [], foliage: [], water: [] };
+  const n = (2 * BLEND + 1) ** 2;
+  for (let lz = 0; lz < CHUNK; lz++) {
+    for (let lx = 0; lx < CHUNK; lx++) {
+      if (!mixed) {
+        const b = BIOMES[biomes[0]];
+        out.grass.push(b.grass); out.foliage.push(b.foliage); out.water.push(b.water);
+        continue;
+      }
+      const sum = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (let dz = 0; dz <= 2 * BLEND; dz++) {
+        for (let dx = 0; dx <= 2 * BLEND; dx++) {
+          const b = BIOMES[biomes[(lz + dz) * W + lx + dx]];
+          for (let k = 0; k < 3; k++) { sum[k] += b.grass[k]; sum[3 + k] += b.foliage[k]; sum[6 + k] += b.water[k]; }
+        }
+      }
+      const avg = sum.map((v) => Math.round(v / n));
+      out.grass.push(avg.slice(0, 3)); out.foliage.push(avg.slice(3, 6)); out.water.push(avg.slice(6, 9));
+    }
+  }
+  return out;
+}
+
+// Vertex data in compact typed arrays (grown as needed):
+//   position float x3, uv uint16 x2 (normalized), shade uint8, light uint8 x2 (sky, block), tint uint8 x3
 class MeshData {
   constructor() {
-    this.positions = [];
-    this.uvs = [];
-    this.shade = [];
-    this.light = [];
-    this.indices = [];
+    this.count = 0;
+    this.cap = 0;
+    this.minY = Infinity;
+    this.maxY = -Infinity;
+    this.indexCount = 0;
+    this.grow(1024);
+    this.idx = new Uint32Array(1536);
   }
 
-  vertex(x, y, z, u, v, shade, sky, block) {
-    this.positions.push(x, y, z);
-    this.uvs.push(u, v);
-    this.shade.push(shade);
-    this.light.push(sky / 15, block / 15);
+  grow(cap) {
+    const copy = (Type, old, n) => { const a = new Type(cap * n); if (old) a.set(old); return a; };
+    this.positions = copy(Float32Array, this.positions, 3);
+    this.uvs = copy(Uint16Array, this.uvs, 2);
+    this.shade = copy(Uint8Array, this.shade, 1);
+    this.light = copy(Uint8Array, this.light, 2);
+    this.tint = copy(Uint8Array, this.tint, 3);
+    this.cap = cap;
+  }
+
+  vertex(x, y, z, u, v, shade, sky, block, tint) {
+    if (this.count === this.cap) this.grow(this.cap * 2);
+    const i = this.count++;
+    if (y < this.minY) this.minY = y;
+    if (y > this.maxY) this.maxY = y;
+    this.positions[i * 3] = x; this.positions[i * 3 + 1] = y; this.positions[i * 3 + 2] = z;
+    this.uvs[i * 2] = Math.round(u * 65535); this.uvs[i * 2 + 1] = Math.round(v * 65535);
+    this.shade[i] = Math.round(shade * 255);
+    this.light[i * 2] = Math.round(sky * 17); this.light[i * 2 + 1] = Math.round(block * 17); // 0-15 -> 0-255
+    this.tint[i * 3] = tint[0]; this.tint[i * 3 + 1] = tint[1]; this.tint[i * 3 + 2] = tint[2];
+  }
+
+  // a quad from the last 4 vertices: triangles (a, b, c) and (d, e, f) as offsets 0-3
+  quad(a, b, c, d, e, f) {
+    if (this.indexCount + 6 > this.idx.length) { const n = new Uint32Array(this.idx.length * 2); n.set(this.idx); this.idx = n; }
+    const base = this.count - 4;
+    const o = this.indexCount;
+    this.idx[o] = base + a; this.idx[o + 1] = base + b; this.idx[o + 2] = base + c;
+    this.idx[o + 3] = base + d; this.idx[o + 4] = base + e; this.idx[o + 5] = base + f;
+    this.indexCount += 6;
   }
 
   finish() {
-    if (this.indices.length === 0) return null;
-    const vertices = this.positions.length / 3;
+    if (this.indexCount === 0) return null;
+    const n = this.count;
     return {
-      positions: new Float32Array(this.positions),
-      uvs: new Float32Array(this.uvs),
-      shade: new Float32Array(this.shade),
-      light: new Float32Array(this.light),
-      indices: vertices > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices),
+      minY: this.minY,
+      maxY: this.maxY,
+      positions: this.positions.slice(0, n * 3),
+      uvs: this.uvs.slice(0, n * 2),
+      shade: this.shade.slice(0, n),
+      light: this.light.slice(0, n * 2),
+      tint: this.tint.slice(0, n * 3),
+      indices: n > 65535 ? this.idx.slice(0, this.indexCount) : Uint16Array.from(this.idx.subarray(0, this.indexCount)),
     };
   }
 }
@@ -57,6 +127,8 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
   const get = (x, y, z) => (y < 0 ? BLOCK.BEDROCK : y >= HEIGHT ? BLOCK.AIR : ids[regionIndex(x, y, z)]);
   const skyAt = (x, y, z) => (y >= HEIGHT ? 15 : y < 0 ? 0 : sky[regionIndex(x, y, z)]);
   const blockAt = (x, y, z) => (y < 0 || y >= HEIGHT ? 0 : blockLight[regionIndex(x, y, z)]);
+  const tints = columnTints(world, cx, cz);
+  const tintOf = (def, x, z) => (def.tint ? tints[def.tint][z * CHUNK + x] : WHITE);
 
   const solid = new MeshData();
   const water = new MeshData();
@@ -69,33 +141,41 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
   for (let y = 0; y <= maxY; y++) {
     for (let z = 0; z < CHUNK; z++) {
       for (let x = 0; x < CHUNK; x++) {
-        const id = ids[regionIndex(x, y, z)];
+        const ri = regionIndex(x, y, z);
+        const id = ids[ri];
         if (id === BLOCK.AIR) continue;
+        // fast path: a block buried on all six sides has nothing to draw
+        if (OPAQUE[id] && y > 0 && y < HEIGHT - 1 && OPAQUE[ids[ri - 1]] && OPAQUE[ids[ri + 1]] && OPAQUE[ids[ri - SIZE]] &&
+            OPAQUE[ids[ri + SIZE]] && OPAQUE[ids[ri - LAYER]] && OPAQUE[ids[ri + LAYER]]) continue;
         const def = BLOCKS[id];
 
+        const tint = tintOf(def, x, z);
         if (def.render === 'cross') {
-          addCross(solid, x, y, z, uvOf(def.tex[0]), skyAt(x, y, z), blockAt(x, y, z));
+          addCross(solid, x, y, z, uvOf(def.tex[0]), skyAt(x, y, z), blockAt(x, y, z), tint);
           continue;
         }
 
         if (def.render === 'water') {
-          const topLowered = get(x, y + 1, z) !== BLOCK.WATER;
+          // liquids: water is see-through, lava is drawn with the solid blocks
+          const out = def.liquid === 'lava' ? solid : water;
+          const topLowered = get(x, y + 1, z) !== id;
           for (const face of FACES) {
             const [dx, dy, dz] = face.dir;
             const nid = get(x + dx, y + dy, z + dz);
-            if (nid === BLOCK.WATER || OPAQUE[nid]) continue;
+            if (nid === id || OPAQUE[nid] || (id === BLOCK.WATER && nid === BLOCK.ICE)) continue;
             const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
-            const base = water.positions.length / 3;
             const ls = skyAt(x + dx, y + dy, z + dz);
             const lb = blockAt(x + dx, y + dy, z + dz);
             for (const c of face.corners) {
               const cy = c[1] === 1 && topLowered ? WATER_TOP : c[1];
-              water.vertex(x + c[0], y + cy, z + c[2], c[3] ? u1 : u0, c[4] ? v1 : v0, face.shade, ls, lb);
+              out.vertex(x + c[0], y + cy, z + c[2], c[3] ? u1 : u0, c[4] ? v1 : v0, face.shade, ls, lb, tint);
             }
-            water.indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+            out.quad(0, 1, 2, 2, 1, 3);
           }
           continue;
         }
+
+        const mesh = def.translucent ? water : solid;
 
         const h = def.height || 1; // partial blocks (beds) are shorter
         for (const face of FACES) {
@@ -135,20 +215,19 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
           }
 
           const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
-          const base = solid.positions.length / 3;
           for (let i = 0; i < 4; i++) {
             const c = face.corners[i];
             // side faces of short blocks show only the bottom part of the texture
             const v = c[4] ? (dy === 0 ? v0 + (v1 - v0) * h : v1) : v0;
-            solid.vertex(x + c[0], y + (c[1] ? h : 0), z + c[2], c[3] ? u1 : u0, v,
-              face.shade * AO_LEVELS[ao[i]], vs[i], vb[i]);
+            mesh.vertex(x + c[0], y + (c[1] ? h : 0), z + c[2], c[3] ? u1 : u0, v,
+              face.shade * AO_LEVELS[ao[i]], vs[i], vb[i], tint);
           }
           // split the quad along the diagonal that hides interpolation artefacts
           const b0 = ao[0] + vs[0] / 15, b1 = ao[1] + vs[1] / 15, b2 = ao[2] + vs[2] / 15, b3 = ao[3] + vs[3] / 15;
           if (b0 + b3 > b1 + b2) {
-            solid.indices.push(base, base + 1, base + 3, base, base + 3, base + 2);
+            mesh.quad(0, 1, 3, 0, 3, 2);
           } else {
-            solid.indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+            mesh.quad(0, 1, 2, 2, 1, 3);
           }
         }
       }
@@ -159,7 +238,7 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
 }
 
 // Two crossed quads (each drawn from both sides) for plants and torches.
-function addCross(mesh, x, y, z, uv, sky, block) {
+function addCross(mesh, x, y, z, uv, sky, block, tint) {
   const [u0, v0, u1, v1] = uv;
   const a = 0.15, b = 0.85;
   const quads = [
@@ -169,11 +248,10 @@ function addCross(mesh, x, y, z, uv, sky, block) {
     [[x + b, z + a], [x + a, z + b]],
   ];
   for (const [[sx, sz], [ex, ez]] of quads) {
-    const base = mesh.positions.length / 3;
-    mesh.vertex(sx, y + 1, sz, u0, v1, 0.9, sky, block);
-    mesh.vertex(sx, y, sz, u0, v0, 0.9, sky, block);
-    mesh.vertex(ex, y + 1, ez, u1, v1, 0.9, sky, block);
-    mesh.vertex(ex, y, ez, u1, v0, 0.9, sky, block);
-    mesh.indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+    mesh.vertex(sx, y + 1, sz, u0, v1, 0.9, sky, block, tint);
+    mesh.vertex(sx, y, sz, u0, v0, 0.9, sky, block, tint);
+    mesh.vertex(ex, y + 1, ez, u1, v1, 0.9, sky, block, tint);
+    mesh.vertex(ex, y, ez, u1, v0, 0.9, sky, block, tint);
+    mesh.quad(0, 1, 2, 2, 1, 3);
   }
 }

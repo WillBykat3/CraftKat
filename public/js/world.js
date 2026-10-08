@@ -4,6 +4,8 @@
 
 import { CHUNK, HEIGHT, SEA_LEVEL, BLOCK } from './blocks.js';
 import { makeNoise2D, makeNoise3D, hash2, mulberry32 } from './noise.js';
+import { Terrain3, SEA, Y_OFFSET } from './terrain.js';
+import { BIOME } from './biomes.js';
 
 const TREE_CELL = 6;   // at most one tree per TREE_CELL x TREE_CELL area
 const SNOW_LEVEL = 64;
@@ -20,7 +22,9 @@ export function blockIndex(lx, y, lz) {
 // game never reshapes terrain in worlds that already exist.
 //   1: original terrain
 //   2: adds deepslate, copper, granite/diorite/andesite and cherry trees
-export const LATEST_GEN = 2;
+//   3: taller world (shown y -64 to 191), biomes, rivers, mountains (terrain.js)
+export const LATEST_GEN = 3;
+const LEGACY_MAX_GROUND = 76; // versions 1-2 were made for a 96-block world
 
 export class World {
   constructor(seed, gen = 1) {
@@ -37,17 +41,30 @@ export class World {
     this.cave1 = makeNoise3D(this.seed + 6);
     this.cave2 = makeNoise3D(this.seed + 7);
     this.cavern = makeNoise3D(this.seed + 8);
+    this.terrain = gen >= 3 ? new Terrain3(this.seed) : null;
+    this.biomes = new Map(); // chunkKey -> Uint8Array of biome ids (version 3)
+    this.seaLevel = this.terrain ? SEA : SEA_LEVEL;
+    this.yOffset = this.terrain ? Y_OFFSET : 0; // shown y = y - yOffset
+  }
+
+  biomeAt(x, z) {
+    if (!this.terrain) return BIOME.LEGACY;
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    const biomes = this.biomes.get(chunkKey(cx, cz));
+    if (biomes) return biomes[(z - cz * CHUNK) * CHUNK + (x - cx * CHUNK)];
+    return this.terrain.column(x, z).biome;
   }
 
   // Ground height (y of the top solid block) for a column.
   heightAt(x, z) {
+    if (this.terrain) return this.terrain.column(x, z).h;
     const n =
       this.noiseA(x / 220, z / 220) * 0.6 +
       this.noiseB(x / 70, z / 70) * 0.3 +
       this.noiseC(x / 24, z / 24) * 0.1;
     const m = (this.noiseM(x / 500, z / 500) + 1) / 2; // 0 = flat, 1 = mountains
     const h = SEA_LEVEL + 3 + n * (9 + m * m * 40);
-    return Math.max(5, Math.min(HEIGHT - 20, Math.floor(h)));
+    return Math.max(5, Math.min(LEGACY_MAX_GROUND, Math.floor(h)));
   }
 
   temperature(x, z) {
@@ -109,7 +126,10 @@ export class World {
 
   // Highest non-air block in a column (after edits), or -1.
   topBlockY(x, z) {
-    for (let y = HEIGHT - 1; y >= 0; y--) if (this.getBlock(x, y, z) !== BLOCK.AIR) return y;
+    const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+    const data = this.getChunk(cx, cz);
+    const col = blockIndex(x - cx * CHUNK, 0, z - cz * CHUNK);
+    for (let y = HEIGHT - 1; y >= 0; y--) if (data[col + y * CHUNK * CHUNK] !== BLOCK.AIR) return y;
     return -1;
   }
 
@@ -138,7 +158,10 @@ export class World {
       const comma = key.indexOf(',');
       const cx = +key.slice(0, comma);
       const cz = +key.slice(comma + 1);
-      if (Math.abs(cx - pcx) > radius || Math.abs(cz - pcz) > radius) this.chunks.delete(key);
+      if (Math.abs(cx - pcx) > radius || Math.abs(cz - pcz) > radius) {
+        this.chunks.delete(key);
+        this.biomes.delete(key);
+      }
     }
   }
 
@@ -161,6 +184,21 @@ export class World {
   }
 
   generate(cx, cz) {
+    let data;
+    if (this.terrain) {
+      const out = this.terrain.generate(cx, cz);
+      this.biomes.set(chunkKey(cx, cz), out.biomes);
+      data = out.data;
+    } else {
+      data = this.generateLegacy(cx, cz);
+    }
+    const chunkEdits = this.edits.get(chunkKey(cx, cz));
+    if (chunkEdits) for (const [idx, id] of chunkEdits) data[idx] = id;
+    return data;
+  }
+
+  // Generator versions 1 and 2. Never change what this produces.
+  generateLegacy(cx, cz) {
     const data = new Uint8Array(CHUNK * CHUNK * HEIGHT);
     const x0 = cx * CHUNK;
     const z0 = cz * CHUNK;
@@ -233,9 +271,6 @@ export class World {
         if (plant) data[blockIndex(lx, h + 1, lz)] = plant;
       }
     }
-
-    const chunkEdits = this.edits.get(chunkKey(cx, cz));
-    if (chunkEdits) for (const [idx, id] of chunkEdits) data[idx] = id;
     return data;
   }
 

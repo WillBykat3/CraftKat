@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { World, blockIndex } from '../public/js/world.js';
 import { gatherRegion, computeLight, regionIndex } from '../public/js/lighting.js';
 import { BLOCK, BLOCKS, HEIGHT, CHUNK, SEA_LEVEL } from '../public/js/blocks.js';
+import * as BIOMES_MODULE from '../public/js/biomes.js';
 
 test('terrain is deterministic for a seed', () => {
   const a = new World(42);
@@ -156,11 +157,27 @@ test('blockIndex layout matches chunk size', () => {
   assert.equal(blockIndex(CHUNK - 1, HEIGHT - 1, CHUNK - 1), CHUNK * CHUNK * HEIGHT - 1);
 });
 
-test('generator version 1 terrain never changes (old worlds keep their shape)', () => {
-  const w = new World(2024, 1);
+// Versions 1 and 2 were made for a 96-block-tall world: hash that part, and check nothing is above it.
+function legacyFingerprint(gen) {
+  const w = new World(2024, gen);
+  const below = CHUNK * CHUNK * 96;
   let h = 0;
-  for (let cx = -4; cx <= 4; cx++) for (let cz = -4; cz <= 4; cz++) for (const b of w.getChunk(cx, cz)) h = (Math.imul(h, 31) + b) | 0;
-  assert.equal(h, 384292837);
+  for (let cx = -4; cx <= 4; cx++) {
+    for (let cz = -4; cz <= 4; cz++) {
+      const data = w.getChunk(cx, cz);
+      for (let i = 0; i < below; i++) h = (Math.imul(h, 31) + data[i]) | 0;
+      assert.ok(data.subarray(below).every((b) => b === BLOCK.AIR));
+    }
+  }
+  return h;
+}
+
+test('generator version 1 terrain never changes (old worlds keep their shape)', () => {
+  assert.equal(legacyFingerprint(1), 384292837);
+});
+
+test('generator version 2 terrain never changes', () => {
+  assert.equal(legacyFingerprint(2), -1122342747);
 });
 
 test('generator version 2 adds deepslate, copper, stone variants and cherry trees', () => {
@@ -173,4 +190,134 @@ test('generator version 2 adds deepslate, copper, stone variants and cherry tree
   // no deepslate in version 1
   const old = new World(2024, 1);
   assert.ok(!old.getChunk(0, 0).includes(BLOCK.DEEPSLATE));
+});
+
+// ---------- generator version 3 ----------
+
+// Finds a column of each wanted biome on a coarse grid around the origin.
+function findBiomes(t, wanted) {
+  const found = new Map();
+  for (let r = 0; r < 3000 && found.size < wanted.length; r += 48) {
+    for (let x = -r; x <= r; x += 48) {
+      for (const z of [-r, r]) {
+        for (const [px, pz] of [[x, z], [z, x]]) {
+          const b = t.column(px, pz).biome;
+          if (wanted.includes(b) && !found.has(b)) found.set(b, [px, pz]);
+        }
+      }
+    }
+  }
+  return found;
+}
+
+test('version 3: tall terrain with sea level 63 (shown y), bedrock and deepslate at the bottom', () => {
+  const w = new World(2024, 3);
+  assert.equal(w.seaLevel - w.yOffset, 63);
+  assert.equal(HEIGHT - w.yOffset, 192);
+  const data = w.getChunk(0, 0);
+  for (let i = 0; i < CHUNK * CHUNK; i++) assert.equal(data[i], BLOCK.BEDROCK);
+  let deepslate = 0;
+  for (let y = 5; y < w.yOffset; y++) for (let i = 0; i < CHUNK * CHUNK; i++) if (data[y * CHUNK * CHUNK + i] === BLOCK.DEEPSLATE) deepslate++;
+  assert.ok(deepslate > 5000, `deepslate ${deepslate}`);
+  // heights cover deep oceans to high mountains
+  let lo = Infinity, hi = -Infinity;
+  for (let x = -3000; x < 3000; x += 37) for (let z = -3000; z < 3000; z += 41) {
+    const h = w.heightAt(x, z) - w.yOffset;
+    lo = Math.min(lo, h); hi = Math.max(hi, h);
+  }
+  assert.ok(lo < 35 && hi > 150 && hi < 192, `heights ${lo}..${hi}`);
+});
+
+test('version 3: oceans fill with water (or ice) up to sea level', () => {
+  const w = new World(2024, 3);
+  let checked = 0;
+  for (let x = -2000; x < 2000 && checked < 20; x += 50) {
+    for (let z = -2000; z < 2000 && checked < 20; z += 50) {
+      const h = w.heightAt(x, z);
+      if (h > w.seaLevel - 5) continue;
+      for (let y = h + 1; y < w.seaLevel; y++) assert.equal(w.getBlock(x, y, z), BLOCK.WATER, `${x},${y},${z}`);
+      assert.ok([BLOCK.WATER, BLOCK.ICE].includes(w.getBlock(x, w.seaLevel, z)));
+      assert.equal(w.getBlock(x, w.seaLevel + 1, z), BLOCK.AIR);
+      checked++;
+    }
+  }
+  assert.equal(checked, 20);
+});
+
+test('version 3: each biome gets its own surface, trees and plants', () => {
+  const w = new World(2024, 3);
+  const { BIOME } = BIOMES_MODULE;
+  const expect = {
+    [BIOME.DESERT]: [BLOCK.SAND, BLOCK.CACTUS],
+    [BIOME.TAIGA]: [BLOCK.SPRUCE_LOG, BLOCK.SPRUCE_LEAVES, BLOCK.FERN],
+    [BIOME.SAVANNA]: [BLOCK.ACACIA_LOG, BLOCK.ACACIA_LEAVES],
+    [BIOME.DARK_FOREST]: [BLOCK.DARK_OAK_LOG, BLOCK.DARK_OAK_LEAVES],
+    [BIOME.JUNGLE]: [BLOCK.JUNGLE_LOG, BLOCK.JUNGLE_LEAVES],
+    [BIOME.FOREST]: [BLOCK.LOG, BLOCK.LEAVES, BLOCK.TALL_GRASS],
+    [BIOME.BIRCH_FOREST]: [BLOCK.BIRCH_LOG],
+    [BIOME.CHERRY_GROVE]: [BLOCK.CHERRY_LOG, BLOCK.CHERRY_LEAVES],
+    [BIOME.SNOWY_PLAINS]: [BLOCK.SNOWY_GRASS],
+    [BIOME.FROZEN_OCEAN]: [BLOCK.ICE],
+    [BIOME.PLAINS]: [BLOCK.GRASS, BLOCK.TALL_GRASS],
+  };
+  const where = findBiomes(w.terrain, Object.keys(expect).map(Number));
+  for (const [biome, blocks] of Object.entries(expect)) {
+    const pos = where.get(+biome);
+    assert.ok(pos, `no ${BIOMES_MODULE.BIOMES[biome].name} found`);
+    const counts = new Map();
+    const cx = Math.floor(pos[0] / CHUNK), cz = Math.floor(pos[1] / CHUNK);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const id of w.getChunk(cx + dx, cz + dz)) counts.set(id, (counts.get(id) || 0) + 1);
+    for (const id of blocks) assert.ok(counts.get(id) > 0, `${BIOMES_MODULE.BIOMES[biome].name} should have ${BLOCKS[id].name}`);
+  }
+});
+
+test('version 3: ores at their depths, and lava deep down', () => {
+  const w = new World(7, 3);
+  const counts = new Map();
+  for (let cx = -3; cx <= 3; cx++) for (let cz = -3; cz <= 3; cz++) for (const id of w.getChunk(cx, cz)) counts.set(id, (counts.get(id) || 0) + 1);
+  for (const id of [BLOCK.COAL_ORE, BLOCK.IRON_ORE, BLOCK.COPPER_ORE, BLOCK.DEEPSLATE_DIAMOND_ORE, BLOCK.DEEPSLATE_REDSTONE_ORE,
+    BLOCK.DEEPSLATE_GOLD_ORE, BLOCK.LAVA, BLOCK.GRANITE, BLOCK.DIORITE, BLOCK.ANDESITE, BLOCK.GRAVEL]) {
+    assert.ok(counts.get(id) > 0, BLOCKS[id].name);
+  }
+  assert.ok((counts.get(BLOCK.LAPIS_ORE) || 0) + (counts.get(BLOCK.DEEPSLATE_LAPIS_ORE) || 0) > 0, 'lapis');
+  // lava only below shown y -54
+  const data = w.getChunk(0, 0);
+  for (let i = 0; i < data.length; i++) if (data[i] === BLOCK.LAVA) assert.ok(Math.floor(i / (CHUNK * CHUNK)) <= -54 + w.yOffset);
+});
+
+test('version 3: caves are carved identically however they are looked up', () => {
+  const w = new World(2024, 3);
+  const t = w.terrain;
+  for (const [cx, cz] of [[0, 0], [-3, 5], [7, -2]]) {
+    const data = w.getChunk(cx, cz);
+    let air = 0;
+    for (let lx = 0; lx < CHUNK; lx += 3) {
+      for (let lz = 0; lz < CHUNK; lz += 3) {
+        const x = cx * CHUNK + lx, z = cz * CHUNK + lz;
+        const h = w.heightAt(x, z);
+        for (let y = 1; y < h; y++) {
+          const id = data[blockIndex(lx, y, lz)];
+          if (id === BLOCK.BEDROCK) continue;
+          const [a, b, k] = t.caveAt(x, y, z);
+          const carved = t.constructor.carved(a, b, k, y, h, h < w.seaLevel);
+          assert.equal(id === BLOCK.AIR || id === BLOCK.LAVA, carved, `${x},${y},${z}`);
+          if (carved) air++;
+        }
+      }
+    }
+    assert.ok(air > 0);
+  }
+});
+
+test('version 3: terrain is deterministic and independent of generation order', () => {
+  const a = new World(5, 3), b = new World(5, 3), c = new World(6, 3);
+  const coords = [];
+  for (let cx = -2; cx <= 2; cx++) for (let cz = -2; cz <= 2; cz++) coords.push([cx, cz]);
+  for (const [cx, cz] of coords) a.getChunk(cx, cz);
+  let diff = 0;
+  for (const [cx, cz] of coords.reverse()) {
+    assert.deepEqual(b.getChunk(cx, cz), a.getChunk(cx, cz));
+    if (c.getChunk(cx, cz).some((v, i) => v !== a.getChunk(cx, cz)[i])) diff++;
+  }
+  assert.ok(diff > 0);
 });
