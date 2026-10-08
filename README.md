@@ -29,9 +29,21 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Redstone**: dust, redstone torches, levers, buttons, pressure plates, repeaters, lamps, blocks of redstone, pistons,
   sticky pistons, TNT (lit by power or flint and steel) and doors that open with power. Power fades 1 per block over
   15 blocks, torches invert, repeaters delay and boost, like Minecraft (see below for what's different)
+- **The Nether**: build an obsidian frame (2×3 to 21×21 inside), light it with flint and steel and stand in the portal
+  for 4 seconds. The Nether has netherrack caverns between a bedrock floor and roof, a lava sea, glowstone, quartz and
+  nether gold ore, soul sand valleys (soul sand slows you down) and basalt deltas, magma blocks (they burn unless you
+  sneak), red fog, and nether fortresses. Zombified piglins (calm until you hit one, then the whole group comes for
+  you), ghasts (punch their fireballs back!), blazes (they drop blaze rods) and wither skeletons live there. One block
+  in the Nether is 8 in the Overworld, and portals link up like Minecraft's. Beds explode in the Nether and the End.
+- **Strongholds and the End**: craft eyes of ender (ender pearl + blaze powder) and throw them; they fly towards the
+  nearest stronghold, deep underground 1280-2816 blocks from the middle of the world. Fill the 12 frames in its portal
+  room with eyes to open the End portal. In the End, the Ender Dragon flies around the island, healed by end
+  crystals on the obsidian pillars: break the crystals, then fight the dragon (it's easiest to hit while it perches
+  on the fountain). Defeating it opens the portal home and leaves the dragon egg.
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
+- **Obsidian**: pour water on lava (it needs a diamond pickaxe to mine)
 - **Chests** for storage, **beds** to sleep through the night and set your respawn point, **buckets** for water, **shears** for wool
 - **Day and night**: a 20-minute day with sunrise, sunset, stars and drifting 3D clouds
 - **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
@@ -44,13 +56,18 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** the Nether and End, villages, enchanting, potions, flowing water/lava, and many of Minecraft's
-mobs. (Lapis, emeralds and ender pearls can be collected but don't do anything yet.)
+**Not included (yet):** villages, enchanting, potions, brewing, flowing water/lava, fire, and many of Minecraft's
+mobs. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+
+**Nether and End differences from Minecraft:** there's no fire, so flint and steel only lights portals and TNT, and
+ghast and blaze fireballs don't set things alight; no piglins, hoglins, magma cubes or striders, crimson and warped
+forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
+libraries, silverfish or loot); the dragon can't be summoned again, and there are no credits. Strongholds only exist
+in worlds created with this terrain version or later (older worlds can still visit the Nether).
 
 **Redstone differences from Minecraft:** no comparators, observers, hoppers, dispensers, droppers or note blocks yet;
 repeaters can't be locked; pistons don't push players or mobs and have no quasi-connectivity; redstone torches don't
-burn out. Redstone lamps are made with glass instead of glowstone, and sticky pistons with string instead of a
-slimeball, until those exist. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
+burn out. Sticky pistons are made with string instead of a slimeball, until slimes exist. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -111,7 +128,7 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 | Shift | Sneak (you won't fall off edges) · fly down |
 | Double-tap Space | Fly (creative mode) |
 | Left click (hold) | Break block · attack |
-| Right click | Place block · open doors, crafting tables, furnaces, chests · flip levers, press buttons, change a repeater's delay · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears, bone meal or flint and steel |
+| Right click | Place block · open doors, crafting tables, furnaces, chests · flip levers, press buttons, change a repeater's delay · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears, bone meal or flint and steel · throw an eye of ender, or put it in an End portal frame |
 | Middle click | Pick block |
 | 1–9 / mouse wheel | Choose hotbar slot |
 | E | Inventory and crafting |
@@ -127,7 +144,8 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 Click **📖 Recipe Book** in a crafting screen to see every recipe; click one to fill the grid (Shift+click for as many as you can make).
 
 **Commands:** `/help`, `/list`, `/seed`, `/spawn`, `/kill`, and for the host (or everyone, if the world allows it):
-`/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/tp <player>`.
+`/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/tp <player>` (also into another
+dimension), `/locate stronghold`.
 
 **Options** (title screen or Esc menu): render distance, FOV, brightness, sensitivity, master volume, music,
 view bobbing, and clouds (Fancy, Fast or off). If the game is slow, lower the render distance or set clouds to Fast.
@@ -140,6 +158,10 @@ find coal for **torches** → build a **furnace** (8 cobblestone) to smelt iron.
 planks) before your first night, or craft a **bed** (3 wool from sheep + 3 planks) and sleep through it. Store things in
 a **chest** (8 planks). Iron makes **armor**; light caves with torches, because monsters appear wherever it's dark.
 For food, break tall grass for seeds, till dirt with a **hoe** next to water and grow wheat for **bread**.
+
+To reach the End: pour a **water bucket** on lava to make obsidian, mine it with a **diamond pickaxe**, build a Nether portal and light it with **flint and steel** (iron ingot + flint from gravel). In the
+Nether, find a fortress and kill **blazes** for blaze rods (blaze powder), and **endermen** for ender pearls. Craft
+**eyes of ender**, follow them to a stronghold, and bring a bow for the end crystals.
 
 ---
 
@@ -165,7 +187,8 @@ public/
   index.html, style.css   page, menus and HUD
   js/main.js              menus, hosting, joining, saving
   js/game.js              the player: controls, physics, mining, survival, held item
-  js/host.js              the game "server" that runs in the host's browser: world, mobs, items, furnaces
+  js/host.js              the game "server" that runs in the host's browser: the three dimensions, mobs,
+                          items, furnaces, portals, the Ender Dragon
   js/net.js               connections: loopback for the host, WebRTC (Trystero) for friends
   js/world.js             terrain generation (seeded) + block edits
   js/lighting.js          sky and torch light (flood fill)
@@ -177,6 +200,9 @@ public/
   js/ui.js                inventory screens and HUD
   js/entities.js          other players, mobs and dropped items
   js/terrain.js           terrain generator 3: biomes, rivers, mountains, trees (world.js keeps versions 1-2)
+  js/terrain-nether.js    the Nether: caverns, lava sea, biomes, glowstone, ores, fortresses
+  js/terrain-end.js       the End: the main island, obsidian pillars, exit fountain, outer islands
+  js/stronghold.js        strongholds and their End portal rooms
   js/biomes.js            biomes and their grass/foliage/water colours
   js/textures.js          all pixel art, drawn with code
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo

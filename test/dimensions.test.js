@@ -363,3 +363,29 @@ test('endermen spawn on the end stone island', () => {
   const types = new Set([...host.entities.values()].filter((e) => e.dim === 'end').map((e) => e.type));
   assert.deepEqual([...types], ['enderman']);
 });
+
+test('water poured on lava turns it into obsidian', () => {
+  const { host, join, last } = setup();
+  join('a', 'Steve');
+  host.setBlock(10, 150, 10, BLOCK.STONE);
+  host.setBlock(10, 151, 10, BLOCK.LAVA);
+  host.setBlock(11, 151, 10, BLOCK.LAVA);
+  host.message('a', { t: 'pos', p: [12.5, 151, 12.5], r: [0, 0] });
+  // straight onto the lava
+  host.message('a', { t: 'bucket', x: 10, y: 151, z: 10, fill: false });
+  assert.equal(host.world.getBlock(10, 151, 10), BLOCK.OBSIDIAN);
+  assert.deepEqual(last('a', 'set'), { t: 'set', x: 10, y: 151, z: 10, id: BLOCK.OBSIDIAN }, 'the pourer is told too');
+  // next to it
+  host.message('a', { t: 'bucket', x: 12, y: 151, z: 10, fill: false });
+  assert.equal(host.world.getBlock(11, 151, 10), BLOCK.OBSIDIAN);
+  assert.equal(host.world.getBlock(12, 151, 10), BLOCK.WATER);
+});
+
+test('water boils away in the Nether', () => {
+  const { host, join } = setup();
+  const p = join('a', 'Steve');
+  host.changeDim(p, 'nether', [0.5, 70, 0.5]);
+  host.inDim('nether', () => { host.setBlock(2, 69, 0, BLOCK.NETHERRACK); host.setBlock(2, 70, 0, BLOCK.AIR); });
+  host.message('a', { t: 'bucket', x: 2, y: 70, z: 0, fill: false });
+  assert.equal(host.dims.nether.world.getBlock(2, 70, 0), BLOCK.AIR);
+});

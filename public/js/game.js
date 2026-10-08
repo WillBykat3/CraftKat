@@ -822,9 +822,18 @@ export class Game {
       const z = replace ? hit.z : hit.z + hit.normal[2];
       const current = this.world.getBlock(x, y, z);
       if (!BLOCKS[current].replaceable || current === BLOCK.WATER || y < 1) return;
+      if (survival) this.inv[this.selected] = { id: ITEM.BUCKET, count: 1 };
+      if (this.dim === 'nether') {
+        // water boils away in the Nether, like Minecraft
+        sound.hiss();
+        this.particles.breakBlock(x, y, z, BLOCK.SNOW, 1); // a puff of steam
+        this.swing = 1;
+        this.useCooldown = 0.3;
+        this.invDirty = true;
+        return;
+      }
       this.send({ t: 'bucket', x, y, z, fill: false });
       this.applyBlock(x, y, z, BLOCK.WATER);
-      if (survival) this.inv[this.selected] = { id: ITEM.BUCKET, count: 1 };
     }
     sound.splash();
     this.swing = 1;

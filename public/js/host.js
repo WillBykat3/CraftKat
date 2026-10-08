@@ -858,7 +858,13 @@ export class GameHost {
       this.setBlock(x, y, z, BLOCK.AIR, peerId);
     } else {
       if (!BLOCKS[current].replaceable || current === BLOCK.WATER || y < 1) return this.correct(peerId, x, y, z);
+      if (this.ctx === 'nether') return this.correct(peerId, x, y, z); // water boils away in the Nether
+      // like Minecraft, water on lava turns the lava into obsidian (the only way to get it in survival)
+      if (current === BLOCK.LAVA) return this.setBlock(x, y, z, BLOCK.OBSIDIAN);
       this.setBlock(x, y, z, BLOCK.WATER, peerId);
+      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) {
+        if (this.world.getBlock(x + dx, y + dy, z + dz) === BLOCK.LAVA) this.setBlock(x + dx, y + dy, z + dz, BLOCK.OBSIDIAN);
+      }
     }
   }
 
