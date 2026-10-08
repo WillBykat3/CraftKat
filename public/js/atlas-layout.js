@@ -20,6 +20,9 @@ export const TILE_NAMES = [
   'farmland', 'wheat_0', 'wheat_1', 'wheat_2', 'wheat_3', 'wheat_4', 'wheat_5', 'wheat_6', 'wheat_7',
   'carrots_0', 'carrots_1', 'carrots_2', 'carrots_3', 'potatoes_0', 'potatoes_1', 'potatoes_2', 'potatoes_3',
   'door_top', 'door_bottom', 'ladder', 'smooth_stone', 'smooth_stone_slab_side',
+  'redstone_dust_dot', 'redstone_dust_line', 'redstone_torch', 'redstone_torch_off', 'lever_handle', 'torch_tip_on', 'torch_tip_off',
+  'repeater', 'redstone_lamp', 'redstone_lamp_on', 'redstone_block', 'tnt_top', 'tnt_side', 'tnt_bottom',
+  'piston_side', 'piston_top', 'piston_bottom', 'piston_inner',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

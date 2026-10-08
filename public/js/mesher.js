@@ -1,10 +1,11 @@
 // Turns a chunk of block ids into triangle data with smooth lighting and
 // ambient occlusion. Produces two meshes: opaque/cut-out blocks, and water.
 
-import { CHUNK, HEIGHT, BLOCK, BLOCKS } from './blocks.js';
+import { CHUNK, HEIGHT, BLOCK, BLOCKS, FACING } from './blocks.js';
 import { gatherRegion, computeLight, regionIndex, topY, SIZE } from './lighting.js';
 import { BIOMES } from './biomes.js';
 import { shapeBoxes } from './shapes.js';
+import { wireConnections, WIRE_COLORS } from './redstone.js';
 
 // slot: index into a block's tex array ([top, side, bottom, sideX])
 // corners [x, y, z, u, v] are ordered so triangles (0,1,2) and (2,1,3) face outwards.
@@ -129,7 +130,7 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
   const skyAt = (x, y, z) => (y >= HEIGHT ? 15 : y < 0 ? 0 : sky[regionIndex(x, y, z)]);
   const blockAt = (x, y, z) => (y < 0 || y >= HEIGHT ? 0 : blockLight[regionIndex(x, y, z)]);
   const tints = columnTints(world, cx, cz);
-  const tintOf = (def, x, z) => (def.tint ? tints[def.tint][z * CHUNK + x] : WHITE);
+  const tintOf = (def, x, z) => (def.tint === 'redstone' ? WIRE_COLORS[def.power] : def.tint ? tints[def.tint][z * CHUNK + x] : WHITE);
 
   const solid = new MeshData();
   const water = new MeshData();
@@ -178,6 +179,16 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
 
         if (def.render === 'shape') {
           addShape(solid, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint);
+          continue;
+        }
+        if (def.render === 'wire') {
+          addWire(solid, x, y, z, get, uvOf, skyAt(x, y, z), blockAt(x, y, z), tint);
+          continue;
+        }
+        if (def.render === 'torch') {
+          // a wall torch leans on the block behind it
+          const [fx, , fz] = def.attach ? FACING[def.attach - 1] : [0, 0, 0];
+          addCross(solid, x - fx * 0.3, y + (def.attach ? 0.2 : 0), z - fz * 0.3, uvOf(def.tex[0]), skyAt(x, y, z), blockAt(x, y, z), tint);
           continue;
         }
         if (def.render === 'crop') {
@@ -280,7 +291,8 @@ function addShape(mesh, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint) {
         ls = skyAt(x + dx, y + dy, z + dz);
         lb = blockAt(x + dx, y + dy, z + dz);
       }
-      const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
+      const texName = box[6] === undefined ? def.tex[face.slot] : Array.isArray(box[6]) ? box[6][f] : box[6];
+      const [u0, v0, u1, v1] = uvOf(texName);
       for (const c of face.corners) {
         p[0] = c[0] ? box[3] : box[0];
         p[1] = c[1] ? box[4] : box[1];
@@ -289,6 +301,49 @@ function addShape(mesh, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint) {
         const vf = ax.sv > 0 ? p[ax.v] : 1 - p[ax.v];
         mesh.vertex(x + p[0], y + p[1], z + p[2], u0 + (u1 - u0) * uf, v0 + (v1 - v0) * vf, face.shade, ls, lb, tint);
       }
+      mesh.quad(0, 1, 2, 2, 1, 3);
+    }
+  }
+}
+
+// Redstone dust: flat on the ground, a dot in the middle and lines to whatever it
+// connects to (a straight line through the block if it connects one way only),
+// climbing up the side of a block to dust on top of it.
+function addWire(mesh, x, y, z, get, uvOf, sky, block, tint) {
+  const conn = wireConnections(get, x, y, z);
+  const n = conn.side.filter(Boolean).length;
+  const arms = n === 1 ? (() => { const d = conn.side.indexOf(true); const a = [false, false, false, false]; a[d] = a[(d + 2) % 4] = true; return a; })() : conn.side;
+  const h = y + 1 / 64;
+  const dot = uvOf('redstone_dust_dot');
+  const line = uvOf('redstone_dust_line');
+  const flat = (x0, z0, x1, z1, uv, rotate) => {
+    const [u0, v0, u1, v1] = uv;
+    // texture coordinates follow x and z (or z and x when rotated)
+    const U = (fx, fz) => u0 + (u1 - u0) * (rotate ? fz : fx);
+    const V = (fx, fz) => v0 + (v1 - v0) * (rotate ? fx : fz);
+    mesh.vertex(x + x0, h, z + z1, U(x0, z1), V(x0, z1), 1, sky, block, tint);
+    mesh.vertex(x + x1, h, z + z1, U(x1, z1), V(x1, z1), 1, sky, block, tint);
+    mesh.vertex(x + x0, h, z + z0, U(x0, z0), V(x0, z0), 1, sky, block, tint);
+    mesh.vertex(x + x1, h, z + z0, U(x1, z0), V(x1, z0), 1, sky, block, tint);
+    mesh.quad(0, 1, 2, 2, 1, 3);
+  };
+  flat(0.25, 0.25, 0.75, 0.75, dot, false);
+  if (arms[0]) flat(0, 0, 1, 0.5, line, false);
+  if (arms[2]) flat(0, 0.5, 1, 1, line, false);
+  if (arms[1]) flat(0.5, 0, 1, 1, line, true);
+  if (arms[3]) flat(0, 0, 0.5, 1, line, true);
+  // up the side of the neighbouring block
+  for (let d = 0; d < 4; d++) {
+    if (!conn.up[d]) continue;
+    const [dx, , dz] = FACING[d];
+    const [u0, v0, u1, v1] = line;
+    const px = x + 0.5 + dx * (0.5 - 1 / 64), pz = z + 0.5 + dz * (0.5 - 1 / 64);
+    const ax = dz !== 0 ? 0.5 : 0, az = dx !== 0 ? 0.5 : 0; // half-width along the wall
+    for (const [sx, sz, ex, ez] of [[px - ax, pz - az, px + ax, pz + az], [px + ax, pz + az, px - ax, pz - az]]) {
+      mesh.vertex(sx, y + 1, sz, u0, v1, 0.9, sky, block, tint);
+      mesh.vertex(sx, y, sz, u0, v0, 0.9, sky, block, tint);
+      mesh.vertex(ex, y + 1, ez, u1, v1, 0.9, sky, block, tint);
+      mesh.vertex(ex, y, ez, u1, v0, 0.9, sky, block, tint);
       mesh.quad(0, 1, 2, 2, 1, 3);
     }
   }

@@ -417,6 +417,13 @@ export class EntityViews {
       group.add(mesh);
       return { item: kind, group, mesh, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
     }
+    if (kind === 'tnt') {
+      const group = new THREE.Group();
+      const mesh = new THREE.Mesh(blockGeometry(197, 0.98), new THREE.MeshBasicMaterial({ map: this.textures.atlasSRGB }));
+      mesh.position.y = 0.49;
+      group.add(mesh);
+      return { tnt: true, group, mesh, target: new THREE.Vector3(), yaw: 0, tYaw: 0 };
+    }
     if (kind === 'xp') {
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: xpOrbTexture(), transparent: true, depthWrite: false }));
       const group = new THREE.Group();
@@ -491,6 +498,13 @@ export class EntityViews {
         v.mesh.position.y = 0.2 + Math.sin(v.spin * 1.3) * 0.06;
         const li = this.lightAt(g.position.x, g.position.y + 0.3, g.position.z);
         this.setMaterialTint(g, li, li, li);
+        continue;
+      }
+      if (v.tnt) {
+        // lit TNT flashes white
+        const l = this.lightAt(g.position.x, g.position.y + 0.5, g.position.z);
+        const flash = (v.flags & 2) ? 2.5 : 1;
+        v.mesh.material.color.setRGB(l * flash, l * flash, l * flash);
         continue;
       }
       if (v.xp) {

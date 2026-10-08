@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
@@ -142,6 +142,7 @@ export class Game {
       case 'hurt': return this.damage(msg.amount, msg.cause, msg.from, true);
       case 'equip': return this.entities.setArmor(msg.id, msg.armor);
       case 'xp': return this.addXP(msg.amount);
+      case 'hiss': if (Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 32) sound.hiss(); return;
       case 'mobhurt': {
         const v = this.entities.entities.get(msg.e);
         this.entities.hurt(msg.e);
@@ -587,7 +588,10 @@ export class Game {
         return;
       }
     }
+    if (hit && !this.player.sneaking && this.useRedstone(hit, held)) return;
     if (held?.id === ITEM.BOW) return; // drawn while the button is held (see update)
+    // seeds, carrots and potatoes go on farmland (before eating them)
+    if (hit && held && ITEMS[held.id]?.plants && (hit.id === BLOCK.FARMLAND || !ITEMS[held.id].food)) { this.placeBlock(hit, held, ITEMS[held.id].plants); return; }
     if (hit && held && this.useOnBlock(hit, held)) return;
     if (held && armorOf(held.id)) { this.equipHeld(held); return; }
     if (held && (held.id === ITEM.BUCKET || held.id === ITEM.WATER_BUCKET)) {
@@ -599,9 +603,27 @@ export class Game {
       return;
     }
     if (hit && held && held.id === ITEM.OAK_DOOR) { this.placeDoor(hit); return; }
-    if (hit && held && ITEMS[held.id]?.plants) { this.placeBlock(hit, held, ITEMS[held.id].plants); return; }
     if (!hit || !held || !isBlockId(held.id)) return;
     this.placeBlock(hit, held);
+  }
+
+  // Levers flip, buttons press, repeaters change delay, flint and steel lights TNT.
+  useRedstone(hit, held) {
+    const def = BLOCKS[hit.id];
+    const light = held?.id === ITEM.FLINT_AND_STEEL && hit.id === BLOCK.TNT;
+    if (!light && def.redstone !== 'lever' && def.redstone !== 'button' && def.redstone !== 'repeater') return false;
+    if (def.redstone === 'lever') { this.applyBlock(hit.x, hit.y, hit.z, hit.id + (def.on ? -5 : 5)); sound.click(); }
+    if (def.redstone === 'repeater') {
+      const off = hit.id - BLOCK.REPEATER;
+      this.applyBlock(hit.x, hit.y, hit.z, BLOCK.REPEATER + (off & 16) + ((((off >> 2) & 3) + 1) % 4) * 4 + (off & 3));
+      sound.click();
+    }
+    if (def.redstone === 'button') sound.click();
+    if (light) this.useTool(1);
+    this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z, item: light ? ITEM.FLINT_AND_STEEL : undefined });
+    this.swing = 1;
+    this.useCooldown = 0.25;
+    return true;
   }
 
   // Hoes till soil, bone meal grows crops. Returns true if the item was used.
@@ -657,6 +679,18 @@ export class Game {
       return;
     }
     if (BLOCKS[id].shape === 'stairs') id += facingFromYaw(this.player.yaw);
+    if (BLOCKS[id].redstone === 'repeater') id += facingFromYaw(this.player.yaw);
+    if (BLOCKS[id].redstone === 'piston') {
+      // pistons face the player, up or down when placed from above or below
+      const pitch = this.player.pitch;
+      id = id - BLOCKS[id].facing6 + (pitch < -0.8 ? 4 : pitch > 0.8 ? 5 : (facingFromYaw(this.player.yaw) + 2) % 4);
+    }
+    if (BLOCKS[id].attach !== undefined) {
+      // torches, levers and buttons: on the floor, or on the side of a block (not below one)
+      if (hit.normal[1] < 0 || !canHoldAttached(hit.id)) return;
+      const f = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]].findIndex(([nx, , nz]) => nx === hit.normal[0] && nz === hit.normal[2] && hit.normal[1] === 0);
+      id = id - BLOCKS[id].attach + (hit.normal[1] > 0 ? 0 : f + 1);
+    }
     if (BLOCKS[id].shape === 'ladder') {
       // ladders go on the side of a full block, facing away from it
       const f = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]].findIndex(([nx, , nz]) => nx === hit.normal[0] && nz === hit.normal[2] && hit.normal[1] === 0);

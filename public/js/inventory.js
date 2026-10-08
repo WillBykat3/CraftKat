@@ -185,6 +185,20 @@ RECIPES.push(
   { pattern: ['SSS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_SLAB, 6] },
   { pattern: ['P..', 'PP.', 'PPP'], keys: { P: PLANKS }, result: [BLOCK.OAK_STAIRS, 4] },
   { pattern: ['C..', 'CC.', 'CCC'], keys: { C: [BLOCK.COBBLE] }, result: [BLOCK.COBBLESTONE_STAIRS, 4] },
+  // redstone
+  { pattern: ['R', 'S'], keys: { R: [ITEM.REDSTONE], S: [ITEM.STICK] }, result: [BLOCK.REDSTONE_TORCH + 5, 1] },
+  { pattern: ['S', 'C'], keys: { S: [ITEM.STICK], C: STONES }, result: [BLOCK.LEVER, 1] },
+  { pattern: ['S'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_BUTTON, 1] },
+  { pattern: ['SS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_PRESSURE_PLATE, 1] },
+  { pattern: ['PP'], keys: { P: PLANKS }, result: [BLOCK.OAK_PRESSURE_PLATE, 1] },
+  { pattern: ['TRT', 'SSS'], keys: { T: [BLOCK.REDSTONE_TORCH + 5], R: [ITEM.REDSTONE], S: [BLOCK.STONE] }, result: [BLOCK.REPEATER, 1] },
+  { pattern: ['.R.', 'RGR', '.R.'], keys: { R: [ITEM.REDSTONE], G: [BLOCK.GLASS] }, result: [BLOCK.REDSTONE_LAMP, 1] },
+  { pattern: ['RRR', 'RRR', 'RRR'], keys: { R: [ITEM.REDSTONE] }, result: [BLOCK.REDSTONE_BLOCK, 1] },
+  { pattern: ['B'], keys: { B: [BLOCK.REDSTONE_BLOCK] }, result: [ITEM.REDSTONE, 9] },
+  { pattern: ['GSG', 'SGS', 'GSG'], keys: { G: [ITEM.GUNPOWDER], S: [BLOCK.SAND] }, result: [BLOCK.TNT, 1] },
+  { pattern: ['PPP', 'CIC', 'CRC'], keys: { P: PLANKS, C: STONES, I: [ITEM.IRON_INGOT], R: [ITEM.REDSTONE] }, result: [BLOCK.PISTON + 2, 1] },
+  { pattern: ['S', 'P'], keys: { S: [ITEM.STRING], P: [BLOCK.PISTON + 2] }, result: [BLOCK.STICKY_PISTON + 2, 1] },
+  { pattern: ['I.', '.F'], keys: { I: [ITEM.IRON_INGOT], F: [ITEM.FLINT] }, result: [ITEM.FLINT_AND_STEEL, 1] },
 );
 
 // Trims empty rows/columns: returns {w, h, cells} for a square grid of slots.

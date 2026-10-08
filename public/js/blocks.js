@@ -22,13 +22,23 @@ export const BLOCK = {
   LAPIS_ORE: 70, DEEPSLATE_LAPIS_ORE: 71, EMERALD_ORE: 72, FERN: 73, CORNFLOWER: 74,
   FARMLAND: 75, WHEAT: 76, CARROTS: 84, POTATOES: 88, OAK_DOOR: 92, LADDER: 108, OAK_FENCE: 112,
   OAK_SLAB: 113, COBBLESTONE_SLAB: 114, STONE_SLAB: 115, OAK_STAIRS: 116, COBBLESTONE_STAIRS: 120,
+  REDSTONE_WIRE: 124, REDSTONE_TORCH: 128, LEVER: 138, STONE_BUTTON: 148, STONE_PRESSURE_PLATE: 158,
+  OAK_PRESSURE_PLATE: 160, REPEATER: 162, REDSTONE_LAMP: 194, REDSTONE_BLOCK: 196, TNT: 197,
+  PISTON: 198, STICKY_PISTON: 210, PISTON_HEAD: 222,
 };
 // Blocks with variants take a run of ids:
 //   WHEAT + stage (0-7), CARROTS / POTATOES + stage (0-3)
 //   OAK_DOOR + (upper ? 8 : 0) + (open ? 4 : 0) + facing
 //   LADDER, OAK_STAIRS, COBBLESTONE_STAIRS + facing
-// facing: 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x)
+//   REDSTONE_WIRE + brightness (0 off, 1-3 dim to bright; the host keeps the exact power 0-15)
+//   REDSTONE_TORCH, LEVER, STONE_BUTTON + (on ? 5 : 0) + attach (0 on the floor, 1-4 on a wall facing 0-3)
+//   STONE_PRESSURE_PLATE, OAK_PRESSURE_PLATE + (pressed ? 1 : 0)
+//   REPEATER + (powered ? 16 : 0) + (delay - 1) * 4 + facing (the way the signal goes)
+//   REDSTONE_LAMP + (lit ? 1 : 0)
+//   PISTON, STICKY_PISTON + (extended ? 6 : 0) + facing6;  PISTON_HEAD + (sticky ? 6 : 0) + facing6
+// facing: 0 north (-z), 1 east (+x), 2 south (+z), 3 west (-x); facing6 adds 4 up, 5 down
 export const FACING = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0]];
+export const FACING6 = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
 
 // Block properties (defaults filled in below):
 //  tex        [top, side, bottom, sideX?] texture names; sideX is used for the +-x faces
@@ -158,6 +168,39 @@ for (let f = 0; f < 4; f++) {
   def(120 + f, 'Cobblestone Stairs', { tex: ['cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0, transparent: true, shape: 'stairs', facing: f, hidden: f > 0, item: 120 });
 }
 
+// ---------- redstone ----------
+//  redstone   what part a block plays: 'wire' | 'torch' | 'lever' | 'button' | 'plate' | 'repeater'
+//             | 'lamp' | 'block' | 'tnt' | 'piston' | 'head'
+//  attach     0 floor, 1-4 wall (facing attach - 1): the block it hangs on is behind it
+for (let i = 0; i < 4; i++) {
+  def(124 + i, 'Redstone Dust', { tex: ['redstone_dust'], render: 'wire', solid: false, transparent: true, hardness: 0, needsSupport: true, hidden: true, redstone: 'wire', power: i, tint: 'redstone' });
+}
+for (let i = 0; i < 10; i++) {
+  const on = i >= 5, attach = i % 5;
+  def(128 + i, 'Redstone Torch', { tex: [on ? 'redstone_torch' : 'redstone_torch_off'], render: 'torch', solid: false, transparent: true, emit: on ? 7 : 0, hardness: 0, needsSupport: true, hidden: i !== 5, redstone: 'torch', on, attach, item: 133 });
+  def(138 + i, 'Lever', { tex: ['cobble'], hardness: 0.5, transparent: true, shape: 'lever', solid: false, needsSupport: true, hidden: i !== 0, redstone: 'lever', on, attach, item: 138 });
+  def(148 + i, 'Stone Button', { tex: ['stone'], hardness: 0.5, transparent: true, shape: 'button', solid: false, needsSupport: true, hidden: i !== 0, redstone: 'button', on, attach, item: 148 });
+}
+def(158, 'Stone Pressure Plate', { tex: ['stone'], hardness: 0.5, tool: 'pickaxe', transparent: true, shape: 'plate', solid: false, needsSupport: true, redstone: 'plate', on: false });
+def(159, 'Stone Pressure Plate', { tex: ['stone'], hardness: 0.5, tool: 'pickaxe', transparent: true, shape: 'plate', solid: false, needsSupport: true, redstone: 'plate', on: true, hidden: true, item: 158 });
+def(160, 'Oak Pressure Plate', { tex: ['planks'], hardness: 0.5, tool: 'axe', transparent: true, shape: 'plate', solid: false, needsSupport: true, redstone: 'plate', on: false, wooden: true });
+def(161, 'Oak Pressure Plate', { tex: ['planks'], hardness: 0.5, tool: 'axe', transparent: true, shape: 'plate', solid: false, needsSupport: true, redstone: 'plate', on: true, wooden: true, hidden: true, item: 160 });
+for (let i = 0; i < 32; i++) {
+  def(162 + i, 'Redstone Repeater', { tex: ['repeater', 'smooth_stone_slab_side', 'smooth_stone'], hardness: 0, transparent: true, shape: 'repeater', needsSupport: true, hidden: i !== 0, redstone: 'repeater', on: i >= 16, delay: ((i >> 2) & 3) + 1, facing: i & 3, item: 162 });
+}
+def(194, 'Redstone Lamp', { tex: ['redstone_lamp'], hardness: 0.3, redstone: 'lamp', on: false });
+def(195, 'Redstone Lamp', { tex: ['redstone_lamp_on'], hardness: 0.3, redstone: 'lamp', on: true, emit: 15, hidden: true, item: 194 });
+def(196, 'Block of Redstone', { tex: ['redstone_block'], hardness: 5, tool: 'pickaxe', needsTier: 0, redstone: 'block' });
+def(197, 'TNT', { tex: ['tnt_top', 'tnt_side', 'tnt_bottom'], hardness: 0, redstone: 'tnt' });
+for (const [base, name, sticky] of [[198, 'Piston', false], [210, 'Sticky Piston', true]]) {
+  for (let i = 0; i < 12; i++) {
+    def(base + i, name, { tex: ['piston_side'], hardness: 1.5, transparent: i >= 6, shape: 'piston', redstone: 'piston', sticky, extended: i >= 6, facing6: i % 6, hidden: i !== 2, item: base + 2 });
+  }
+}
+for (let i = 0; i < 12; i++) {
+  def(222 + i, 'Piston Head', { tex: ['piston_top'], hardness: 1.5, transparent: true, shape: 'head', redstone: 'head', sticky: i >= 6, facing6: i % 6, hidden: true, item: 0 });
+}
+
 for (const b of B) {
   b.render ??= 'cube';
   b.solid ??= b.render === 'cube';
@@ -180,7 +223,25 @@ export function isSupported(id, below) {
   if (id === BLOCK.CACTUS) return below === BLOCK.CACTUS || below === BLOCK.SAND;
   if (B[id].crop) return below === BLOCK.FARMLAND;
   if (B[id].shape === 'door') return B[id].upper ? B[below].shape === 'door' && !B[below].upper : B[below].solid && B[below].shape !== 'door';
+  if (B[id].attach > 0) return true; // wall-mounted: see supportOffset
+  if (B[id].redstone === 'wire' || B[id].redstone === 'repeater' || B[id].redstone === 'plate') return B[below].solid && !B[below].transparent;
   return B[below].solid && below !== BLOCK.CACTUS;
+}
+
+// Where the block a wall- or floor-mounted thing hangs on is, relative to it (or null).
+export function supportOffset(id) {
+  const b = B[id];
+  if (b.attach === undefined && b.shape !== 'ladder') return null;
+  if (b.shape === 'ladder') { const [fx, , fz] = FACING[b.facing]; return [-fx, 0, -fz]; }
+  if (b.attach === 0) return [0, -1, 0];
+  const [fx, , fz] = FACING[b.attach - 1];
+  return [-fx, 0, -fz];
+}
+
+// Whether a block can hold a wall- or floor-mounted thing: a full solid block.
+export function canHoldAttached(id) {
+  const b = B[id];
+  return !!b && b.solid && !b.transparent && b.render === 'cube';
 }
 
 // ---------- items ----------
@@ -202,7 +263,7 @@ export const ITEM = {
   GOLDEN_HELMET: 316, GOLDEN_CHESTPLATE: 317, GOLDEN_LEGGINGS: 318, GOLDEN_BOOTS: 319,
   DIAMOND_HELMET: 320, DIAMOND_CHESTPLATE: 321, DIAMOND_LEGGINGS: 322, DIAMOND_BOOTS: 323,
   BOW: 324, WHEAT_SEEDS: 325, WHEAT: 326, CARROT: 327, POTATO: 328, BAKED_POTATO: 329, BONE_MEAL: 330,
-  ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333,
+  ENDER_PEARL: 331, FLINT: 332, OAK_DOOR: 333, FLINT_AND_STEEL: 334,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -254,7 +315,7 @@ item(297, 'Bone', { icon: 'bone' });
 item(298, 'Arrow', { icon: 'arrow' });
 item(299, 'Gunpowder', { icon: 'gunpowder' });
 item(300, 'String', { icon: 'string' });
-item(301, 'Redstone Dust', { icon: 'redstone' });
+item(301, 'Redstone Dust', { icon: 'redstone', plants: 124 });
 item(302, 'Lapis Lazuli', { icon: 'lapis' });
 item(303, 'Emerald', { icon: 'emerald' });
 MATERIALS.forEach(([matName, mat, tier, speed, durability], m) => {
@@ -286,6 +347,7 @@ item(330, 'Bone Meal', { icon: 'bone_meal' });
 item(331, 'Ender Pearl', { icon: 'ender_pearl', stack: 16 });
 item(332, 'Flint', { icon: 'flint' });
 item(333, 'Oak Door', { icon: 'oak_door' });
+item(334, 'Flint and Steel', { icon: 'flint_and_steel', stack: 1, tool: { kind: 'lighter', tier: 0, speed: 1, damage: 1, durability: 64 } });
 export const ITEMS = I;
 
 export function isBlockId(id) {
@@ -321,6 +383,7 @@ export function armorOf(id) {
 export function blockItem(id) {
   const b = BLOCKS[id];
   if (b.shape === 'door') return ITEM.OAK_DOOR;
+  if (b.redstone === 'wire') return ITEM.REDSTONE;
   if (b.crop) return null;
   return b.item ?? id;
 }
@@ -387,6 +450,7 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     case BLOCK.TALL_GRASS: return rand() < 0.125 ? [[ITEM.WHEAT_SEEDS, 1]] : [];
     case BLOCK.GRAVEL: return rand() < 0.1 ? [[ITEM.FLINT, 1]] : [[BLOCK.GRAVEL, 1]];
     case BLOCK.FARMLAND: return [[BLOCK.DIRT, 1]];
+    case BLOCK.TNT: return [[BLOCK.TNT, 1]];
     case BLOCK.FERN:
     case BLOCK.ICE:
     case BLOCK.LAVA:
@@ -405,6 +469,7 @@ export function getDrops(blockId, heldId, rand = Math.random) {
     return [[crop, ripe ? 2 + Math.floor(rand() * 4) : 1]];
   }
   if (b.shape === 'door') return b.upper ? [] : [[ITEM.OAK_DOOR, 1]];
+  if (b.redstone === 'head') return [];
   return [[blockItem(blockId), 1]];
 }
 

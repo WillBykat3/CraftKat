@@ -51,8 +51,88 @@ export function shapeBoxes(id, neighbor, collision = false) {
       }
       return boxes;
     }
+    case 'lever': {
+      // a cobblestone base and a handle tipped one way (off) or the other (on)
+      const handle = b.on ? [7, 3, 3, 9, 10, 7] : [7, 3, 9, 9, 10, 13];
+      return [mounted([5, 0, 4, 11, 3, 12], b.attach, 'cobble'), mounted(handle, b.attach, 'lever_handle')];
+    }
+    case 'button': return [mounted([5, 0, 6, 11, b.on ? 1 : 2, 10], b.attach)];
+    case 'plate': return [[P, 0, P, 15 * P, b.on ? 0.5 * P : P, 15 * P]];
+    case 'repeater': {
+      // a thin stone slab with two little torches; the back one moves with the delay
+      const tip = b.on ? 'torch_tip_on' : 'torch_tip_off';
+      const back = 2 + (b.delay - 1) * 2;
+      return [[0, 0, 0, 1, 2 * P, 1], along4(b.facing, 12 * P, 14 * P, 7 * P, 9 * P, 2 * P, 7 * P, tip), along4(b.facing, back * P, (back + 2) * P, 7 * P, 9 * P, 2 * P, 7 * P, tip)];
+    }
+    case 'piston': {
+      const f = b.facing6;
+      const faces = pistonFaces(f, b.extended ? 'piston_inner' : 'piston_top');
+      return [along6(f, 0, b.extended ? 12 * P : 1, 0, 1, faces)];
+    }
+    case 'head': {
+      const f = b.facing6;
+      return [along6(f, 12 * P, 1, 0, 1, pistonFaces(f, 'piston_top')), along6(f, -4 * P, 12 * P, 6 * P, 10 * P, 'piston_side')];
+    }
     default: return null;
   }
+}
+
+// A box given for something standing on the floor (in 16ths), turned to hang on a wall.
+// attach 0: on the floor; 1-4: on the wall behind, facing 0-3. tex: optional texture for the box.
+function mounted([x0, y0, z0, x1, y1, z1], attach, tex) {
+  const k = [x0 * P, y0 * P, z0 * P, x1 * P, y1 * P, z1 * P];
+  let box;
+  if (attach === 0) box = k;
+  else {
+    // local y (away from the support) becomes the facing direction, local z becomes up
+    const f = attach - 1;
+    const map = (lx, ly, lz) => {
+      switch (f) {
+        case 2: return [lx, lz, ly];
+        case 0: return [1 - lx, lz, 1 - ly];
+        case 1: return [ly, lz, 1 - lx];
+        default: return [1 - ly, lz, lx];
+      }
+    };
+    const a = map(k[0], k[1], k[2]), c = map(k[3], k[4], k[5]);
+    box = [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.min(a[2], c[2]), Math.max(a[0], c[0]), Math.max(a[1], c[1]), Math.max(a[2], c[2])];
+  }
+  if (tex) box.push(tex);
+  return box;
+}
+
+// A box along a horizontal facing: t0-t1 from back (0) to front (1), c0-c1 across, y0-y1 up.
+function along4(f, t0, t1, c0, c1, y0, y1, tex) {
+  let box;
+  switch (f) {
+    case 0: box = [c0, y0, 1 - t1, c1, y1, 1 - t0]; break;
+    case 2: box = [c0, y0, t0, c1, y1, t1]; break;
+    case 1: box = [t0, y0, c0, t1, y1, c1]; break;
+    default: box = [1 - t1, y0, c0, 1 - t0, y1, c1];
+  }
+  if (tex) box.push(tex);
+  return box;
+}
+
+// Same for any of the 6 directions, with c0-c1 on both other axes.
+function along6(f, t0, t1, c0, c1, tex) {
+  let box;
+  switch (f) {
+    case 4: box = [c0, t0, c0, c1, t1, c1]; break;
+    case 5: box = [c0, 1 - t1, c0, c1, 1 - t0, c1]; break;
+    default: { const b = along4(f, t0, t1, c0, c1, c0, c1); box = b; }
+  }
+  if (tex) box.push(tex);
+  return box;
+}
+
+// Textures for each face of a piston (in the mesher's face order: -x +x -y +y -z +z).
+const FACE_OF = [4, 1, 5, 0, 3, 2]; // facing6 -> face index
+function pistonFaces(f, front) {
+  const faces = new Array(6).fill('piston_side');
+  faces[FACE_OF[f]] = front;
+  faces[FACE_OF[f] ^ 1] = 'piston_bottom';
+  return faces;
 }
 
 // Boxes to collide with, in block coordinates: full cube for solid cubes, none for non-solid blocks.

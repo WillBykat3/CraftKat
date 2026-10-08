@@ -94,6 +94,8 @@ export const sound = {
     if (open) { tone({ freq: 240, endFreq: 380, duration: 0.25, gain: 0.12, type: 'sawtooth' }); burst({ freq: 600, q: 3, duration: 0.12, gain: 0.3 }); }
     else burst({ freq: 300, q: 1.5, duration: 0.18, gain: 0.6, type: 'lowpass' });
   },
+  // a lit fuse
+  hiss() { burst({ freq: 5000, q: 0.6, duration: 1.2, gain: 0.25, type: 'highpass' }); },
   // a bow being released
   bow() { burst({ freq: 2200, q: 2, duration: 0.15, gain: 0.25 }); tone({ freq: 500, endFreq: 200, duration: 0.12, gain: 0.08, type: 'triangle' }); },
   // menu button: a short wooden "tock"

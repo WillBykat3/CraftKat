@@ -26,7 +26,8 @@ export function blockGeometry(id, size) {
         return [others[0], 1];
       };
       const [ua, us] = axis(3), [va, vs] = axis(4);
-      const [u0, v0, u1, v1] = uvOf(b.tex[face.slot]);
+      const t = box[6];
+      const [u0, v0, u1, v1] = uvOf(t === undefined ? b.tex[face.slot] : Array.isArray(t) ? t[f] : t);
       const base = pos.length / 3;
       for (const c of face.corners) {
         const p = [c[0] ? box[3] : box[0], c[1] ? box[4] : box[1], c[2] ? box[5] : box[2]];
@@ -47,7 +48,7 @@ export function blockGeometry(id, size) {
 // Whether a block is held/dropped as a 3D model (otherwise as a flat picture).
 export function hasBlockModel(id) {
   const b = BLOCKS[id];
-  return !!b && (b.render === 'cube' || (b.render === 'shape' && b.shape !== 'ladder' && b.shape !== 'door'));
+  return !!b && (b.render === 'cube' || (b.render === 'shape' && b.shape !== 'ladder' && b.shape !== 'door' && b.shape !== 'head'));
 }
 
 // Boxes shown for a block in icons and in your hand (fences show rails on both sides).
@@ -55,7 +56,17 @@ export function iconBoxes(id) {
   const b = BLOCKS[id];
   if (!b.shape) return [[0, 0, 0, 1, 1, 1]];
   if (b.shape === 'fence') return shapeBoxes(id, (dx) => (dx !== 0 ? id : 0));
-  return shapeBoxes(id, () => 0);
+  const boxes = shapeBoxes(id, () => 0);
+  if (b.shape === 'lever' || b.shape === 'button') {
+    // small things are drawn bigger in icons so you can see them
+    const k = b.shape === 'button' ? 2.2 : 1.6;
+    return boxes.map(([x0, y0, z0, x1, y1, z1, t]) => {
+      const out = [0.5 + (x0 - 0.5) * k, y0 * k, 0.5 + (z0 - 0.5) * k, 0.5 + (x1 - 0.5) * k, y1 * k, 0.5 + (z1 - 0.5) * k];
+      if (t !== undefined) out.push(t);
+      return out;
+    });
+  }
+  return boxes;
 }
 
 // Which biome colour a tile's marked pixels take on icons and held blocks.
@@ -524,6 +535,75 @@ function drawBlockTile(p, name) {
       if (!top) { px(11, 2, [60, 60, 60]); px(11, 3, [60, 60, 60]); px(12, 2, [90, 90, 90]); }
       break;
     }
+    case 'redstone_dust_dot':
+      for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) {
+        if ((x - 7.5) ** 2 + (y - 7.5) ** 2 > 14 + rand() * 6) continue;
+        p.tinted(x, y, 170 + rand() * 85);
+      }
+      break;
+    case 'redstone_dust_line':
+      for (let y = 0; y < S; y++) for (let x = 6; x < 10; x++) if (rand() < 0.9) p.tinted(x, y, 160 + rand() * 95);
+      break;
+    case 'redstone_torch': case 'redstone_torch_off': {
+      const on = name === 'redstone_torch';
+      for (let y = 6; y < 16; y++) { px(7, y, [110, 80, 45]); px(8, y, [90, 65, 35]); }
+      const tip = on ? [[255, 60, 40], [200, 20, 10], [255, 160, 140]] : [[110, 20, 15], [80, 15, 10], [140, 40, 30]];
+      px(7, 5, tip[0]); px(8, 5, tip[1]); px(7, 4, tip[2]); px(8, 4, tip[0]); px(7, 6, tip[1]); px(8, 6, tip[1]);
+      if (on) { px(6, 5, [255, 120, 100]); px(9, 4, [255, 120, 100]); }
+      break;
+    }
+    case 'lever_handle': for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([110, 80, 45], 0.85 + rand() * 0.3)); break;
+    case 'torch_tip_on': p.noisy([230, 40, 30], 0.2); break;
+    case 'torch_tip_off': p.noisy([110, 25, 20], 0.2); break;
+    case 'repeater':
+      drawBlockTile(p, 'smooth_stone');
+      for (let y = 2; y < 14; y++) { px(7, y, [120, 20, 15]); px(8, y, [150, 25, 20]); }
+      for (let i = 0; i < 4; i++) { px(7 - i, 2 + i, [150, 25, 20]); px(8 + i, 2 + i, [150, 25, 20]); } // arrow pointing to the output
+      break;
+    case 'redstone_lamp': case 'redstone_lamp_on': {
+      const on = name === 'redstone_lamp_on';
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const frame = x === 0 || y === 0 || x === 15 || y === 15 || ((x === 5 || x === 10) && (y < 3 || y > 12)) || ((y === 5 || y === 10) && (x < 3 || x > 12));
+        const glow = on ? shade([250, 200, 120], 0.85 + rand() * 0.2) : shade([95, 60, 35], 0.8 + rand() * 0.3);
+        px(x, y, frame ? (on ? [150, 110, 60] : [60, 40, 25]) : glow);
+      }
+      break;
+    }
+    case 'redstone_block':
+      p.noisy([175, 25, 15], 0.15);
+      for (let i = 0; i < S; i++) { px(i, 0, [210, 50, 35]); px(0, i, [210, 50, 35]); px(i, 15, [120, 15, 10]); px(15, i, [120, 15, 10]); }
+      for (let i = 0; i < 6; i++) px(3 + Math.floor(rand() * 10), 3 + Math.floor(rand() * 10), [255, 90, 70]);
+      break;
+    case 'tnt_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const band = y >= 5 && y <= 10;
+        px(x, y, band ? (y === 5 || y === 10 ? [200, 200, 200] : [235, 235, 235]) : shade(x % 4 === 3 ? [150, 30, 20] : [210, 50, 35], 0.9 + rand() * 0.15));
+      }
+      for (const [x, w] of [[2, 1], [5, 1], [8, 1], [11, 1]]) for (let y = 6; y < 10; y++) for (let k = 0; k < w + 1; k++) px(x + k, y, [40, 40, 40]); // "TNT" marks
+      break;
+    case 'tnt_top': case 'tnt_bottom':
+      p.noisy([200, 45, 30], 0.12);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if ((x % 5 === 2) && (y % 5 === 2)) { px(x, y, [70, 70, 70]); }
+      if (name === 'tnt_top') for (let i = 6; i < 10; i++) { px(i, 7, [235, 235, 235]); px(7, i, [235, 235, 235]); }
+      break;
+    case 'piston_side':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (y < 4) px(x, y, shade(C.oak, (y === 3 ? 0.7 : 0.95) + rand() * 0.1));
+        else px(x, y, shade([115, 115, 115], (x === 0 || x === 15 || y === 15 ? 0.7 : 0.9) + rand() * 0.15));
+      }
+      break;
+    case 'piston_top': case 'piston_inner':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        if (name === 'piston_inner') { px(x, y, shade([105, 105, 105], 0.85 + rand() * 0.2)); continue; }
+        const edge = x === 0 || y === 0 || x === 15 || y === 15;
+        px(x, y, edge ? shade(C.oak, 0.7) : shade(C.oak, 0.92 + rand() * 0.12));
+      }
+      if (name === 'piston_inner') for (let y = 6; y < 10; y++) for (let x = 6; x < 10; x++) px(x, y, shade(C.oak, 0.9));
+      break;
+    case 'piston_bottom':
+      p.noisy([110, 110, 110], 0.15);
+      for (let i = 0; i < S; i++) { px(i, 0, [80, 80, 80]); px(0, i, [80, 80, 80]); px(i, 15, [80, 80, 80]); px(15, i, [80, 80, 80]); }
+      break;
     case 'ladder':
       for (let y = 0; y < S; y++) for (const x of [2, 3, 12, 13]) px(x, y, shade(C.oak, x === 2 || x === 13 ? 0.7 : 0.95 + rand() * 0.1));
       for (const y of [1, 5, 9, 13]) for (let x = 4; x < 12; x++) { px(x, y, shade(C.oak, 0.95 + rand() * 0.1)); px(x, y + 1, shade(C.oak, 0.7)); }
@@ -724,6 +804,11 @@ function drawItem(p, icon) {
       for (let y = 3; y < 14; y++) for (let x = 4 + Math.abs(8 - y) / 2; x < 12 - Math.abs(6 - y) / 3; x++) px(Math.floor(x), y, shade([60, 60, 65], 0.8 + rand() * 0.4));
       px(7, 5, [130, 130, 135]);
       break;
+    case 'flint_and_steel':
+      for (let i = 0; i < 6; i++) { px(3 + i, 12 - i, [200, 200, 205]); px(4 + i, 12 - i, [150, 150, 155]); }
+      px(3, 11, [200, 200, 205]); px(2, 12, [200, 200, 205]); px(3, 13, [150, 150, 155]);
+      for (let y = 3; y < 8; y++) for (let x = 9; x < 14 - Math.abs(5 - y) / 2; x++) px(x, y, shade([60, 60, 65], 0.8 + rand() * 0.4));
+      break;
     case 'oak_door':
       for (let y = 1; y < 15; y++) for (let x = 4; x < 12; x++) {
         const window = y > 2 && y < 7 && x > 4 && x < 11 && x !== 7;
@@ -889,7 +974,7 @@ export function createTextures() {
     ctx.imageSmoothingEnabled = false;
     if (isBlockId(id)) {
       const b = BLOCKS[id];
-      if (b.render === 'cross' || b.render === 'crop' || b.shape === 'ladder' || b.shape === 'door') {
+      if (b.render === 'cross' || b.render === 'crop' || b.render === 'torch' || b.shape === 'ladder' || b.shape === 'door') {
         const [sx, sy] = tileRect(b.tex[0]);
         ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, size, size);
       } else {
@@ -922,10 +1007,12 @@ export function createTextures() {
       ctx.restore();
     };
     const sorted = [...boxes].sort((m, n) => m[1] - n[1] || (m[0] + m[2]) - (n[0] + n[2]));
-    for (const [x0, y0, z0, x1, y1, z1] of sorted) {
-      face(b.tex[0], P(x0, y1, z0), P(x1, y1, z0), P(x0, y1, z1), [x0, z0, x1, z1], 0);
-      face(b.tex[1], P(x0, y1, z1), P(x1, y1, z1), P(x0, y0, z1), [x0, 1 - y1, x1, 1 - y0], 0.2);
-      face(b.tex[3], P(x1, y1, z1), P(x1, y1, z0), P(x1, y0, z1), [1 - z1, 1 - y1, 1 - z0, 1 - y0], 0.4);
+    for (const box of sorted) {
+      const [x0, y0, z0, x1, y1, z1, t] = box;
+      const tex = (f, slot) => (t === undefined ? b.tex[slot] : Array.isArray(t) ? t[f] : t);
+      face(tex(3, 0), P(x0, y1, z0), P(x1, y1, z0), P(x0, y1, z1), [x0, z0, x1, z1], 0);
+      face(tex(5, 1), P(x0, y1, z1), P(x1, y1, z1), P(x0, y0, z1), [x0, 1 - y1, x1, 1 - y0], 0.2);
+      face(tex(1, 3), P(x1, y1, z1), P(x1, y1, z0), P(x1, y0, z1), [1 - z1, 1 - y1, 1 - z0, 1 - y0], 0.4);
     }
   }
 

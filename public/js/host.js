@@ -3,7 +3,7 @@
 // themselves, through plain message objects.
 
 import {
-  BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, isBlockId, isValidId, maxStack, toolOf,
+  BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
   SMELTING, FUEL, SMELT_SECONDS,
 } from './blocks.js';
 import { World, LATEST_GEN } from './world.js';
@@ -12,6 +12,7 @@ import { clickSlot, quickMove } from './inventory.js';
 import { levelOf, XP_SIZES, ORE_XP, SMELT_XP } from './xp.js';
 import { BIOME, FROZEN } from './biomes.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
+import { RedstoneSim } from './redstone-sim.js';
 
 export const DAY_TICKS = 24000;     // one full day
 export const TICKS_PER_SECOND = 20; // so a day lasts 20 minutes, like Minecraft
@@ -133,6 +134,7 @@ export class GameHost {
     // growing crops (only ever planted by players, so they're all in the edits)
     this.crops = new Set();
     for (const [x, y, z, id] of this.world.exportEdits()) if (BLOCKS[id]?.crop) this.crops.add(`${x},${y},${z}`);
+    this.redstone = new RedstoneSim(this);
     this.players = new Map();   // peerId -> player
     this.entities = new Map();  // id -> entity
     this.nextPlayerId = 1;
@@ -316,6 +318,7 @@ export class GameHost {
     this.world.setBlock(x, y, z, id);
     const key = `${x},${y},${z}`;
     if (BLOCKS[id].crop) this.crops.add(key); else this.crops.delete(key);
+    this.redstone?.changed(x, y, z, id);
     if (this.lightCache) {
       const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
       for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) this.lightCache.delete((cx + dx) + ',' + (cz + dz));
@@ -367,6 +370,18 @@ export class GameHost {
   breakBlock(x, y, z, tool, exceptPeer = null) {
     const id = this.world.getBlock(x, y, z);
     let dropFrom = id;
+    const pb = BLOCKS[id];
+    if (pb.redstone === 'head' || (pb.redstone === 'piston' && pb.extended)) {
+      // a piston and its head go together: breaking the head drops the piston, like Minecraft
+      const [fx, fy, fz] = FACING6[pb.facing6];
+      const s = pb.redstone === 'head' ? -1 : 1;
+      const ox = x + fx * s, oy = y + fy * s, oz = z + fz * s;
+      const other = this.world.getBlock(ox, oy, oz);
+      if (BLOCKS[other].redstone === (pb.redstone === 'head' ? 'piston' : 'head')) {
+        this.setBlock(ox, oy, oz, BLOCK.AIR);
+        if (pb.redstone === 'head') dropFrom = other;
+      }
+    }
     if (BLOCKS[id].shape === 'door') {
       // a door is two blocks: both go, and it drops one door
       const oy = BLOCKS[id].upper ? y - 1 : y + 1;
@@ -404,6 +419,53 @@ export class GameHost {
       this.chestViewers.delete(key);
     }
     this.settle(x, y + 1, z, tool !== null);
+    this.popAttached(x, y, z, tool !== null);
+  }
+
+  // Torches, levers, buttons and ladders on the sides of a block that's gone fall off.
+  popAttached(x, y, z, drops) {
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]) {
+      const nx = x + dx, ny = y + dy, nz = z + dz;
+      const id = this.world.getBlock(nx, ny, nz);
+      const off = supportOffset(id);
+      if (!off || nx + off[0] !== x || ny + off[1] !== y || nz + off[2] !== z) continue;
+      this.setBlock(nx, ny, nz, BLOCK.AIR);
+      if (drops) for (const [d, c] of getDrops(id, ITEM.DIAMOND_PICKAXE, this.random)) this.spawnItem(nx + 0.5, ny + 0.3, nz + 0.5, d, c);
+    }
+  }
+
+  // ---------- redstone hooks ----------
+  // Everything that can stand on a pressure plate (items only count for wooden ones).
+  entityBoxes(withItems) {
+    const out = [];
+    for (const p of this.players.values()) if (!p.dead) out.push({ x: p.x, y: p.y, z: p.z, halfW: 0.3, height: 1.8 });
+    for (const e of this.entities.values()) {
+      if (isMob(e)) out.push(e);
+      else if (withItems && e.type === 'item') out.push(e);
+    }
+    return out;
+  }
+
+  primeTnt(x, y, z, fuse) {
+    const e = {
+      id: this.nextEntityId++, type: 'tnt', x: x + 0.5, y, z: z + 0.5, halfW: 0.49, height: 0.98,
+      vx: (this.random() - 0.5) * 0.4, vy: 2, vz: (this.random() - 0.5) * 0.4, fuse, age: 0, yaw: 0,
+    };
+    this.entities.set(e.id, e);
+    this.broadcast({ t: 'hiss', x: e.x, y: e.y, z: e.z });
+    return e;
+  }
+
+  tickTnt(e, dt) {
+    e.fuse -= dt;
+    e.vy -= 20 * dt;
+    const res = moveBody(this.world, e, dt);
+    if (res.onGround) { e.vx *= 0.7; e.vz *= 0.7; }
+    if (e.fuse <= 0) {
+      this.entities.delete(e.id);
+      this.broadcast({ t: 'mobdeath', e: e.id });
+      this.explode(e.x, e.y + 0.5, e.z, 4);
+    }
   }
 
   // After a change at (x, y, z): unsupported plants/torches pop off, sand and gravel fall.
@@ -697,6 +759,7 @@ export class GameHost {
     const { x, y, z } = msg;
     const id = this.world.getBlock(x, y, z);
     const def = BLOCKS[id];
+    if (this.redstone.use(x, y, z, msg.item)) return;
     if (def.shape === 'door' && msg.item === undefined) {
       const lowerY = def.upper ? y - 1 : y;
       for (const yy of [lowerY, lowerY + 1]) {
@@ -763,6 +826,7 @@ export class GameHost {
       if (by < 1 || by >= HEIGHT) continue;
       const id = this.world.getBlock(bx, by, bz);
       if (id === BLOCK.AIR || BLOCKS[id].liquid || id === BLOCK.BEDROCK || id === BLOCK.OBSIDIAN) continue;
+      if (id === BLOCK.TNT) { this.setBlock(bx, by, bz, BLOCK.AIR); this.primeTnt(bx, by, bz, 0.5 + this.random()); continue; } // chain reaction
       // like Minecraft, only some of the blown-up blocks drop (chests and furnaces always spill their contents)
       this.breakBlock(bx, by, bz, this.random() < 1 / power ? ITEM.DIAMOND_PICKAXE : null);
     }
@@ -1026,6 +1090,7 @@ export class GameHost {
   tick(dt) {
     this.time = (this.time + dt * TICKS_PER_SECOND) % DAY_TICKS;
     this.tickFurnaces(dt);
+    this.redstone.update(dt);
     this.tickEntities(dt);
     this.tickSleep(dt);
 
@@ -1102,6 +1167,7 @@ export class GameHost {
     for (const e of [...this.entities.values()]) {
       e.age += dt;
       const near = this.nearestPlayer(e, 128);
+      if (e.type === 'tnt') { this.tickTnt(e, dt); continue; } // lit TNT always goes off
       if (!near) {
         // nobody around: items keep ageing, mobs vanish
         if (e.type !== 'item' || e.age > ITEM_LIFETIME) this.entities.delete(e.id);
@@ -1367,7 +1433,7 @@ export class GameHost {
       for (const e of this.entities.values()) {
         if (Math.abs(e.x - p.x) > VIEW || Math.abs(e.z - p.z) > VIEW) continue;
         // flags: 1 = sheared sheep, 2 = creeper about to explode
-        const flags = e.type === 'xp' ? e.value : (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
+        const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0) : (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
