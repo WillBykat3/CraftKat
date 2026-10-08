@@ -152,6 +152,9 @@ export class Game {
         return;
       }
       case 'mobdeath': return;
+      case 'sfx':
+        if (Math.hypot(msg.x - this.player.x, msg.y - this.player.y, msg.z - this.player.z) < 64 && typeof sound[msg.s] === 'function') sound[msg.s]();
+        return;
       case 'furnace': return this.screen.setFurnaceState(msg);
       case 'chest': return this.screen.setChestState(msg);
       case 'chest_gone': if (this.screen.kind === 'chest') this.closeScreen(); return;
@@ -995,6 +998,10 @@ export class Game {
     const s = this.stats;
     s.invuln = Math.max(0, s.invuln - dt);
     if (this.mode !== 'survival' || this.dead) { s.air = MAX_AIR; return; }
+    if (this.player.onHot && !this.player.sneaking) {
+      this.hotTimer = (this.hotTimer || 0) + dt;
+      if (this.hotTimer >= 0.5) { this.hotTimer = 0; this.damage(1, 'discovered the floor was lava'); }
+    } else this.hotTimer = 0;
 
     // hunger
     while (s.exhaustion >= 4) { s.exhaustion -= 4; s.food = Math.max(0, s.food - 1); this.invDirty = true; }
@@ -1060,6 +1067,9 @@ export class Game {
 
     let speed = p.flying ? (p.sprinting ? FLY * 2 : FLY) : p.sneaking ? SNEAK : p.sprinting ? SPRINT : WALK;
     if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5;
+    const under = BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))];
+    if (p.onGround && under.slow) speed *= under.slow; // soul sand
+    p.onHot = p.onGround && !!under.hot;                 // magma blocks burn unless you sneak
     const control = p.onGround || p.flying ? 20 : p.inWater ? 6 : 5;
     const a = Math.min(1, dt * control);
     p.vx += (wx * speed - p.vx) * a;

@@ -129,6 +129,7 @@ const TOOL_MATERIALS = [
 ];
 
 // pattern rows use keys; '.' or ' ' is empty. key -> list of accepted ids
+// shapeless: the items can go anywhere in the grid (the pattern is how the recipe book shows it)
 export const RECIPES = [
   { pattern: ['L'], keys: { L: [BLOCK.LOG] }, result: [BLOCK.PLANKS, 4] },
   { pattern: ['L'], keys: { L: [BLOCK.BIRCH_LOG] }, result: [BLOCK.BIRCH_PLANKS, 4] },
@@ -192,13 +193,21 @@ RECIPES.push(
   { pattern: ['SS'], keys: { S: [BLOCK.STONE] }, result: [BLOCK.STONE_PRESSURE_PLATE, 1] },
   { pattern: ['PP'], keys: { P: PLANKS }, result: [BLOCK.OAK_PRESSURE_PLATE, 1] },
   { pattern: ['TRT', 'SSS'], keys: { T: [BLOCK.REDSTONE_TORCH + 5], R: [ITEM.REDSTONE], S: [BLOCK.STONE] }, result: [BLOCK.REPEATER, 1] },
-  { pattern: ['.R.', 'RGR', '.R.'], keys: { R: [ITEM.REDSTONE], G: [BLOCK.GLASS] }, result: [BLOCK.REDSTONE_LAMP, 1] },
+  { pattern: ['.R.', 'RGR', '.R.'], keys: { R: [ITEM.REDSTONE], G: [BLOCK.GLOWSTONE] }, result: [BLOCK.REDSTONE_LAMP, 1] },
   { pattern: ['RRR', 'RRR', 'RRR'], keys: { R: [ITEM.REDSTONE] }, result: [BLOCK.REDSTONE_BLOCK, 1] },
   { pattern: ['B'], keys: { B: [BLOCK.REDSTONE_BLOCK] }, result: [ITEM.REDSTONE, 9] },
   { pattern: ['GSG', 'SGS', 'GSG'], keys: { G: [ITEM.GUNPOWDER], S: [BLOCK.SAND] }, result: [BLOCK.TNT, 1] },
   { pattern: ['PPP', 'CIC', 'CRC'], keys: { P: PLANKS, C: STONES, I: [ITEM.IRON_INGOT], R: [ITEM.REDSTONE] }, result: [BLOCK.PISTON + 2, 1] },
   { pattern: ['S', 'P'], keys: { S: [ITEM.STRING], P: [BLOCK.PISTON + 2] }, result: [BLOCK.STICKY_PISTON + 2, 1] },
-  { pattern: ['I.', '.F'], keys: { I: [ITEM.IRON_INGOT], F: [ITEM.FLINT] }, result: [ITEM.FLINT_AND_STEEL, 1] },
+  { pattern: ['IF'], keys: { I: [ITEM.IRON_INGOT], F: [ITEM.FLINT] }, result: [ITEM.FLINT_AND_STEEL, 1], shapeless: true },
+  // the Nether and the End
+  { pattern: ['DD', 'DD'], keys: { D: [ITEM.GLOWSTONE_DUST] }, result: [BLOCK.GLOWSTONE, 1] },
+  { pattern: ['BB', 'BB'], keys: { B: [ITEM.NETHER_BRICK] }, result: [BLOCK.NETHER_BRICKS, 1] },
+  { pattern: ['NBN', 'NBN'], keys: { N: [BLOCK.NETHER_BRICKS], B: [ITEM.NETHER_BRICK] }, result: [BLOCK.NETHER_BRICK_FENCE, 6] },
+  { pattern: ['NNN', 'NNN', 'NNN'], keys: { N: [ITEM.GOLD_NUGGET] }, result: [ITEM.GOLD_INGOT, 1] },
+  { pattern: ['G'], keys: { G: [ITEM.GOLD_INGOT] }, result: [ITEM.GOLD_NUGGET, 9] },
+  { pattern: ['R'], keys: { R: [ITEM.BLAZE_ROD] }, result: [ITEM.BLAZE_POWDER, 2] },
+  { pattern: ['PB'], keys: { P: [ITEM.ENDER_PEARL], B: [ITEM.BLAZE_POWDER] }, result: [ITEM.EYE_OF_ENDER, 1], shapeless: true },
 );
 
 // Trims empty rows/columns: returns {w, h, cells} for a square grid of slots.
@@ -233,12 +242,26 @@ function matches(recipe, t, mirror) {
   return true;
 }
 
+// Each ingredient once, in any slots.
+function matchesShapeless(recipe, grid) {
+  const need = recipe.pattern.join('').split('').filter((ch) => ch !== '.' && ch !== ' ');
+  const items = grid.filter(Boolean);
+  if (items.length !== need.length) return false;
+  const left = [...need];
+  for (const s of items) {
+    const i = left.findIndex((ch) => recipe.keys[ch].includes(s.id));
+    if (i < 0) return false;
+    left.splice(i, 1);
+  }
+  return true;
+}
+
 // grid: array of size*size slots. Returns a result stack or null.
 export function findRecipe(grid, size) {
   const t = trim(grid, size);
   if (!t) return null;
   for (const r of RECIPES) {
-    if (matches(r, t, false) || matches(r, t, true)) return makeStack(r.result[0], r.result[1]);
+    if (r.shapeless ? matchesShapeless(r, grid) : matches(r, t, false) || matches(r, t, true)) return makeStack(r.result[0], r.result[1]);
   }
   return null;
 }

@@ -192,12 +192,19 @@ export class NetherTerrain {
       // find a ceiling: netherrack with air below
       for (; y > 35; y--) if (data[idx(lx, y, lz)] === BLOCK.NETHERRACK && data[idx(lx, y - 1, lz)] === BLOCK.AIR) break;
       if (y <= 35) continue;
-      let x = lx, z = lz, yy = y - 1;
-      for (let i = 0; i < 25; i++) {
-        if (x >= 0 && x < CHUNK && z >= 0 && z < CHUNK && yy > 5 && data[idx(x, yy, z)] === BLOCK.AIR) data[idx(x, yy, z)] = BLOCK.GLOWSTONE;
-        const d = Math.floor(rand() * 5);
-        if (d === 0) x++; else if (d === 1) x--; else if (d === 2) z++; else if (d === 3) z--; else yy--;
-        if (yy < y - 6) yy = y - 1;
+      // like Minecraft: grow downwards, only next to exactly one glowstone block, so
+      // the clump hangs in branches from the ceiling
+      data[idx(lx, y - 1, lz)] = BLOCK.GLOWSTONE;
+      for (let i = 0; i < 220; i++) {
+        const x = lx + Math.floor(rand() * 7) - 3, z = lz + Math.floor(rand() * 7) - 3, yy = y - 1 - Math.floor(rand() * 8);
+        if (x < 0 || x >= CHUNK || z < 0 || z >= CHUNK || yy < 6 || data[idx(x, yy, z)] !== BLOCK.AIR) continue;
+        let n = 0;
+        if (x > 0 && data[idx(x - 1, yy, z)] === BLOCK.GLOWSTONE) n++;
+        if (x < CHUNK - 1 && data[idx(x + 1, yy, z)] === BLOCK.GLOWSTONE) n++;
+        if (z > 0 && data[idx(x, yy, z - 1)] === BLOCK.GLOWSTONE) n++;
+        if (z < CHUNK - 1 && data[idx(x, yy, z + 1)] === BLOCK.GLOWSTONE) n++;
+        if (data[idx(x, yy + 1, z)] === BLOCK.GLOWSTONE) n++;
+        if (n === 1) data[idx(x, yy, z)] = BLOCK.GLOWSTONE;
       }
     }
   }

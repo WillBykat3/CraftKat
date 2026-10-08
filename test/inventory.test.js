@@ -124,3 +124,20 @@ test('recipe book: fits, counts and fills the grid from the inventory', () => {
   assert.equal(findRecipe(grid3, 3).id, ITEM.STONE_PICKAXE);
   assert.equal(inv3[0], null);
 });
+
+test('Nether recipes, and shapeless ones work in any slots', () => {
+  const E = ITEM.ENDER_PEARL, B = ITEM.BLAZE_POWDER, D = ITEM.GLOWSTONE_DUST;
+  assert.deepEqual(findRecipe(grid([[E, _, _], [_, _, _], [_, _, B]]), 3), { id: ITEM.EYE_OF_ENDER, count: 1 });
+  assert.deepEqual(findRecipe(grid([[B, _], [E, _]]), 2), { id: ITEM.EYE_OF_ENDER, count: 1 });
+  assert.equal(findRecipe(grid([[B, E], [E, _]]), 2), null, 'exactly the ingredients');
+  assert.deepEqual(findRecipe(grid([[ITEM.FLINT, _], [_, ITEM.IRON_INGOT]]), 2), { id: ITEM.FLINT_AND_STEEL, count: 1, dur: 64 });
+  assert.deepEqual(findRecipe(grid([[ITEM.BLAZE_ROD]]), 2), { id: ITEM.BLAZE_POWDER, count: 2 });
+  assert.deepEqual(findRecipe(grid([[D, D], [D, D]]), 2), { id: BLOCK.GLOWSTONE, count: 1 });
+  const N = ITEM.GOLD_NUGGET;
+  assert.deepEqual(findRecipe(grid([[N, N, N], [N, N, N], [N, N, N]]), 3), { id: ITEM.GOLD_INGOT, count: 1 });
+  const R = ITEM.REDSTONE, G = BLOCK.GLOWSTONE;
+  assert.deepEqual(findRecipe(grid([[_, R, _], [R, G, R], [_, R, _]]), 3), { id: BLOCK.REDSTONE_LAMP, count: 1 });
+  // smelting and drops
+  assert.ok(getDrops(BLOCK.GLOWSTONE, 0, () => 0.5).some(([id]) => id === D));
+  assert.deepEqual(getDrops(BLOCK.NETHER_QUARTZ_ORE, ITEM.WOODEN_PICKAXE, () => 0.5), [[ITEM.QUARTZ, 1]]);
+});

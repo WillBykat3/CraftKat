@@ -247,6 +247,69 @@ const MOB_BUILDERS = {
     g.add(legL, legR, body, armL, armR, head);
     return { group: g, head, legs: [legL, legR], arms: [armL, armR] };
   },
+  // the Nether
+  zombified_piglin: () => {
+    const m = humanoid(0xe9a3a0, 0x6d8a3e, 0x4f3a2a, false);
+    // a rotting pig face: wider head, snout, an exposed green patch, tusks and a golden sword
+    const snout = box(0.25, 0.15, 0.08, 0xd98a85); snout.position.set(0, 0.16, -0.29); m.head.add(snout);
+    const rot = box(0.22, 0.32, 0.04, 0x6aa04a); rot.position.set(0.15, 0.3, -0.27); m.head.add(rot);
+    for (const ex of [-0.28, 0.28]) { const ear = box(0.06, 0.2, 0.14, 0xe9a3a0); ear.position.set(ex, 0.28, -0.05); m.head.add(ear); }
+    for (const tx of [-0.1, 0.1]) { const tusk = box(0.04, 0.08, 0.04, 0xf0e6c8); tusk.position.set(tx, 0.08, -0.3); m.head.add(tusk); }
+    const sword = box(0.05, 0.7, 0.05, 0xf5cd3c); sword.position.set(0, -0.75, -0.25); sword.rotation.x = Math.PI / 2; m.armR.add(sword);
+    return m;
+  },
+  ghast: () => {
+    const g = new THREE.Group();
+    const body = box(4, 4, 4, 0xf0f0f0); body.position.y = 2.2;
+    const head = new THREE.Group();
+    head.position.y = 2.2;
+    // closed eyes and mouth; the open ones show while it's about to shoot
+    const shut = new THREE.Group();
+    for (const ex of [-0.9, 0.9]) { const e = box(0.6, 0.1, 0.05, 0x888888); e.position.set(ex, 0.6, -2.02); shut.add(e); }
+    const mouthShut = box(0.6, 0.1, 0.05, 0x888888); mouthShut.position.set(0, -0.5, -2.02); shut.add(mouthShut);
+    const open = new THREE.Group();
+    for (const ex of [-0.9, 0.9]) { const e = box(0.6, 0.5, 0.05, 0x222222); e.position.set(ex, 0.6, -2.02); open.add(e); const t = box(0.2, 0.3, 0.06, 0xb02020); t.position.set(ex, 0.3, -2.03); open.add(t); }
+    const mouth = box(0.8, 0.6, 0.05, 0x222222); mouth.position.set(0, -0.6, -2.02); open.add(mouth);
+    open.visible = false;
+    head.add(shut, open);
+    const legs = [];
+    for (let i = 0; i < 9; i++) {
+      const l = limb(0.3, 1.2 + ((i * 7) % 5) * 0.25, 0.3, 0xe6e6e6, ((i % 3) - 1) * 1.2, 0.25, (Math.floor(i / 3) - 1) * 1.2);
+      legs.push(l);
+      g.add(l);
+    }
+    g.add(body, head);
+    return { group: g, head, legs: [], tentacles: legs, arms: [], faces: { shut, open } };
+  },
+  blaze: () => {
+    const g = new THREE.Group();
+    const head = new THREE.Group();
+    head.position.y = 1.4;
+    const skull = box(0.5, 0.5, 0.5, 0xf6c33b, [0xf6c33b, 0xf6c33b, 0xffdc5a, 0xd9a020, 0xf6c33b, 0xf6c33b]); skull.position.y = 0.25; head.add(skull);
+    eyes(head, 0.28, -0.26, 0x3a1a00);
+    // rings of glowing rods spinning around a smoky core
+    const rods = new THREE.Group();
+    for (let ring = 0; ring < 3; ring++) {
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + ring * 0.6;
+        const r = box(0.12, 0.45, 0.12, 0xe8a020);
+        r.position.set(Math.cos(a) * (0.55 - ring * 0.1), 1.1 - ring * 0.42, Math.sin(a) * (0.55 - ring * 0.1));
+        r.userData.ring = ring;
+        rods.add(r);
+      }
+    }
+    const smoke = box(0.2, 0.9, 0.2, 0x5a4a40); smoke.position.y = 0.75;
+    g.add(head, rods, smoke);
+    return { group: g, head, legs: [], arms: [], rods };
+  },
+  wither_skeleton: () => {
+    const m = MOB_BUILDERS.skeleton(0x2a2a2a, 0x202020);
+    m.group.scale.setScalar(1.2);
+    // a stone sword instead of a bow
+    m.group.children.filter((c) => c.geometry?.parameters?.height === 0.6).forEach((bow) => { bow.visible = false; });
+    const sword = box(0.05, 0.75, 0.05, 0x8a8a8a); sword.position.set(0.3, 1.45, -0.85); sword.rotation.x = Math.PI / 2.4; m.group.add(sword);
+    return m;
+  },
   skeleton: (boneColor = 0xc8c8c0, clothes = null) => {
     const g = new THREE.Group();
     const bone = boneColor;
@@ -271,6 +334,8 @@ const HITBOX = {
   pig: [0.5, 0.95], cow: [0.5, 1.4], sheep: [0.5, 1.3], chicken: [0.3, 0.75],
   zombie: [0.35, 1.95], skeleton: [0.35, 1.95], creeper: [0.35, 1.7], spider: [0.75, 0.95],
   husk: [0.35, 1.95], stray: [0.35, 1.95], enderman: [0.35, 2.9],
+  zombified_piglin: [0.35, 1.95], ghast: [2, 4.2], blaze: [0.35, 1.8], wither_skeleton: [0.42, 2.4],
+  fireball: [0.5, 1],
 };
 
 function itemMesh(id, textures) {
@@ -308,11 +373,37 @@ function xpOrbTexture() {
   return orbTexture;
 }
 
+let fireTexture = null;
+function fireballTexture() {
+  if (fireTexture) return fireTexture;
+  const rows = [
+    '..oooo..',
+    '.oyyyyo.',
+    'oywwyyro',
+    'oywyyyro',
+    'oyyyyrro',
+    'oyyyrrro',
+    '.orrrro.',
+    '..oooo..',
+  ];
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const ctx = c.getContext('2d');
+  const pal = { o: '#c03a00', y: '#ffd040', r: '#ff7a10', w: '#fff8c0' };
+  rows.forEach((row, y) => { for (let x = 0; x < 8; x++) if (pal[row[x]]) { ctx.fillStyle = pal[row[x]]; ctx.fillRect(x, y, 1, 1); } });
+  fireTexture = new THREE.CanvasTexture(c);
+  fireTexture.magFilter = THREE.NearestFilter;
+  fireTexture.minFilter = THREE.NearestFilter;
+  fireTexture.generateMipmaps = false;
+  fireTexture.colorSpace = THREE.SRGBColorSpace;
+  return fireTexture;
+}
+
 function disposeTree(obj) {
   obj.traverse((o) => {
     if (o.geometry) o.geometry.dispose();
     if (o.material) {
-      if (o.material.map && o.isSprite && o.material.map !== orbTexture) o.material.map.dispose();
+      if (o.material.map && o.isSprite && o.material.map !== orbTexture && o.material.map !== fireTexture) o.material.map.dispose();
       o.material.dispose();
     }
   });
@@ -430,6 +521,17 @@ export class EntityViews {
       group.add(sprite);
       return { xp: true, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: Math.random() * 6 };
     }
+    if (kind === 'fireball' || kind === 'small_fireball') {
+      // a glowing ball of fire, always facing you
+      const big = kind === 'fireball';
+      const group = new THREE.Group();
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireballTexture(), transparent: true, depthWrite: false, fog: false }));
+      sprite.scale.set(big ? 1 : 0.35, big ? 1 : 0.35, 1);
+      sprite.position.y = big ? 0.5 : 0.16;
+      group.add(sprite);
+      // only a ghast's fireball can be punched back
+      return { fireball: true, mob: big ? 'fireball' : undefined, hittable: big, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
+    }
     if (kind === 'arrow') {
       const group = new THREE.Group();
       const shaft = box(0.04, 0.04, 0.5, 0x8a6a40);
@@ -517,6 +619,11 @@ export class EntityViews {
         v.sprite.material.color.setRGB(0.6 + 0.4 * t, 1, 0.25 * (1 - t));
         continue;
       }
+      if (v.fireball) {
+        v.spin += dt * 8;
+        v.sprite.material.rotation = v.spin;
+        continue;
+      }
       if (v.arrow) {
         g.rotation.y = v.tYaw;
         const la = this.lightAt(g.position.x, g.position.y, g.position.z);
@@ -529,6 +636,21 @@ export class EntityViews {
       animateLimbs(v, moved, dt);
       if (v.model.spiderLegs) {
         v.model.spiderLegs.forEach((leg, i) => { leg.rotation.x = Math.sin(v.walk * 1.5 + i) * 0.35 * Math.min(1, moved / Math.max(dt, 1e-3) / 2); });
+      }
+      if (v.model.faces) {
+        v.model.faces.open.visible = (v.flags & 2) !== 0;
+        v.model.faces.shut.visible = !v.model.faces.open.visible;
+      }
+      if (v.model.tentacles) v.model.tentacles.forEach((t, i) => { t.rotation.x = Math.sin(performance.now() / 400 + i) * 0.25; });
+      if (v.model.rods) {
+        const t = performance.now() / 1000;
+        for (const r of v.model.rods.children) {
+          const ring = r.userData.ring, dir = ring % 2 ? -1 : 1;
+          const a = Math.atan2(r.position.z, r.position.x) + dir * 0.03;
+          const rad = Math.hypot(r.position.x, r.position.z);
+          r.position.x = Math.cos(a) * rad; r.position.z = Math.sin(a) * rad;
+          r.position.y = 1.1 - ring * 0.42 + Math.sin(t * 2 + ring) * 0.05;
+        }
       }
       if (v.model.wool) {
         const sheared = (v.flags & 1) !== 0;

@@ -32,9 +32,17 @@ const MOB_TYPES = {
   creeper: { hp: 20, halfW: 0.3, height: 1.7, speed: 2.0, hostile: true },
   husk: { hp: 20, halfW: 0.3, height: 1.9, speed: 2.2, hostile: true, damage: 3 },       // desert zombie, doesn't burn
   stray: { hp: 20, halfW: 0.3, height: 1.95, speed: 2.0, hostile: true, burns: true },  // snowy skeleton
-  enderman: { hp: 40, halfW: 0.3, height: 2.9, speed: 3.2, hostile: true, damage: 7 }, // neutral until angered
+  enderman: { hp: 40, halfW: 0.3, height: 2.9, speed: 3.2, hostile: true, damage: 7, neutral: true }, // calm until angered
+  // the Nether
+  zombified_piglin: { hp: 20, halfW: 0.3, height: 1.95, speed: 2.3, hostile: true, damage: 8, neutral: true, fireproof: true },
+  ghast: { hp: 10, halfW: 2, height: 4, speed: 1.6, hostile: true, flies: true, fireproof: true },
+  blaze: { hp: 20, halfW: 0.3, height: 1.8, speed: 1.8, hostile: true, flies: true, fireproof: true, damage: 6 },
+  wither_skeleton: { hp: 20, halfW: 0.35, height: 2.4, speed: 2.4, hostile: true, damage: 8, fireproof: true },
 };
-const MOB_NAMES = { zombie: 'a Zombie', husk: 'a Husk', spider: 'a Spider', enderman: 'an Enderman', skeleton: 'a Skeleton', stray: 'a Stray' };
+const MOB_NAMES = {
+  zombie: 'a Zombie', husk: 'a Husk', spider: 'a Spider', enderman: 'an Enderman', skeleton: 'a Skeleton', stray: 'a Stray',
+  zombified_piglin: 'a Zombified Piglin', blaze: 'a Blaze', wither_skeleton: 'a Wither Skeleton',
+};
 const PASSIVE = ['pig', 'cow', 'sheep', 'chicken'];
 const HOSTILE = [['zombie', 0.38], ['skeleton', 0.24], ['creeper', 0.19], ['spider', 0.14], ['enderman', 0.05]];
 const DESERT_BIOMES = new Set([BIOME.DESERT]);
@@ -660,6 +668,16 @@ export class GameHost {
 
   onAttack(p, msg) {
     const e = this.entities.get(msg.e);
+    if (e && e.type === 'fireball' && e.dim === p.dim && Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) < 6) {
+      // hitting a ghast's fireball sends it back where you're looking
+      const speed = Math.hypot(e.vx, e.vy, e.vz) * 1.2;
+      e.vx = -Math.sin(p.yaw) * Math.cos(p.pitch) * speed;
+      e.vy = Math.sin(p.pitch) * speed;
+      e.vz = -Math.cos(p.yaw) * Math.cos(p.pitch) * speed;
+      e.reflected = p.name;
+      e.age = 0;
+      return;
+    }
     if (!e || !isMob(e) || e.dim !== p.dim || !p.canBuild()) return;
     if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 6) return;
     const tool = toolOf(msg.tool);
@@ -697,9 +715,13 @@ export class GameHost {
       husk: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
       stray: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
       enderman: [[ITEM.ENDER_PEARL, Math.floor(r() * 2)]],
+      zombified_piglin: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 2)], [ITEM.GOLD_NUGGET, Math.floor(r() * 2)], [ITEM.GOLD_INGOT, r() < 0.025 ? 1 : 0]],
+      ghast: [[ITEM.GHAST_TEAR, Math.floor(r() * 2)], [ITEM.GUNPOWDER, Math.floor(r() * 3)]],
+      blaze: [[ITEM.BLAZE_ROD, Math.floor(r() * 2)]],
+      wither_skeleton: [[ITEM.COAL, r() < 1 / 3 ? 1 : 0], [ITEM.BONE, Math.floor(r() * 3)]],
     }[e.type] || [];
     for (const [id, n] of drops) if (n > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n);
-    this.spawnXP(e.x, e.y + 0.5, e.z, MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
+    this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
     this.broadcast({ t: 'mobdeath', e: e.id });
   }
 
@@ -1273,6 +1295,7 @@ export class GameHost {
       // don't simulate in unloaded areas far from everyone
       if (near[1] > 96) continue;
       if (e.type === 'arrow') { this.tickArrow(e, dt); continue; }
+      if (e.type === 'fireball' || e.type === 'small_fireball') { this.tickFireball(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
@@ -1298,11 +1321,18 @@ export class GameHost {
         if (e.regrow <= 0) e.sheared = false;
       }
 
-      // lava burns every mob
-      if (this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z)) === BLOCK.LAVA) {
+      // lava burns every mob that isn't from the Nether
+      if (!t.fireproof && this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z)) === BLOCK.LAVA) {
         e.lava = (e.lava || 0) + dt;
         if (e.lava > 0.5) { e.lava = 0; e.hp -= 4; this.broadcast({ t: 'mobhurt', e: e.id }); }
         if (e.hp <= 0) { this.killMob(e); continue; }
+      }
+
+      if (t.flies) { this.tickFlyer(e, t, dt); continue; }
+      if (t.neutral && e.angerTime !== undefined) {
+        // zombified piglins calm down after a while
+        e.angerTime -= dt;
+        if (e.angerTime <= 0) { e.angry = false; e.angryAt = null; e.angerTime = undefined; }
       }
 
       if (t.hostile) {
@@ -1313,7 +1343,7 @@ export class GameHost {
           if (e.hp <= 0) { this.killMob(e); continue; }
         }
         if (e.type === 'enderman') this.endermanMind(e, dt);
-        const target = e.type === 'enderman' && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : e.type === 'enderman' ? 40 : 24, true);
+        const target = t.neutral && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : t.neutral ? 40 : 24, true);
         if (target) {
           const [p, dist] = target;
           e.yaw = Math.atan2(-(p.x - e.x), -(p.z - e.z));
@@ -1515,6 +1545,136 @@ export class GameHost {
 
   onMobHurt(e) {
     if (e.type === 'enderman') { e.angry = true; this.teleportMob(e, e.x, e.z, 16); }
+    if (e.type === 'zombified_piglin' && e.angryAt) {
+      // hurting one angers every zombified piglin nearby, for 20-40 seconds
+      for (const o of this.entities.values()) {
+        if (o.type !== 'zombified_piglin' || o.dim !== e.dim || Math.hypot(o.x - e.x, o.y - e.y, o.z - e.z) > 32) continue;
+        o.angry = true;
+        o.angryAt = e.angryAt;
+        o.angerTime = 20 + this.random() * 20;
+      }
+    }
+  }
+
+  // ---------- flying Nether mobs ----------
+  // Ghasts drift around and spit explosive fireballs; blazes hover and shoot bursts of three.
+  tickFlyer(e, t, dt) {
+    const target = this.nearestPlayer(e, e.type === 'ghast' ? 64 : 48, true);
+    const see = target && this.canSee(e.x, e.y + e.height * 0.6, e.z, target[0].x, target[0].y + 1.5, target[0].z);
+    let gx, gy, gz, speed = t.speed;
+    if (e.type === 'ghast') {
+      if (e.think <= 0 || !e.goal) {
+        e.think = 3 + this.random() * 4;
+        e.goal = [e.x + (this.random() - 0.5) * 32, Math.max(12, Math.min(112, e.y + (this.random() - 0.5) * 16)), e.z + (this.random() - 0.5) * 32];
+      }
+      [gx, gy, gz] = e.goal;
+      if (see) {
+        e.yaw = Math.atan2(-(target[0].x - e.x), -(target[0].z - e.z));
+        e.charge = (e.charge || 0) + dt;
+        if (e.charge >= 2) {
+          e.charge = -1.5; // cooldown
+          this.broadcastHere({ t: 'sfx', s: 'ghast', x: e.x, y: e.y, z: e.z });
+          this.shootFireball(e, target[0], true);
+        }
+      } else {
+        e.charge = Math.max(0, (e.charge || 0) - dt);
+        if (Math.hypot(e.vx, e.vz) > 0.1) e.yaw = Math.atan2(-e.vx, -e.vz);
+      }
+    } else {
+      // blaze: hover a couple of blocks over the ground, or level with its target
+      let ground = Math.floor(e.y);
+      for (let k = 0; k < 8 && !BLOCKS[this.world.getBlock(Math.floor(e.x), ground - 1, Math.floor(e.z))].solid; k++) ground--;
+      gy = ground + 1.5 + Math.sin(e.age * 1.3) * 0.5;
+      if (target) {
+        const [p, dist] = target;
+        e.yaw = Math.atan2(-(p.x - e.x), -(p.z - e.z));
+        gy = Math.max(gy, p.y + 0.5);
+        if (dist > 6 || !see) { gx = p.x; gz = p.z; } else { gx = e.x; gz = e.z; }
+        if (dist < 1.8 && e.attackCooldown === 0) {
+          e.attackCooldown = 1;
+          this.send(p.peerId, { t: 'hurt', amount: t.damage, from: [e.x, e.z], cause: 'was slain by a Blaze' });
+        }
+        if (see && dist < 48) {
+          // after charging up, three fireballs a third of a second apart, then a rest
+          e.charge = (e.charge || 0) + dt;
+          e.shots ??= 0;
+          if (e.charge >= 3 + e.shots * 0.3) {
+            this.shootFireball(e, p, false);
+            e.shots++;
+            if (e.shots >= 3) { e.charge = -2 - this.random() * 2; e.shots = 0; }
+          }
+        }
+      } else {
+        e.charge = 0;
+        if (e.think <= 0) { e.think = 2 + this.random() * 4; e.goal = [e.x + (this.random() - 0.5) * 10, 0, e.z + (this.random() - 0.5) * 10]; }
+        gx = e.goal?.[0] ?? e.x; gz = e.goal?.[2] ?? e.z;
+        speed *= 0.5;
+      }
+    }
+    const dx = gx - e.x, dy = gy - (e.y + (e.type === 'ghast' ? 2 : 0.9)), dz = gz - e.z;
+    const len = Math.hypot(dx, dy, dz);
+    const k = Math.min(1, dt * 2);
+    if (len > 0.5) {
+      e.vx += (dx / len * speed - e.vx) * k;
+      e.vy += (dy / len * speed - e.vy) * k;
+      e.vz += (dz / len * speed - e.vz) * k;
+    } else { e.vx *= 0.9; e.vy *= 0.9; e.vz *= 0.9; }
+    const res = moveBody(this.world, e, dt, 0);
+    if (res.hitWall) e.think = 0;
+    if (e.y < -20 || e.y > 140) this.entities.delete(e.id);
+  }
+
+  shootFireball(from, target, big) {
+    const sy = from.y + (big ? 2 : 1.2);
+    let dx = target.x - from.x, dy = target.y + 1 - sy, dz = target.z - from.z;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    dx /= len; dy /= len; dz /= len;
+    const spread = big ? 0.02 : 0.08;
+    const speed = big ? 14 : 18;
+    const out = big ? 2.5 : 0.6; // start outside the shooter
+    const f = {
+      id: this.nextEntityId++, type: big ? 'fireball' : 'small_fireball',
+      x: from.x + dx * out, y: sy + dy * out, z: from.z + dz * out, halfW: big ? 0.5 : 0.16, height: big ? 1 : 0.32,
+      vx: (dx + (this.random() - 0.5) * spread) * speed, vy: (dy + (this.random() - 0.5) * spread) * speed, vz: (dz + (this.random() - 0.5) * spread) * speed,
+      yaw: 0, age: 0, shooter: from.id, cause: big ? 'was fireballed by a Ghast' : 'was fireballed by a Blaze',
+    };
+    this.addEntity(f);
+    return f;
+  }
+
+  tickFireball(f, dt) {
+    f.age += dt;
+    if (f.age > 10) { this.entities.delete(f.id); return; }
+    const big = f.type === 'fireball';
+    const steps = Math.max(1, Math.ceil(Math.hypot(f.vx, f.vy, f.vz) * dt / 0.25));
+    const hit = (by) => {
+      this.entities.delete(f.id);
+      if (big) this.explode(f.x, f.y + 0.5, f.z, 1, f.cause);
+      return by;
+    };
+    for (let i = 0; i < steps; i++) {
+      f.x += f.vx * dt / steps; f.y += f.vy * dt / steps; f.z += f.vz * dt / steps;
+      const r = f.halfW;
+      if (f.reflected) {
+        // hit back by a player: now it hurts mobs (a ghast hit by its own fireball dies)
+        for (const e of this.entities.values()) {
+          if (!isMob(e) || e.dim !== this.ctx) continue;
+          if (Math.abs(f.x - e.x) < e.halfW + r && Math.abs(f.z - e.z) < e.halfW + r && f.y + r > e.y && f.y - r < e.y + e.height) {
+            this.hurtMob(e, e.type === 'ghast' ? 1000 : 6, f.vx, f.vz, f.reflected);
+            return hit();
+          }
+        }
+      } else {
+        for (const p of this.here()) {
+          if (p.mode !== 'survival' || p.dead) continue;
+          if (Math.abs(f.x - p.x) < 0.3 + r && Math.abs(f.z - p.z) < 0.3 + r && f.y + r > p.y && f.y - r < p.y + 1.8) {
+            this.send(p.peerId, { t: 'hurt', amount: big ? 6 : 5, from: [f.x - f.vx, f.z - f.vz], cause: f.cause });
+            return hit();
+          }
+        }
+      }
+      if (BLOCKS[this.world.getBlock(Math.floor(f.x), Math.floor(f.y), Math.floor(f.z))].solid) return hit();
+    }
   }
 
 
@@ -1729,8 +1889,44 @@ export class GameHost {
     this.storePlayer(p);
   }
 
-  // Monsters of the Nether and the End (see spawnMobs).
-  spawnOther(_p, _counts) {}
+  // Monsters of the Nether and the End (see spawnMobs). Nether mobs don't care about light;
+  // blazes and wither skeletons only spawn in fortresses.
+  spawnOther(p, counts) {
+    if (p.dim !== 'nether' || counts.hostile >= 12 || this.random() < 0.4) return;
+    const angle = this.random() * Math.PI * 2;
+    const dist = 20 + this.random() * 28;
+    const x = Math.floor(p.x + Math.cos(angle) * dist), z = Math.floor(p.z + Math.sin(angle) * dist);
+    const startY = Math.max(8, Math.min(118, Math.floor(p.y) + Math.floor(this.random() * 40) - 20));
+    let y = -1;
+    for (let yy = startY; yy > startY - 24 && yy > 5; yy--) {
+      const floor = this.world.getBlock(x, yy - 1, z);
+      if (BLOCKS[floor].solid && !BLOCKS[floor].transparent && this.world.getBlock(x, yy, z) === BLOCK.AIR && this.world.getBlock(x, yy + 1, z) === BLOCK.AIR) { y = yy; break; }
+    }
+    if (y < 0) return;
+    const floor = this.world.getBlock(x, y - 1, z);
+    const roll = this.random();
+    let type, group = 1;
+    if (floor === BLOCK.NETHER_BRICKS) type = roll < 0.55 ? 'blaze' : 'wither_skeleton';
+    else {
+      const biome = this.world.netherBiome(x, z);
+      if (biome === 1) type = roll < 0.25 ? 'ghast' : roll < 0.85 ? 'skeleton' : 'enderman'; // soul sand valley
+      else if (biome === 2) type = roll < 0.6 ? 'ghast' : 'zombified_piglin';             // basalt deltas
+      else if (roll < 0.12) type = 'ghast';
+      else if (roll < 0.17) type = 'enderman';
+      else { type = 'zombified_piglin'; group = 2 + Math.floor(this.random() * 3); }
+    }
+    if (type === 'ghast') {
+      // ghasts need lots of room
+      y += 2;
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = 0; dy < 5; dy++) {
+        if (this.world.getBlock(x + dx, y + dy, z + dz) !== BLOCK.AIR) return;
+      }
+    }
+    for (let i = 0; i < group; i++) {
+      const e = this.spawnMob(type, x + 0.5 + (i ? (this.random() - 0.5) * 3 : 0), y, z + 0.5 + (i ? (this.random() - 0.5) * 3 : 0));
+      if (collides(this.world, e)) this.entities.delete(e.id);
+    }
+  }
 
   sendStates() {
     const moved = {}; // dim -> moves
@@ -1746,7 +1942,9 @@ export class GameHost {
       for (const e of this.entities.values()) {
         if (e.dim !== p.dim || Math.abs(e.x - p.x) > VIEW || Math.abs(e.z - p.z) > VIEW) continue;
         // flags: 1 = sheared sheep, 2 = creeper about to explode
-        const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0) : (e.sheared ? 1 : 0) | (e.fuse > 0.2 ? 2 : 0);
+        // (and for ghasts and blazes, 2 = about to shoot)
+        const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
+          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 ? 2 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
