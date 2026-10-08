@@ -435,6 +435,11 @@ export class GameHost {
   }
 
   // ---------- redstone hooks ----------
+  // Where the (living) players are, as [x, z].
+  playerSpots() {
+    return [...this.players.values()].filter((p) => !p.dead).map((p) => [p.x, p.z]);
+  }
+
   // Everything that can stand on a pressure plate (items only count for wooden ones).
   entityBoxes(withItems) {
     const out = [];

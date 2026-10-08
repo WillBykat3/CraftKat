@@ -97,6 +97,12 @@ export class RedstoneSim {
   tick() {
     this.tickCount++;
     const now = this.tickCount;
+    // like Minecraft's loaded chunks: only redstone near players runs
+    const near = this.host.playerSpots ? this.host.playerSpots() : [];
+    this.active = near.length === 0 ? [...this.positions] : [...this.positions].filter((k) => {
+      const [x, , z] = unkey(k);
+      return near.some(([px, pz]) => Math.abs(px - x) < 160 && Math.abs(pz - z) < 160);
+    });
     // delayed changes and buttons/plates letting go
     for (const [k, p] of [...this.pending]) {
       if (p.at > now) continue;
@@ -125,7 +131,7 @@ export class RedstoneSim {
   }
 
   checkPlates() {
-    for (const k of this.positions) {
+    for (const k of this.active) {
       const [x, y, z] = unkey(k);
       const id = this.get(x, y, z);
       const b = BLOCKS[id];
@@ -143,7 +149,7 @@ export class RedstoneSim {
     const direct = new Set();   // cells right next to a source (or in front of a repeater)
     const strong = new Set();   // solid blocks strongly powered
     const sources = [];
-    for (const k of this.positions) {
+    for (const k of this.active) {
       const [x, y, z] = unkey(k);
       const b = BLOCKS[this.get(x, y, z)];
       if (!b.redstone) continue;
@@ -171,7 +177,7 @@ export class RedstoneSim {
     // dust: start at 15 next to a source or a strongly powered block, then spread
     const level = new Map();
     const queue = [];
-    for (const k of this.positions) {
+    for (const k of this.active) {
       const [x, y, z] = unkey(k);
       if (BLOCKS[this.get(x, y, z)].redstone !== 'wire') continue;
       let start = this.sourceFeedsWire(x, y, z) ? 15 : 0;
@@ -283,7 +289,7 @@ export class RedstoneSim {
 
   // Devices respond to the power worked out in compute().
   react() {
-    for (const k of [...this.positions]) {
+    for (const k of this.active) {
       const [x, y, z] = unkey(k);
       const id = this.get(x, y, z);
       const b = BLOCKS[id];

@@ -199,3 +199,18 @@ test('a torch clock blinks; breaking a block drops the lever on it; dust climbs'
   assert.ok(seen.has(TORCH(2, true)) && seen.has(TORCH(2, false)), 'the torch blinks');
   void BLOCKS;
 });
+
+test('redstone far from every player waits until someone comes near', () => {
+  const { host, set, get, run } = bench();
+  host.connect('p');
+  host.message('p', { t: 'hello', name: 'P' });
+  const p = [...host.players.values()][0];
+  p.x = 1000; p.z = 1000;
+  set(0, Y + 1, 0, BLOCK.REDSTONE_BLOCK);
+  set(1, Y + 1, 0, LAMP);
+  run(0.5);
+  assert.equal(get(1, Y + 1, 0), LAMP, 'nothing happens far away');
+  p.x = 5; p.z = 5;
+  run(0.5);
+  assert.equal(get(1, Y + 1, 0), LAMP + 1, 'it runs once a player is near');
+});

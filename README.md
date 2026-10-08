@@ -26,6 +26,9 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
   faster near water; bone meal speeds them up; bake bread and potatoes
 - **Armor**: leather, iron, gold and diamond, with armor slots, an armor bar and Minecraft's protection rules
 - **Bows**: draw and shoot (arrows from flint, sticks and feathers)
+- **Redstone**: dust, redstone torches, levers, buttons, pressure plates, repeaters, lamps, blocks of redstone, pistons,
+  sticky pistons, TNT (lit by power or flint and steel) and doors that open with power. Power fades 1 per block over
+  15 blocks, torches invert, repeaters delay and boost, like Minecraft (see below for what's different)
 - **Crafting**: 2×2 grid in your inventory, 3×3 on a crafting table, plus a **recipe book** that shows every recipe and
   fills the grid for you
 - **Furnace**: smelt raw iron/gold/copper into ingots, sand into glass, cook pork, beef, chicken and mutton
@@ -41,8 +44,13 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** redstone, the Nether and End, villages, enchanting, potions, flowing water/lava, and many of
-Minecraft's mobs. (Redstone dust, lapis, emeralds and ender pearls can be collected but don't do anything yet.) It needs a keyboard and mouse, so phones and tablets aren't supported.
+**Not included (yet):** the Nether and End, villages, enchanting, potions, flowing water/lava, and many of Minecraft's
+mobs. (Lapis, emeralds and ender pearls can be collected but don't do anything yet.)
+
+**Redstone differences from Minecraft:** no comparators, observers, hoppers, dispensers, droppers or note blocks yet;
+repeaters can't be locked; pistons don't push players or mobs and have no quasi-connectivity; redstone torches don't
+burn out. Redstone lamps are made with glass instead of glowstone, and sticky pistons with string instead of a
+slimeball, until those exist. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -103,7 +111,7 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 | Shift | Sneak (you won't fall off edges) · fly down |
 | Double-tap Space | Fly (creative mode) |
 | Left click (hold) | Break block · attack |
-| Right click | Place block · open doors, crafting tables, furnaces, chests · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears or bone meal |
+| Right click | Place block · open doors, crafting tables, furnaces, chests · flip levers, press buttons, change a repeater's delay · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears, bone meal or flint and steel |
 | Middle click | Pick block |
 | 1–9 / mouse wheel | Choose hotbar slot |
 | E | Inventory and crafting |
@@ -174,7 +182,9 @@ public/
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo
   js/pixel-glyphs.js      the pixel font's letters (scripts/pixel-font.mjs turns them into a font file)
   js/particles.js         block-breaking particles
-  js/shapes.js            shapes of slabs, stairs, doors, ladders and fences (drawing, collisions, aiming)
+  js/shapes.js            shapes of slabs, stairs, doors, ladders, fences, levers, pistons... (drawing, collisions, aiming)
+  js/redstone.js          how redstone dust connects and looks
+  js/redstone-sim.js      the redstone simulation (run by the host)
   js/xp.js                experience levels and rewards
   js/sound.js, js/music.js  synthesized sound effects and generated music
   js/auth.js, js/config.js  logins (Supabase)
