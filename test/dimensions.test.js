@@ -245,9 +245,9 @@ test('monsters spawn in the Nether: blazes and wither skeletons in fortresses', 
   for (let i = 0; i < 200; i++) host.spawnMobs();
   const types = new Set([...host.entities.values()].filter((e) => e.dim === 'nether').map((e) => e.type));
   assert.ok(types.size > 0, 'something spawned');
-  for (const t of types) assert.ok(['zombified_piglin', 'ghast', 'skeleton', 'enderman', 'blaze', 'wither_skeleton'].includes(t), t);
+  for (const t of types) assert.ok(['zombified_piglin', 'ghast', 'skeleton', 'enderman', 'blaze', 'wither_skeleton', 'piglin', 'magma_cube'].includes(t), t);
   assert.ok(![...host.entities.values()].some((e) => ['pig', 'cow', 'sheep', 'chicken'].includes(e.type)), 'no farm animals');
-  // fortress floors: only blazes and wither skeletons
+  // fortress floors: mostly blazes and wither skeletons, never ghasts or piglins
   host.entities.clear();
   host.inDim('nether', () => {
     for (let x = -50; x <= 50; x++) for (let z = -50; z <= 50; z++) {
@@ -258,7 +258,7 @@ test('monsters spawn in the Nether: blazes and wither skeletons in fortresses', 
   for (let i = 0; i < 100; i++) host.spawnMobs();
   const fort = new Set([...host.entities.values()].map((e) => e.type));
   assert.ok(fort.has('blaze') || fort.has('wither_skeleton'));
-  for (const t of fort) assert.ok(['blaze', 'wither_skeleton'].includes(t), t);
+  for (const t of fort) assert.ok(['blaze', 'wither_skeleton', 'magma_cube', 'skeleton', 'zombified_piglin'].includes(t), t);
 });
 
 test('strongholds have a portal room; eyes of ender lead there and open the End portal', async () => {

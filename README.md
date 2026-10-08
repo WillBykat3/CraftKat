@@ -59,8 +59,8 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Blocks of iron, gold, diamond, emerald, lapis and coal**
 - **Brewing and potions**: a brewing stand (blaze rod + cobblestone, fuelled by blaze powder) brews Minecraft's
   potions from water bottles and nether wart: Swiftness, Slowness, Strength, Healing, Harming, Poison,
-  Regeneration, Fire Resistance, Night Vision, Invisibility, Weakness (and Leaping, Water Breathing and Slow
-  Falling once their ingredients exist), with redstone to make them last longer, glowstone to make them stronger
+  Regeneration, Fire Resistance, Night Vision, Invisibility, Weakness, Leaping (rabbit's foot) and Slow Falling
+  (phantom membrane) (Water Breathing needs a pufferfish, which arrives with fishing), with redstone to make them last longer, glowstone to make them stronger
   and gunpowder for splash potions to throw. Nether wart grows in fortresses and on soul sand; spiders drop eyes;
   melons grow in jungles and mushrooms in dark forests, swamps, taigas and the Nether
 - **Status effects** with icons and timers: speed, haste, strength, jump boost, regeneration, resistance, fire
@@ -84,29 +84,47 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Real lighting**: caves are dark, torches light them up, smooth shading
 - **Mobs**: pigs, cows, sheep and chickens; at night (and anywhere dark underground) zombies and skeletons (both burn in
   sunlight), spiders that climb walls, creepers that explode, husks in deserts, strays in the snow, and endermen that
-  attack if you look them in the eye
+  attack if you look them in the eye. Also:
+  - **Wolves** in forests and taigas (in packs): tame one with bones, it follows you, sits when you right-click it,
+    fights whatever you fight, and gets a red collar. Hit a wild one and the pack turns on you
+  - **Rabbits** in deserts, snowy plains, flower forests and meadows (rabbit meat, hide and a lucky foot)
+  - **Breeding**: feed two animals their favourite food (wheat for cows and sheep, carrots or potatoes for pigs, seeds
+    for chickens, carrots or dandelions for rabbits, meat for tame wolves) and they have a baby, which grows up in
+    20 minutes. Chickens lay eggs; throw eggs to hatch chicks (sometimes four)
+  - **Slimes** in swamps at night and deep underground in slime chunks (one chunk in ten): they come in three sizes
+    and split when killed; the small ones drop slimeballs (slime blocks, which you bounce on, sticky pistons and magma
+    cream)
+  - **Witches** that throw potions and drink healing ones, **drowned** in oceans and rivers at night, **squid** (ink
+    sacs), **bats** in dark caves, and **phantoms**, which swoop down on players who haven't slept for three days
+  - In the Nether: **magma cubes** in basalt deltas and fortresses, and **piglins** in the nether wastes, which attack
+    unless you wear a piece of gold armor; drop a gold ingot near one and it gives you something for it
 - **Creative mode**: every block, flying, instant breaking
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** many of Minecraft's mobs, boats, minecarts, fishing, weather and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts, fishing, weather and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
-**Nether and End differences from Minecraft:** no piglins, hoglins, magma cubes or striders, crimson and warped
+**Nether and End differences from Minecraft:** no hoglins, piglin brutes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
 libraries, silverfish or loot); the dragon can't be summoned again, and there are no credits. Strongholds only exist
 in worlds created with this terrain version or later (older worlds can still visit the Nether).
 
 **Redstone differences from Minecraft:** no comparators, observers, hoppers, dispensers, droppers or note blocks yet;
 repeaters can't be locked; pistons don't push players or mobs and have no quasi-connectivity; redstone torches don't
-burn out. Sticky pistons are made with string instead of a slimeball, until slimes exist. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
+burn out. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
 
-**Village differences from Minecraft:** no raids, pillagers, wandering traders, zombie villagers, breeding or
-baby villagers; villagers don't claim new job sites or open doors; trades use only items in this game (no enchanted
-books or gear yet), and prices don't change with demand or reputation. The loom, stonecutter, smithing table,
+**Village differences from Minecraft:** no raids, pillagers, wandering traders, zombie villagers, villager breeding or
+baby villagers; villagers don't claim new job sites or open doors; trades use only items in this game (librarians
+sell enchanted books, but nobody sells enchanted gear), and prices don't change with demand or reputation. The loom, stonecutter, smithing table,
 cartography table, fletching table and composter are decoration for now.
 
 **Enchanting differences from Minecraft:** no curses, Frost Walker, Sweeping Edge or fishing and trident
 enchantments; anvils can't rename items.
+
+**Mob differences from Minecraft:** mobs don't find paths around obstacles (they hop up single blocks); slimes don't
+follow the moon's phases in swamps; witches only throw a few kinds of potion; piglins don't remember or share gold,
+can't be given gold by right-clicking, and don't zombify in the Overworld; wolves don't shake off water or beg; there
+are no wolf armor or collar colours; baby animals look like small adults.
 
 Worlds created before an update keep their original terrain; new terrain (the taller world, biomes, rivers) appears in
 newly created worlds.
@@ -246,6 +264,7 @@ public/
   js/trades.js            villager professions and their trades
   js/enchant.js           enchantments: the table, anvils, grindstones and their effects
   js/effects.js           status effects, potions and brewing
+  js/mob-ai.js            breeding, wolves, slimes, witches, drowned, phantoms, bats, squid and piglins (run by the host)
   js/biomes.js            biomes and their grass/foliage/water colours
   js/textures.js          all pixel art, drawn with code
   js/ui-art.js            interface art: hearts, hotbar, buttons, logo

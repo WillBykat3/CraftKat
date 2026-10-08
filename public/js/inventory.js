@@ -228,7 +228,7 @@ RECIPES.push(
   { pattern: ['B'], keys: { B: [BLOCK.REDSTONE_BLOCK] }, result: [ITEM.REDSTONE, 9] },
   { pattern: ['GSG', 'SGS', 'GSG'], keys: { G: [ITEM.GUNPOWDER], S: [BLOCK.SAND] }, result: [BLOCK.TNT, 1] },
   { pattern: ['PPP', 'CIC', 'CRC'], keys: { P: PLANKS, C: STONES, I: [ITEM.IRON_INGOT], R: [ITEM.REDSTONE] }, result: [BLOCK.PISTON + 2, 1] },
-  { pattern: ['S', 'P'], keys: { S: [ITEM.STRING], P: [BLOCK.PISTON + 2] }, result: [BLOCK.STICKY_PISTON + 2, 1] },
+  { pattern: ['S', 'P'], keys: { S: [ITEM.SLIMEBALL], P: [BLOCK.PISTON + 2] }, result: [BLOCK.STICKY_PISTON + 2, 1] },
   { pattern: ['IF'], keys: { I: [ITEM.IRON_INGOT], F: [ITEM.FLINT] }, result: [ITEM.FLINT_AND_STEEL, 1], shapeless: true },
   // the Nether and the End
   { pattern: ['DD', 'DD'], keys: { D: [ITEM.GLOWSTONE_DUST] }, result: [BLOCK.GLOWSTONE, 1] },
@@ -240,6 +240,10 @@ RECIPES.push(
   { pattern: ['PB'], keys: { P: [ITEM.ENDER_PEARL], B: [ITEM.BLAZE_POWDER] }, result: [ITEM.EYE_OF_ENDER, 1], shapeless: true },
   // books and village job sites
   { pattern: ['SSS'], keys: { S: [BLOCK.SUGAR_CANE] }, result: [ITEM.PAPER, 3] },
+  { pattern: ['BS'], keys: { B: [ITEM.BLAZE_POWDER], S: [ITEM.SLIMEBALL] }, result: [ITEM.MAGMA_CREAM, 1], shapeless: true },
+  { pattern: ['SSS', 'SSS', 'SSS'], keys: { S: [ITEM.SLIMEBALL] }, result: [BLOCK.SLIME_BLOCK, 1] },
+  { pattern: ['B'], keys: { B: [BLOCK.SLIME_BLOCK] }, result: [ITEM.SLIMEBALL, 9] },
+  { pattern: ['HH', 'HH'], keys: { H: [ITEM.RABBIT_HIDE] }, result: [ITEM.LEATHER, 1] },
   // brewing
   { pattern: ['.B.', 'SSS'], keys: { B: [ITEM.BLAZE_ROD], S: [BLOCK.COBBLE, BLOCK.COBBLED_DEEPSLATE] }, result: [BLOCK.BREWING_STAND, 1] },
   { pattern: ['G.G', '.G.'], keys: { G: [BLOCK.GLASS] }, result: [ITEM.GLASS_BOTTLE, 3] },

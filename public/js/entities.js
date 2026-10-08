@@ -422,6 +422,120 @@ const MOB_BUILDERS = {
     g.add(base, spin, beam);
     return { group: g, head: new THREE.Group(), legs: [], arms: [], spin, glass2, beam };
   },
+  // more mobs
+  wolf: () => {
+    const m = quadruped(0xd6d2cc, 0xd6d2cc, [0.38, 0.38, 0.85, 0.42], {
+      decorate: (head) => {
+        const snout = box(0.2, 0.18, 0.2, 0xc8c2ba); snout.position.set(0, -0.08, -0.5); head.add(snout);
+        const nose = box(0.08, 0.06, 0.04, 0x222222); nose.position.set(0, -0.02, -0.61); head.add(nose);
+        for (const ex of [-0.15, 0.15]) { const ear = box(0.1, 0.14, 0.06, 0xd6d2cc); ear.position.set(ex, 0.3, -0.2); head.add(ear); }
+      },
+    });
+    m.head.scale.setScalar(0.8);
+    const tail = box(0.12, 0.12, 0.45, 0xd6d2cc); tail.position.set(0, 0.72, 0.58); tail.rotation.x = 0.6; m.group.add(tail);
+    // a red collar shows once it's tamed
+    m.collar = box(0.42, 0.1, 0.12, 0xc02020); m.collar.position.set(0, 0.72, -0.38); m.collar.visible = false; m.group.add(m.collar);
+    m.body = m.group.children.find((c) => c.geometry?.parameters?.depth === 0.85);
+    m.tail = tail;
+    m.wolf = true;
+    return m;
+  },
+  slime: (color = 0x6fc35a, core = 0x4f9a3a, magma = false) => {
+    // a cube 0.52 blocks wide at size 1; the view scales it up for bigger slimes
+    const g = new THREE.Group();
+    const outer = box(0.52, 0.52, 0.52, color);
+    outer.position.y = 0.26;
+    if (!magma) { outer.material.transparent = true; outer.material.opacity = 0.7; outer.material.depthWrite = false; }
+    const inner = box(0.3, 0.3, 0.3, core); inner.position.y = 0.2;
+    const head = new THREE.Group(); head.position.y = 0.3;
+    for (const ex of [-0.12, 0.12]) { const e = box(0.08, 0.08, 0.02, magma ? 0xffb020 : 0x1a3a1a); e.position.set(ex, 0.04, -0.27); head.add(e); }
+    const mouth = box(0.06, 0.04, 0.02, magma ? 0xffb020 : 0x1a3a1a); mouth.position.set(0.04, -0.1, -0.27); head.add(mouth);
+    if (magma) for (let i = 0; i < 3; i++) { const band = box(0.53, 0.04, 0.53, 0xff7a10); band.position.y = 0.12 + i * 0.14; g.add(band); }
+    g.add(outer, inner, head);
+    return { group: g, head, legs: [], arms: [], slime: true, outer };
+  },
+  magma_cube: () => MOB_BUILDERS.slime(0x4a1a10, 0xff8a20, true),
+  witch: () => {
+    const m = MOB_BUILDERS.villager();
+    recolor(m.robe, 0x3a2a5a);
+    recolor(m.foldedArms, 0x3a2a5a);
+    // a tall, bent black hat, a green wart on the nose
+    const brim = box(0.7, 0.06, 0.7, 0x2a2a2a); brim.position.y = 0.63; m.head.add(brim);
+    const crown = box(0.42, 0.25, 0.42, 0x2a2a2a); crown.position.y = 0.78; m.head.add(crown);
+    const tip = box(0.24, 0.22, 0.24, 0x2a2a2a); tip.position.set(0, 0.98, 0.06); tip.rotation.x = 0.3; m.head.add(tip);
+    const wart = box(0.04, 0.04, 0.04, 0x4a8a2a); wart.position.set(0.05, 0.14, -0.38); m.head.add(wart);
+    delete m.robe; // (not a villager: no profession colours)
+    return m;
+  },
+  drowned: () => {
+    const m = humanoid(0x5aa596, 0x4a8a7a, 0x3a5a7a, true);
+    const weed = box(0.2, 0.3, 0.02, 0x3a7a2a); weed.position.set(-0.15, 0.2, -0.27); m.head.add(weed);
+    return m;
+  },
+  phantom: () => {
+    const g = new THREE.Group();
+    const body = box(0.5, 0.2, 0.9, 0x43507a); body.position.y = 0.25;
+    const head = new THREE.Group(); head.position.set(0, 0.28, -0.5);
+    const skull = box(0.45, 0.2, 0.3, 0x43507a); head.add(skull);
+    for (const ex of [-0.12, 0.12]) { const e = box(0.1, 0.06, 0.02, 0x6aff5a); e.position.set(ex, 0.02, -0.16); head.add(e); }
+    const tail = box(0.25, 0.08, 0.6, 0x3a456a); tail.position.set(0, 0.25, 0.7);
+    const flap = [];
+    for (const side of [-1, 1]) {
+      const pivot = new THREE.Group(); pivot.position.set(side * 0.25, 0.3, 0); pivot.userData.side = side;
+      const wing = box(0.9, 0.04, 0.6, 0x5a6a9a); wing.position.x = side * 0.45; pivot.add(wing);
+      flap.push(pivot); g.add(pivot);
+    }
+    g.add(body, head, tail);
+    return { group: g, head, legs: [], arms: [], flap, flapSpeed: 6 };
+  },
+  rabbit: () => {
+    const m = quadruped(0x9a7a5a, 0x9a7a5a, [0.32, 0.3, 0.45, 0.14], {
+      decorate: (head) => {
+        for (const ex of [-0.08, 0.08]) { const ear = box(0.08, 0.3, 0.04, 0x9a7a5a); ear.position.set(ex, 0.35, -0.12); head.add(ear); }
+      },
+    });
+    m.head.scale.setScalar(0.55);
+    m.head.position.y = 0.42;
+    const tail = box(0.12, 0.12, 0.08, 0xf0f0f0); tail.position.set(0, 0.34, 0.26); m.group.add(tail);
+    return m;
+  },
+  squid: () => {
+    const g = new THREE.Group();
+    const body = box(0.6, 0.75, 0.6, 0x2a3a6a); body.position.y = 0.85;
+    const head = new THREE.Group(); head.position.y = 0.55;
+    for (const ex of [-0.18, 0.18]) { const e = box(0.08, 0.1, 0.02, 0xd8e0f0); e.position.set(ex, 0.05, -0.31); head.add(e); }
+    const tentacles = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const t = limb(0.1, 0.7, 0.1, 0x24345e, Math.cos(a) * 0.22, 0.5, Math.sin(a) * 0.22);
+      tentacles.push(t); g.add(t);
+    }
+    g.add(body, head);
+    return { group: g, head, legs: [], arms: [], tentacles };
+  },
+  bat: () => {
+    const g = new THREE.Group();
+    const body = box(0.2, 0.3, 0.15, 0x4a3a2a); body.position.y = 0.5;
+    const head = new THREE.Group(); head.position.y = 0.72;
+    head.add(box(0.2, 0.18, 0.18, 0x4a3a2a));
+    for (const ex of [-0.07, 0.07]) { const ear = box(0.05, 0.08, 0.03, 0x3a2a1a); ear.position.set(ex, 0.12, 0); head.add(ear); }
+    const flap = [];
+    for (const side of [-1, 1]) {
+      const pivot = new THREE.Group(); pivot.position.set(side * 0.1, 0.58, 0); pivot.userData.side = side;
+      const wing = box(0.4, 0.25, 0.02, 0x2a2018); wing.position.x = side * 0.2; pivot.add(wing);
+      flap.push(pivot); g.add(pivot);
+    }
+    g.add(body, head);
+    return { group: g, head, legs: [], arms: [], flap, flapSpeed: 25 };
+  },
+  piglin: () => {
+    const m = humanoid(0xeaa6a0, 0x8a6a3a, 0x5a3a20, false);
+    const snout = box(0.25, 0.15, 0.08, 0xd98a85); snout.position.set(0, 0.16, -0.29); m.head.add(snout);
+    for (const ex of [-0.28, 0.28]) { const ear = box(0.06, 0.2, 0.14, 0xeaa6a0); ear.position.set(ex, 0.28, -0.05); m.head.add(ear); }
+    for (const tx of [-0.1, 0.1]) { const tusk = box(0.04, 0.08, 0.04, 0xf0e6c8); tusk.position.set(tx, 0.08, -0.3); m.head.add(tusk); }
+    const sword = box(0.05, 0.7, 0.05, 0xf5cd3c); sword.position.set(0, -0.75, -0.25); sword.rotation.x = Math.PI / 2; m.armR.add(sword);
+    return m;
+  },
   skeleton: (boneColor = 0xc8c8c0, clothes = null) => {
     const g = new THREE.Group();
     const bone = boneColor;
@@ -449,6 +563,8 @@ const HITBOX = {
   villager: [0.35, 1.95], iron_golem: [0.75, 2.7],
   zombified_piglin: [0.35, 1.95], ghast: [2, 4.2], blaze: [0.35, 1.8], wither_skeleton: [0.42, 2.4],
   fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
+  wolf: [0.35, 0.9], rabbit: [0.25, 0.55], witch: [0.35, 1.95], drowned: [0.35, 1.95], phantom: [0.5, 0.5],
+  squid: [0.45, 0.95], bat: [0.3, 0.9], piglin: [0.35, 1.95], slime: [0.26, 0.52], magma_cube: [0.26, 0.52],
 };
 
 function itemMesh(id, textures) {
@@ -659,9 +775,9 @@ export class EntityViews {
       // only a ghast's fireball can be punched back
       return { fireball: true, mob: kind === 'fireball' ? 'fireball' : undefined, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
-    if (kind === 'potion' || kind === 'xp_bottle') {
-      // a thrown splash potion or bottle o' enchanting, tumbling through the air
-      const map = this.textures.itemTexture(kind === 'potion' ? ITEM.SPLASH_POTION : ITEM.EXPERIENCE_BOTTLE);
+    if (kind === 'potion' || kind === 'xp_bottle' || kind === 'egg') {
+      // a thrown splash potion, bottle o' enchanting or egg, tumbling through the air
+      const map = this.textures.itemTexture(kind === 'potion' ? ITEM.SPLASH_POTION : kind === 'egg' ? ITEM.EGG : ITEM.EXPERIENCE_BOTTLE);
       map.userData.shared = true;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, alphaTest: 0.5 }));
       sprite.scale.set(0.35, 0.35, 1);
@@ -716,7 +832,9 @@ export class EntityViews {
     for (const [id, v] of this.entities) {
       if (!v.mob) continue;
       const p = v.group.position;
-      const [hw, h] = HITBOX[v.mob] || [0.5, 1];
+      let [hw, h] = HITBOX[v.mob] || [0.5, 1];
+      const scale = v.group.scale.x; // slimes come in sizes; babies are small
+      hw *= scale; h *= scale;
       const t = rayBox(origin, dir, p.x - hw, p.y, p.z - hw, p.x + hw, p.y + h, p.z + hw);
       if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { id, dist: t };
     }
@@ -827,14 +945,35 @@ export class EntityViews {
         for (const w of v.model.wings) w.rotation.z = Math.sin(t * 2.6) * 0.55 * w.userData.side;
         v.model.tail.forEach((s, i) => { s.position.x = Math.sin(t * 1.5 - i * 0.25) * 0.15 * i; });
       }
-      if (v.model.robe && v.prof !== v.flags >> 4) {
+      if (v.model.robe && v.prof !== ((v.flags >> 4) & 15)) {
         // robe and hat colours by profession
-        v.prof = v.flags >> 4;
+        v.prof = (v.flags >> 4) & 15;
         const [robe, hat] = PROFESSION_LOOK[v.prof] || PROFESSION_LOOK[0];
         recolor(v.model.robe, robe);
         recolor(v.model.foldedArms, robe);
         v.model.hat.visible = hat !== null;
         if (hat !== null) recolor(v.model.hat, hat);
+      }
+      // sizes: slimes by flag bits 9-10, babies (flag 256) at half size
+      const scale = v.model.slime ? [1, 2, 4][(v.flags >> 9) & 3] || 1 : (v.flags & 256) ? 0.5 : 1;
+      if (g.scale.x !== scale) g.scale.setScalar(scale);
+      if (v.model.slime) {
+        // squish while hopping
+        const dy = v.target.y - g.position.y;
+        v.model.outer.scale.y = 1 + Math.max(-0.25, Math.min(0.25, dy * 2));
+      }
+      if (v.model.flap) {
+        const t = performance.now() / 1000;
+        for (const w of v.model.flap) w.rotation.z = Math.sin(t * v.model.flapSpeed) * 0.6 * w.userData.side;
+      }
+      if (v.model.wolf) {
+        v.model.collar.visible = (v.flags & 4096) !== 0;
+        const sitting = (v.flags & 2048) !== 0;
+        v.model.body.rotation.x = sitting ? -0.45 : 0;
+        if (sitting) { v.model.legs[2].rotation.x = v.model.legs[3].rotation.x = -1.3; v.model.legs[0].rotation.x = v.model.legs[1].rotation.x = 0; }
+        v.model.tail.rotation.x = sitting ? 1.2 : (v.flags & 8192) ? 0.1 : 0.6;
+        const angry = (v.flags & 8192) !== 0;
+        if (v.angry !== angry) { v.angry = angry; v.model.head.children.forEach((c) => { if (c.geometry?.parameters?.depth === 0.02) recolor(c, angry ? 0xc02020 : 0x111111); }); } // angry eyes
       }
       if (v.model.faces) {
         v.model.faces.open.visible = (v.flags & 2) !== 0;

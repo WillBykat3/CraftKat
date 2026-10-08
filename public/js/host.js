@@ -18,6 +18,8 @@ import { END_PLATFORM, EndTerrain, FOUNTAIN_Y } from './terrain-end.js';
 import { portalCenter } from './stronghold.js';
 import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 import { validEnch, level as enchLevel } from './enchant.js';
+import { mobAI, BREED_FOOD, SLIME_SIZES } from './mob-ai.js';
+import { hash2 } from './noise.js';
 import { brewResult, validPotion, BREW_SECONDS, POTIONS, UNDEAD as POTION_UNDEAD, ATTACK_EFFECTS } from './effects.js';
 
 export const DAY_TICKS = 24000;     // one full day
@@ -43,6 +45,17 @@ const MOB_TYPES = {
   ghast: { hp: 10, halfW: 2, height: 4, speed: 1.6, hostile: true, flies: true, fireproof: true },
   blaze: { hp: 20, halfW: 0.3, height: 1.8, speed: 1.8, hostile: true, flies: true, fireproof: true, damage: 6 },
   wither_skeleton: { hp: 20, halfW: 0.35, height: 2.4, speed: 2.4, hostile: true, damage: 8, fireproof: true },
+  // more mobs (see mob-ai.js)
+  slime: { hp: 16, halfW: 1.04, height: 2.08, speed: 1.2, hostile: true, custom: 'slimeTick' },
+  magma_cube: { hp: 16, halfW: 1.04, height: 2.08, speed: 1.2, hostile: true, fireproof: true, custom: 'slimeTick' },
+  witch: { hp: 26, halfW: 0.3, height: 1.95, speed: 1.6, hostile: true, ai: 'witchMind' },
+  drowned: { hp: 20, halfW: 0.3, height: 1.95, speed: 2.0, hostile: true, burns: true, ai: 'drownedMind', swims: true, damage: 3 },
+  phantom: { hp: 20, halfW: 0.45, height: 0.5, speed: 6, hostile: true, burns: true, custom: 'phantomTick' },
+  wolf: { hp: 8, halfW: 0.3, height: 0.85, speed: 2.6, hostile: false, ai: 'wolfMind', damage: 4 },
+  rabbit: { hp: 3, halfW: 0.2, height: 0.5, speed: 2.8, hostile: false },
+  squid: { hp: 10, halfW: 0.4, height: 0.8, speed: 1.2, hostile: false, custom: 'squidTick', swims: true },
+  bat: { hp: 6, halfW: 0.25, height: 0.9, speed: 3, hostile: false, custom: 'batTick' },
+  piglin: { hp: 16, halfW: 0.3, height: 1.95, speed: 2.3, hostile: true, ai: 'piglinMind', damage: 5 },
   // villages
   villager: { hp: 20, halfW: 0.3, height: 1.95, speed: 1.4, hostile: false, villager: true },
   iron_golem: { hp: 100, halfW: 0.7, height: 2.7, speed: 1.5, hostile: false, golem: true },
@@ -53,11 +66,16 @@ const MOB_TYPES = {
 const DRAGON_HOME = [0, FOUNTAIN_Y + 22, 0]; // the dragon circles around (and above) the exit fountain
 const SOLID_IN_END = new Set([BLOCK.END_STONE, BLOCK.OBSIDIAN, BLOCK.BEDROCK, BLOCK.END_PORTAL, BLOCK.END_PORTAL_FRAME, BLOCK.END_PORTAL_FRAME + 1]);
 const MOB_NAMES = {
+  drowned: 'a Drowned', witch: 'a Witch', piglin: 'a Piglin', wolf: 'a Wolf',
   zombie: 'a Zombie', husk: 'a Husk', spider: 'a Spider', enderman: 'an Enderman', skeleton: 'a Skeleton', stray: 'a Stray',
   zombified_piglin: 'a Zombified Piglin', blaze: 'a Blaze', wither_skeleton: 'a Wither Skeleton',
 };
 const PASSIVE = ['pig', 'cow', 'sheep', 'chicken'];
-const HOSTILE = [['zombie', 0.38], ['skeleton', 0.24], ['creeper', 0.19], ['spider', 0.14], ['enderman', 0.05]];
+const HOSTILE = [['zombie', 0.36], ['skeleton', 0.24], ['creeper', 0.19], ['spider', 0.14], ['enderman', 0.05], ['witch', 0.02]];
+const RABBIT_BIOMES = new Set([BIOME.DESERT, BIOME.SNOWY_PLAINS, BIOME.SNOWY_TAIGA, BIOME.FLOWER_FOREST, BIOME.MEADOW, BIOME.CHERRY_GROVE]);
+const WOLF_BIOMES = new Set([BIOME.FOREST, BIOME.TAIGA, BIOME.SNOWY_TAIGA]);
+const WATER_BIOMES = new Set([BIOME.OCEAN, BIOME.DEEP_OCEAN, BIOME.WARM_OCEAN, BIOME.FROZEN_OCEAN, BIOME.RIVER, BIOME.FROZEN_RIVER]);
+const REST_TICKS = 72000; // three in-game days awake before phantoms come
 const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
@@ -255,6 +273,11 @@ export class GameHost {
 
   // ---------- messaging ----------
   send(peerId, msg) {
+    if (msg.t === 'hurt' && msg.by) {
+      // a mob hit a player: their tame wolves go for it
+      const p = this.players.get(peerId);
+      if (p) this.wolvesDefend(p.name, this.entities.get(msg.by));
+    }
     this.sendRaw(peerId, msg);
   }
 
@@ -309,6 +332,7 @@ export class GameHost {
       xp: p.xp ?? prev.xp ?? 0,
       armor: p.armor ?? prev.armor ?? null,
       enchSeed: p.enchSeed ?? prev.enchSeed,
+      rest: p.rest ?? prev.rest ?? 0,
       dim: p.dim,
     };
     this.dirty = true;
@@ -397,6 +421,7 @@ export class GameHost {
       xp: saved?.xp ?? 0,
       armor: saved?.armor ?? null,
       enchSeed: saved?.enchSeed,
+      rest: saved?.rest ?? 0, // ticks since last sleeping (or dying)
       isHost: !!msg.isHost && peerId === 'local',
       moved: true,
       canBuild: bucket(25, 50, this.now),
@@ -702,6 +727,7 @@ export class GameHost {
       id: this.nextEntityId++, type, x, y, z, vx: 0, vy: 0, vz: 0, halfW: t.halfW, height: t.height,
       hp: t.hp, yaw: this.random() * 6.28, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false,
     };
+    if (t.custom === 'slimeTick') this.setSlimeSize(e, SLIME_SIZES[Math.floor(this.random() * SLIME_SIZES.length)]);
     return this.addEntity(e);
   }
 
@@ -766,6 +792,7 @@ export class GameHost {
     if (ench.bane_of_arthropods && e.type === 'spider') damage += 2.5 * ench.bane_of_arthropods;
     if (ench.fire_aspect && !MOB_TYPES[e.type].fireproof) e.fireTime = Math.max(e.fireTime || 0, 4 * ench.fire_aspect);
     e.looting = ench.looting || 0;
+    this.wolvesDefend(p.name, e);
     this.hurtMob(e, damage, e.x - p.x, e.z - p.z, p.name, 1 + (ench.knockback || 0) * 0.8);
   }
 
@@ -807,6 +834,8 @@ export class GameHost {
     if (e.type === 'ender_dragon') return this.dragonDied(e);
     if (e.type === 'end_crystal') return this.crystalBroken(e);
     this.entities.delete(e.id);
+    if (e.type === 'slime' || e.type === 'magma_cube') this.splitSlime(e);
+    if (e.baby > 0) { this.broadcastHere({ t: 'mobdeath', e: e.id }); return; } // babies drop nothing
     const r = this.random;
     const drops = {
       pig: [[ITEM.RAW_PORKCHOP, 1 + Math.floor(r() * 3)]],
@@ -820,6 +849,13 @@ export class GameHost {
       husk: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)]],
       stray: [[ITEM.BONE, Math.floor(r() * 3)], [ITEM.ARROW, Math.floor(r() * 3)]],
       enderman: [[ITEM.ENDER_PEARL, Math.floor(r() * 2)]],
+      slime: [[ITEM.SLIMEBALL, e.size === 1 ? Math.floor(r() * 3) : 0]],
+      magma_cube: [[ITEM.MAGMA_CREAM, e.size > 1 && r() < 0.25 ? 1 : 0]],
+      witch: Array.from({ length: 1 + Math.floor(r() * 3) }, () => [[ITEM.GLASS_BOTTLE, ITEM.GLOWSTONE_DUST, ITEM.GUNPOWDER, ITEM.REDSTONE, ITEM.SPIDER_EYE, ITEM.SUGAR, ITEM.STICK][Math.floor(r() * 7)], 1 + Math.floor(r() * 2)]),
+      drowned: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 3)], [ITEM.COPPER_INGOT, r() < 0.11 ? 1 : 0]],
+      phantom: [[ITEM.PHANTOM_MEMBRANE, Math.floor(r() * 2)]],
+      rabbit: [[ITEM.RAW_RABBIT, Math.floor(r() * 2)], [ITEM.RABBIT_HIDE, Math.floor(r() * 2)], [ITEM.RABBIT_FOOT, r() < 0.1 ? 1 : 0]],
+      squid: [[ITEM.INK_SAC, 1 + Math.floor(r() * 3)]],
       iron_golem: [[ITEM.IRON_INGOT, 3 + Math.floor(r() * 3)], [BLOCK.POPPY, Math.floor(r() * 3)]],
       villager: [],
       zombified_piglin: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 2)], [ITEM.GOLD_NUGGET, Math.floor(r() * 2)], [ITEM.GOLD_INGOT, r() < 0.025 ? 1 : 0]],
@@ -932,6 +968,7 @@ export class GameHost {
   // Respawn at your bed if it's still there, otherwise at world spawn.
   onRespawn(peerId, p) {
     p.dead = false;
+    p.rest = 0;
     const spot = this.homeOf(p, true);
     if (p.dim !== 'overworld') this.changeDim(p, 'overworld', spot);
     else this.send(peerId, { t: 'teleport', p: spot });
@@ -1050,6 +1087,11 @@ export class GameHost {
       e.trading = this.now() + 5000;
       return this.sendTrades(p, e);
     }
+    if ((BREED_FOOD[e.type] || e.type === 'wolf') && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS) {
+      if (this.feedAnimal(p, e, msg.tool)) this.send(p.peerId, { t: 'consume' });
+      return;
+    }
+    if (e.type === 'wolf' && e.tamed && e.owner === p.name) { e.sitting = !e.sitting; return; }
     if (e.type === 'sheep' && msg.tool === ITEM.SHEARS && !e.sheared) {
       e.sheared = true;
       e.regrow = 60 + this.random() * 60;
@@ -1138,7 +1180,7 @@ export class GameHost {
         for (const e of this.entities.values()) {
           if (!isMob(e) || e.id === a.id || e.dim !== this.ctx) continue;
           const t = MOB_TYPES[e.type];
-          if (Math.abs(a.x - e.x) < t.halfW + 0.1 && Math.abs(a.z - e.z) < t.halfW + 0.1 && a.y > e.y && a.y < e.y + t.height) {
+          if (Math.abs(a.x - e.x) < e.halfW + 0.1 && Math.abs(a.z - e.z) < e.halfW + 0.1 && a.y > e.y && a.y < e.y + e.height) {
             if (a.flame && !MOB_TYPES[e.type].fireproof) e.fireTime = Math.max(e.fireTime || 0, 5);
             this.hurtMob(e, a.damage, a.vx, a.vz, a.player, 1 + (a.punch || 0));
             this.entities.delete(a.id);
@@ -1324,7 +1366,7 @@ export class GameHost {
   // Splash potions and bottles o' enchanting fly like arrows and break where they land.
   onThrow(p, msg) {
     if (p.dead || !isNum(msg.yaw) || !isNum(msg.pitch)) return;
-    const kind = msg.kind === 'xp' ? 'xp_bottle' : msg.kind === 'splash' && validPotion(msg.potion) ? 'potion' : null;
+    const kind = msg.kind === 'xp' ? 'xp_bottle' : msg.kind === 'egg' ? 'egg' : msg.kind === 'splash' && validPotion(msg.potion) ? 'potion' : null;
     if (!kind) return;
     const dir = [-Math.sin(msg.yaw) * Math.cos(msg.pitch), Math.sin(msg.pitch) + 0.15, -Math.cos(msg.yaw) * Math.cos(msg.pitch)];
     this.addEntity({
@@ -1345,6 +1387,7 @@ export class GameHost {
       this.entities.delete(e.id);
       this.broadcastHere({ t: 'sfx', s: 'shatter', x: e.x, y: e.y, z: e.z });
       if (e.type === 'xp_bottle') this.spawnXP(e.x, e.y + 0.3, e.z, 3 + Math.floor(this.random() * 9));
+      else if (e.type === 'egg') this.hatchEgg(e.x - e.vx * 0.03, e.y + 0.2, e.z - e.vz * 0.03);
       else this.splash(e);
       return;
     }
@@ -1565,13 +1608,14 @@ export class GameHost {
 
   // When everyone online is in bed for a moment, skip to morning.
   tickSleep(dt) {
+    for (const p of this.players.values()) if (p.mode === 'survival' && !p.dead && !p.sleeping) p.rest = (p.rest || 0) + dt * 20;
     const players = [...this.players.values()].filter((p) => p.dim === 'overworld'); // like Minecraft, other dimensions don't count
     if (players.length && players.every((p) => p.sleeping)) {
       this.sleepTimer += dt;
       if (this.sleepTimer >= 2.5) {
         this.time = 0;
         this.sleepTimer = 0;
-        for (const p of players) p.sleeping = false;
+        for (const p of players) { p.sleeping = false; p.rest = 0; }
         this.broadcast({ t: 'time', time: this.time });
         this.broadcast({ t: 'wake' });
         this.sys('Good morning!');
@@ -1615,7 +1659,7 @@ export class GameHost {
       if (e.type === 'fireball' || e.type === 'small_fireball' || e.type === 'dragon_fireball') { this.tickFireball(e, dt); continue; }
       if (e.type === 'breath') { this.tickBreath(e, dt); continue; }
       if (e.type === 'eye') { this.tickEye(e, dt); continue; }
-      if (e.type === 'potion' || e.type === 'xp_bottle') { this.tickThrown(e, dt); continue; }
+      if (e.type === 'potion' || e.type === 'xp_bottle' || e.type === 'egg') { this.tickThrown(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
       if (e.type === 'item') {
@@ -1664,6 +1708,7 @@ export class GameHost {
         if (e.hp <= 0) { this.killMob(e); continue; }
       }
 
+      if (t.custom) { this[t.custom](e, t, dt); continue; }
       if (t.flies) { this.tickFlyer(e, t, dt); continue; }
       if (t.neutral && e.angerTime !== undefined) {
         // zombified piglins calm down after a while
@@ -1671,12 +1716,20 @@ export class GameHost {
         if (e.angerTime <= 0) { e.angry = false; e.angryAt = null; e.angerTime = undefined; }
       }
 
-      if (t.hostile) {
-        // zombies and skeletons burn in sunlight when nothing is above them
-        if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y &&
-          fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z))) !== 'water') {
-          e.fireTime = Math.max(e.fireTime || 0, 2); // catches fire (see above)
-        }
+      // zombies and skeletons burn in sunlight when nothing is above them
+      if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y &&
+        fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z))) !== 'water') {
+        e.fireTime = Math.max(e.fireTime || 0, 2); // catches fire (see above)
+      }
+      const aiSpeed = t.ai ? this[t.ai](e, t, dt, light) : null;
+      if (!this.entities.has(e.id)) continue;
+      if (aiSpeed !== null && aiSpeed !== undefined) {
+        targetSpeed = aiSpeed;
+      } else if (t.ai) {
+        // nothing to do: wander
+        if (e.think <= 0) { e.think = 2 + this.random() * 5; e.walk = this.random() < 0.5 ? 1 : 0; e.yaw = this.random() * Math.PI * 2; }
+        targetSpeed = e.walk ? t.speed * 0.5 : 0;
+      } else if (t.hostile) {
         if (e.type === 'enderman') this.endermanMind(e, dt);
         const target = t.neutral && !e.angry ? null : this.nearestPlayer(e, e.type === 'skeleton' || e.type === 'stray' ? 20 : t.neutral ? 40 : 24, true);
         // zombies go after villagers too
@@ -1728,13 +1781,15 @@ export class GameHost {
       } else if (t.golem) {
         targetSpeed = this.golemMind(e, t, dt);
       } else {
+        const love = BREED_FOOD[e.type] ? this.animalMind(e, t, dt) : null;
         if (e.think <= 0) {
           e.think = 2 + this.random() * 5;
           e.walk = this.random() < 0.6 ? 1 : 0;
           e.yaw = this.random() * Math.PI * 2;
         }
         if (e.panic > 0 && e.think > 1) { e.think = 0.6 + this.random() * 0.5; e.walk = 1; e.yaw = this.random() * Math.PI * 2; }
-        targetSpeed = e.walk ? (e.panic > 0 ? t.speed * 2 : t.speed) : 0;
+        targetSpeed = love ?? (e.walk ? (e.panic > 0 ? t.speed * 2 : t.speed) : 0);
+        if (e.type === 'rabbit' && e.onGround && targetSpeed > 0) e.vy = 5; // rabbits hop
       }
 
       if (e.effects?.slowness) targetSpeed *= Math.max(0, 1 - 0.15 * (e.effects.slowness.amp + 1));
@@ -1744,7 +1799,8 @@ export class GameHost {
       e.vx += (ax - e.vx) * k;
       e.vz += (az - e.vz) * k;
       const headIn = this.world.getBlock(Math.floor(e.x), Math.floor(e.y + e.height * 0.6), Math.floor(e.z));
-      if (BLOCKS[headIn].liquid) e.vy = Math.min(e.vy + 25 * dt, 2);
+      if (t.swims && BLOCKS[headIn].liquid) e.vy = Math.max(-2, Math.min(e.vy - 2 * dt, 3)); // the drowned sink and swim
+      else if (BLOCKS[headIn].liquid) e.vy = Math.min(e.vy + 25 * dt, 2);
       else e.vy = Math.max(-40, e.vy - 28 * dt);
       const res = moveBody(this.world, e, dt, 0.6);
       e.onGround = res.onGround;
@@ -1760,14 +1816,16 @@ export class GameHost {
     const light = daylight(this.time);
     for (const p of this.players.values()) {
       this.ctx = p.dim;
-      const counts = { passive: 0, hostile: 0 };
+      const counts = { passive: 0, hostile: 0, squid: 0, bat: 0 };
       for (const e of this.entities.values()) {
         if (!isMob(e) || e.dim !== p.dim || Math.hypot(e.x - p.x, e.z - p.z) > 64) continue;
-        if (MOB_TYPES[e.type].hostile) counts.hostile++; else counts.passive++;
+        if (e.type === 'squid' || e.type === 'bat') counts[e.type]++; // water and cave creatures have their own limits
+        else if (MOB_TYPES[e.type].hostile) counts.hostile++; else counts.passive++;
       }
       if (p.dim !== 'overworld') { this.spawnOther(p, counts); continue; }
       // underground: monsters appear in total darkness, day or night
       if (counts.hostile < 8 && p.y < this.world.seaLevel + 10 && this.random() < 0.5) this.spawnInCave(p);
+      if (light < 0.3) this.spawnPhantoms(p);
       const wantHostile = light < 0.3 && counts.hostile < 6;
       const wantPassive = counts.passive < 6 && this.random() < 0.3;
       if (!wantHostile && !wantPassive) continue;
@@ -1775,20 +1833,59 @@ export class GameHost {
       const dist = 24 + this.random() * 24;
       const x = Math.floor(p.x + Math.cos(angle) * dist);
       const z = Math.floor(p.z + Math.sin(angle) * dist);
-      const y = this.world.topBlockY(x, z);
+      let y = this.world.topBlockY(x, z);
+      while (y > 1 && !BLOCKS[this.world.getBlock(x, y, z)].solid && !BLOCKS[this.world.getBlock(x, y, z)].liquid) y--; // through plants and snow
       if (y < 1 || y >= HEIGHT - 3) continue;
       const ground = this.world.getBlock(x, y, z);
-      if (wantHostile && BLOCKS[ground].solid && !BLOCKS[ground].transparent) {
-        this.spawnHostile(x, y + 1, z);
-      } else if (wantPassive && ground === BLOCK.GRASS) {
-        const type = PASSIVE[Math.floor(this.random() * PASSIVE.length)];
-        const herd = 2 + Math.floor(this.random() * 3);
-        for (let i = 0; i < herd; i++) {
-          const e = this.spawnMob(type, x + 0.5 + (this.random() - 0.5) * 3, y + 1, z + 0.5 + (this.random() - 0.5) * 3);
-          if (collides(this.world, e)) this.entities.delete(e.id);
-        }
+      const biome = this.world.biomeAt(x, z);
+      if (fluidOf(ground) === 'water') {
+        // oceans and rivers: squid by day, drowned by night
+        let depth = 0;
+        while (depth < 12 && fluidOf(this.world.getBlock(x, y - depth - 1, z)) === 'water') depth++;
+        if (!WATER_BIOMES.has(biome) || depth < 3) continue;
+        if (wantHostile && this.random() < 0.4) this.spawnGroup('drowned', x, y - depth, z, 1);
+        else if (wantPassive && counts.squid < 4) this.spawnGroup('squid', x, y - 1 - Math.floor(this.random() * (depth - 1)), z, 2 + Math.floor(this.random() * 3));
+      } else if (wantHostile && BLOCKS[ground].solid && !BLOCKS[ground].transparent) {
+        if (biome === BIOME.SWAMP && this.random() < 0.3) this.spawnGroup('slime', x, y + 1, z, 1);
+        else this.spawnHostile(x, y + 1, z);
+      } else if (wantPassive) {
+        if (RABBIT_BIOMES.has(biome) && this.random() < 0.5 && BLOCKS[ground].solid) this.spawnGroup('rabbit', x, y + 1, z, 2 + Math.floor(this.random() * 2));
+        else if (WOLF_BIOMES.has(biome) && this.random() < 0.2 && (ground === BLOCK.GRASS || ground === BLOCK.SNOWY_GRASS)) this.spawnGroup('wolf', x, y + 1, z, biome === BIOME.FOREST ? 1 : 4);
+        else if (ground === BLOCK.GRASS) this.spawnGroup(PASSIVE[Math.floor(this.random() * PASSIVE.length)], x, y + 1, z, 2 + Math.floor(this.random() * 3));
       }
     }
+  }
+
+  // Spawns up to n mobs around a block, skipping any that would be stuck in a wall.
+  spawnGroup(type, x, y, z, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const e = this.spawnMob(type, x + 0.5 + (i ? (this.random() - 0.5) * 3 : 0), y, z + 0.5 + (i ? (this.random() - 0.5) * 3 : 0));
+      if (collides(this.world, e)) this.entities.delete(e.id); else out.push(e);
+    }
+    return out;
+  }
+
+  // Phantoms come for players who haven't slept for three days, at night, under the open sky.
+  spawnPhantoms(p) {
+    if (p.mode !== 'survival' || p.dead || (p.rest || 0) < REST_TICKS || p.y < this.world.seaLevel) return;
+    if (this.world.topBlockY(Math.floor(p.x), Math.floor(p.z)) > p.y + 1) return;
+    // the longer you've been awake, the likelier (checked about once a second)
+    if (this.random() > Math.min(0.05, (p.rest - REST_TICKS) / 72000 * 0.05 + 0.01)) return;
+    let near = 0;
+    for (const e of this.entities.values()) if (e.type === 'phantom' && e.dim === p.dim && Math.hypot(e.x - p.x, e.z - p.z) < 64) near++;
+    if (near >= 4) return;
+    const n = 1 + Math.floor(this.random() * 2);
+    for (let i = 0; i < n; i++) {
+      const y = Math.min(HEIGHT - 4, p.y + 20 + this.random() * 14);
+      const e = this.spawnMob('phantom', p.x + (this.random() - 0.5) * 20, y, p.z + (this.random() - 0.5) * 20);
+      if (collides(this.world, e)) this.entities.delete(e.id);
+    }
+  }
+
+  // Slime chunks: one chunk in ten has slimes deep underground, whatever the light.
+  isSlimeChunk(cx, cz) {
+    return hash2(cx, cz, (this.save.seed | 0) + 7000) < 0.1;
   }
 
   // A random monster, with the biome's variant: husks in deserts, strays in the snow.
@@ -1816,8 +1913,16 @@ export class GameHost {
       const floor = this.world.getBlock(x, y - 1, z);
       if (!BLOCKS[floor].solid || BLOCKS[floor].transparent) continue;
       if (this.world.getBlock(x, y, z) !== BLOCK.AIR || this.world.getBlock(x, y + 1, z) !== BLOCK.AIR) continue;
+      if (y < this.world.seaLevel - 24 && this.isSlimeChunk(Math.floor(x / 16), Math.floor(z / 16)) && this.random() < 0.3) {
+        return this.spawnGroup('slime', x, y, z, 1)[0] ?? null;
+      }
       const light = this.lightAt(x, y, z);
       if (light.sky > 0 || light.block > 0) return null;
+      if (this.random() < 0.15) {
+        let bats = 0;
+        for (const e of this.entities.values()) if (e.type === 'bat' && e.dim === p.dim && Math.hypot(e.x - p.x, e.z - p.z) < 64) bats++;
+        return bats < 4 ? this.spawnGroup('bat', x, y + 0.5, z, 1)[0] ?? null : null;
+      }
       return this.spawnHostile(x, y, z);
     }
     return null;
@@ -2035,6 +2140,11 @@ export class GameHost {
   }
 
   onMobHurt(e) {
+    if ((e.type === 'wolf' && !e.tamed) || e.type === 'piglin') {
+      // the whole pack (or group of piglins) turns on whoever hurt one of them
+      if (e.angryAt) for (const o of this.entities.values()) if (o.type === e.type && !o.tamed && o.dim === e.dim && Math.hypot(o.x - e.x, o.z - e.z) < 16) o.angryAt = e.angryAt;
+    }
+    if (e.type === 'wolf' && e.tamed) e.sitting = false;
     if ((e.type === 'villager' || e.type === 'iron_golem') && e.angryAt) {
       // hurting a villager or a golem makes the village's golems come for you
       for (const g of this.entities.values()) if (g.type === 'iron_golem' && g.dim === e.dim && Math.hypot(g.x - e.x, g.z - e.z) < 32) g.angryAt = e.angryAt;
@@ -2718,13 +2828,15 @@ export class GameHost {
     const floor = this.world.getBlock(x, y - 1, z);
     const roll = this.random();
     let type, group = 1;
-    if (floor === BLOCK.NETHER_BRICKS) type = roll < 0.55 ? 'blaze' : 'wither_skeleton';
+    if (floor === BLOCK.NETHER_BRICKS) type = roll < 0.4 ? 'blaze' : roll < 0.7 ? 'wither_skeleton' : roll < 0.8 ? 'magma_cube' : roll < 0.9 ? 'skeleton' : 'zombified_piglin';
     else {
       const biome = this.world.netherBiome(x, z);
       if (biome === 1) type = roll < 0.25 ? 'ghast' : roll < 0.85 ? 'skeleton' : 'enderman'; // soul sand valley
-      else if (biome === 2) type = roll < 0.6 ? 'ghast' : 'zombified_piglin';             // basalt deltas
+      else if (biome === 2) type = roll < 0.3 ? 'ghast' : 'magma_cube';                    // basalt deltas
       else if (roll < 0.12) type = 'ghast';
-      else if (roll < 0.17) type = 'enderman';
+      else if (roll < 0.15) type = 'enderman';
+      else if (roll < 0.19) type = 'magma_cube';
+      else if (roll < 0.4) { type = 'piglin'; group = 1 + Math.floor(this.random() * 3); }
       else { type = 'zombified_piglin'; group = 2 + Math.floor(this.random() * 3); }
     }
     if (type === 'ghast') {
@@ -2757,7 +2869,8 @@ export class GameHost {
         // (and for ghasts and blazes, 2 = about to shoot)
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
           : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
-            (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0);
+            (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
+            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
@@ -2811,3 +2924,6 @@ export class GameHost {
     }
   }
 }
+
+// more mobs' behaviour lives in mob-ai.js
+Object.assign(GameHost.prototype, mobAI);

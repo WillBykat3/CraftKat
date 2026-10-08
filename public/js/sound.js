@@ -199,6 +199,11 @@ export const sound = {
     osc.start(t);
     osc.stop(t + 4.6);
   },
+  // animals in love, a wolf being tamed (or not), and a piglin looking at gold
+  love() { tone({ freq: 880, endFreq: 1320, duration: 0.15, gain: 0.12, type: 'triangle' }); setTimeout(() => tone({ freq: 1100, endFreq: 1500, duration: 0.15, gain: 0.1, type: 'triangle' }), 140); },
+  smoke() { burst({ freq: 1200, q: 0.7, duration: 0.25, gain: 0.15, type: 'lowpass' }); },
+  piglinAdmire() { tone({ freq: 300, endFreq: 420, duration: 0.3, gain: 0.25, type: 'sawtooth' }); },
+  slime() { burst({ freq: 300, q: 2, duration: 0.15, gain: 0.3, type: 'lowpass' }); },
   mobHurt(kind) {
     if (kind === 'zombie' || kind === 'husk') tone({ freq: 140, endFreq: 90, duration: 0.3, gain: 0.3, type: 'sawtooth' });
     else if (kind === 'enderman') { tone({ freq: 900, endFreq: 300, duration: 0.6, gain: 0.25, type: 'sawtooth' }); tone({ freq: 1250, endFreq: 420, duration: 0.6, gain: 0.15, type: 'square' }); }
@@ -209,6 +214,14 @@ export const sound = {
     else if (kind === 'ghast') tone({ freq: 1200, endFreq: 500, duration: 0.6, gain: 0.2, type: 'sawtooth' });
     else if (kind === 'zombified_piglin') { tone({ freq: 260, endFreq: 120, duration: 0.3, gain: 0.3, type: 'sawtooth' }); burst({ freq: 700, q: 2, duration: 0.15, gain: 0.2 }); }
     else if (kind === 'blaze') { burst({ freq: 300, q: 0.5, duration: 0.4, gain: 0.3, type: 'lowpass' }); tone({ freq: 180, endFreq: 120, duration: 0.3, gain: 0.15, type: 'square' }); }
+    else if (kind === 'slime' || kind === 'magma_cube') this.slime();
+    else if (kind === 'wolf') tone({ freq: 700, endFreq: 500, duration: 0.15, gain: 0.25, type: 'square' });
+    else if (kind === 'witch') tone({ freq: 500, endFreq: 380, duration: 0.3, gain: 0.25, type: 'sawtooth' });
+    else if (kind === 'drowned') tone({ freq: 120, endFreq: 80, duration: 0.35, gain: 0.3, type: 'sawtooth' });
+    else if (kind === 'phantom') tone({ freq: 900, endFreq: 1300, duration: 0.3, gain: 0.2, type: 'sawtooth' });
+    else if (kind === 'piglin') tone({ freq: 280, endFreq: 160, duration: 0.25, gain: 0.3, type: 'sawtooth' });
+    else if (kind === 'bat' || kind === 'rabbit') tone({ freq: 1800, endFreq: 1400, duration: 0.1, gain: 0.15, type: 'square' });
+    else if (kind === 'squid') return;
     else if (kind === 'cow') tone({ freq: 220, endFreq: 160, duration: 0.35, gain: 0.3, type: 'sawtooth' });
     else tone({ freq: 520, endFreq: 300, duration: 0.2, gain: 0.25, type: 'square' });
   },

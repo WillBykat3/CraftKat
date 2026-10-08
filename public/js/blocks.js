@@ -38,7 +38,7 @@ export const BLOCK = {
   CAULDRON: 1043, BARREL: 1044, BELL: 1045,
   ENCHANTING_TABLE: 1046, ANVIL: 1047, CHIPPED_ANVIL: 1048, DAMAGED_ANVIL: 1049,
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
-  BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066,
+  BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066, SLIME_BLOCK: 1067,
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -279,6 +279,7 @@ for (let i = 0; i < 4; i++) {
 def(1064, 'Brown Mushroom', { tex: ['brown_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, emit: 1 });
 def(1065, 'Red Mushroom', { tex: ['red_mushroom'], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true });
 def(1066, 'Melon', { tex: ['melon_top', 'melon_side', 'melon_top'], hardness: 1, tool: 'axe' });
+def(1067, 'Slime Block', { tex: ['slime_block'], hardness: 0, transparent: true, translucent: true, bouncy: true });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
 
 B.forEach((b) => {
@@ -350,7 +351,8 @@ export const ITEM = {
   GHAST_TEAR: 341, GOLD_NUGGET: 342, LAVA_BUCKET: 343, PAPER: 344, BOOK: 345, ENCHANTED_BOOK: 346, EXPERIENCE_BOTTLE: 347,
   GLASS_BOTTLE: 348, POTION: 349, SPLASH_POTION: 350, NETHER_WART: 351, SPIDER_EYE: 352, FERMENTED_SPIDER_EYE: 353, SUGAR: 354,
   MELON_SLICE: 355, GLISTERING_MELON_SLICE: 356, GOLDEN_CARROT: 357, MAGMA_CREAM: 358, RABBIT_FOOT: 359, PUFFERFISH: 360,
-  PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363,
+  PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363, EGG: 364, SLIMEBALL: 365, INK_SAC: 366, RAW_RABBIT: 367,
+  COOKED_RABBIT: 368, RABBIT_HIDE: 369,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -413,6 +415,12 @@ item(360, 'Pufferfish', { icon: 'pufferfish', food: 1 });
 item(361, 'Phantom Membrane', { icon: 'phantom_membrane' });
 item(362, 'Golden Apple', { icon: 'golden_apple', food: 4, alwaysEat: true });
 item(363, 'Milk Bucket', { icon: 'milk_bucket', stack: 1, drink: true });
+item(364, 'Egg', { icon: 'egg', stack: 16 });
+item(365, 'Slimeball', { icon: 'slimeball' });
+item(366, 'Ink Sac', { icon: 'ink_sac' });
+item(367, 'Raw Rabbit', { icon: 'raw_rabbit', food: 3 });
+item(368, 'Cooked Rabbit', { icon: 'cooked_rabbit', food: 5 });
+item(369, 'Rabbit Hide', { icon: 'rabbit_hide' });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -641,6 +649,7 @@ export const SMELTING = {
   [ITEM.RAW_GOLD]: ITEM.GOLD_INGOT,
   [BLOCK.SAND]: BLOCK.GLASS,
   [BLOCK.STONE_BRICKS]: BLOCK.CRACKED_STONE_BRICKS,
+  [ITEM.RAW_RABBIT]: ITEM.COOKED_RABBIT,
   [BLOCK.COBBLE]: BLOCK.STONE,
   [ITEM.RAW_PORKCHOP]: ITEM.COOKED_PORKCHOP,
   [ITEM.RAW_BEEF]: ITEM.STEAK,

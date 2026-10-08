@@ -628,6 +628,12 @@ function drawBlockTile(p, name) {
       for (let y = 9; y < 16; y++) px(7, y, [220, 210, 190]), px(8, y, [200, 190, 170]);
       for (let y = 4; y < 9; y++) for (let x = 4 + (8 - y) / 2; x < 12 - (8 - y) / 2; x++) px(Math.floor(x), y, rand() < 0.15 ? [240, 240, 240] : [200, 30, 30]);
       break;
+    case 'slime_block':
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const inner = x > 2 && x < 13 && y > 2 && y < 13;
+        px(x, y, inner ? shade([110, 200, 90], 0.95 + rand() * 0.1) : shade([90, 180, 70], 0.9 + rand() * 0.1), inner ? 0.75 : 0.85);
+      }
+      break;
     case 'melon_top':
       p.noisy([110, 150, 40], 0.1);
       for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) if (Math.hypot(x - 7.5, y - 7.5) < 2) px(x, y, [90, 120, 30]);
@@ -1194,6 +1200,12 @@ function drawItem(p, icon) {
       for (let y = 5; y < 14; y++) for (let x = 5; x < 11; x++) px(x, y, shade([120, 220, 90], 0.8 + rand() * 0.3), 0.85);
       for (let x = 6; x < 10; x++) { px(x, 4, [180, 180, 190]); px(x, 3, [150, 110, 70]); }
       break;
+    case 'egg': blob([235, 220, 190], 8, 8.5, 3.5, 4.5, 0.15); p.specks([200, 180, 150], 3); break;
+    case 'slimeball': blob([110, 200, 80], 8, 8, 4, 4, 0.2); px(7, 6, [200, 255, 180]); break;
+    case 'ink_sac': blob([40, 40, 55], 8, 9, 4, 4, 0.2); px(8, 4, [40, 40, 55]); px(8, 5, [40, 40, 55]); break;
+    case 'raw_rabbit': blob([230, 150, 140], 8, 8, 5, 3.5, 0.3); break;
+    case 'cooked_rabbit': blob([180, 110, 60], 8, 8, 5, 3.5, 0.3); break;
+    case 'rabbit_hide': for (let y = 4; y < 13; y++) for (let x = 4; x < 12; x++) px(x, y, shade([170, 130, 90], 0.85 + rand() * 0.3)); break;
     case 'paper':
       for (let y = 3; y < 13; y++) for (let x = 3 + (y % 3 === 0 ? 1 : 0); x < 13; x++) px(x, y, shade([240, 240, 235], 0.92 + rand() * 0.08));
       break;

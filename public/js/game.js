@@ -9,6 +9,7 @@ import {
 import { World, chunkKey } from './world.js';
 import { gatherRegion, computeLight, regionIndex } from './lighting.js';
 import { collides, moveBody, boxOverlapsBlock } from './physics.js';
+import { BREED_FOOD } from './mob-ai.js';
 import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems, extras } from './inventory.js';
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD } from './ui.js';
@@ -168,6 +169,9 @@ export class Game {
         else if (!this.screen.isOpen) this.openScreen('trade', msg);
         return;
       case 'traded': return this.finishTrade(msg);
+      case 'consume':
+        if (this.mode === 'survival' && this.inv[this.selected]) { takeOne(this.inv, this.selected); this.invDirty = true; }
+        return;
       case 'boss':
         $('bossbar').classList.toggle('hidden', !(msg.hp > 0));
         if (msg.hp > 0) {
@@ -639,6 +643,16 @@ export class Game {
       this.invDirty = true;
       return;
     }
+    // feeding, breeding and taming animals (the host says if the food was eaten, with 'consume')
+    const kind = mob && this.entities.entities.get(mob.id)?.mob;
+    const flags = mob ? this.entities.entities.get(mob.id)?.flags || 0 : 0;
+    if (kind && held && (BREED_FOOD[kind]?.includes(held.id) || (kind === 'wolf' && held.id === ITEM.BONE))) {
+      this.send({ t: 'interact', e: mob.id, tool: held.id });
+      this.swing = 1;
+      this.useCooldown = 0.25;
+      return;
+    }
+    if (kind === 'wolf' && (flags & 4096)) { this.send({ t: 'interact', e: mob.id }); this.useCooldown = 0.25; return; } // sit / stand
     if (mob && held?.id === ITEM.SHEARS) {
       this.send({ t: 'interact', e: mob.id, tool: held.id });
       this.useTool(1);
@@ -696,9 +710,9 @@ export class Game {
       return;
     }
     if (held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET)) { this.eating = 0.001; return; }
-    if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE)) {
+    if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE || held.id === ITEM.EGG)) {
       // throw it
-      this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });
+      this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : held.id === ITEM.EGG ? 'egg' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });
       if (this.mode === 'survival') takeOne(this.inv, this.selected);
       sound.bow();
       this.swing = 1;
@@ -1402,6 +1416,7 @@ export class Game {
 
     const before = { x: p.x, z: p.z };
     const wasOnGround = p.onGround;
+    const vyBefore = p.vy;
     const res = moveBody(this.world, p, dt, p.flying ? 0 : 0.6);
 
     // Swimming into a wall pushes you up, so you can climb out onto a bank (like Minecraft).
@@ -1426,6 +1441,11 @@ export class Game {
       }
     }
 
+    // slime blocks: bounce back up (unless sneaking), and never hurt
+    if (res.onGround && !p.flying && BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))].bouncy) {
+      if (!p.sneaking && vyBefore < -3) { p.vy = -vyBefore * 0.85; res.onGround = false; sound.slime(); }
+      p.fallStart = null;
+    }
     // fall damage
     if (!res.onGround && !p.inWater && !p.flying) {
       if (p.fallStart === null || p.y > p.fallStart) p.fallStart = p.y;
