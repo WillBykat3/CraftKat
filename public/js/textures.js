@@ -918,6 +918,28 @@ function drawBlockTile(p, name) {
   }
 }
 
+// A compass needle pointing at frame/16 of a turn (0 = straight up), or a clock face with the
+// sun and moon going round (0 = noon at the top), drawn on a 32px icon.
+function drawDial(ctx, compass, frame) {
+  const a = (frame / 16) * Math.PI * 2, c = 16, s = Math.sin(a), co = -Math.cos(a);
+  const dot = (x, y, color) => { ctx.fillStyle = color; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2); };
+  if (compass) {
+    for (let t = 0; t <= 8; t += 1) dot(c + s * t, c + co * t, '#e02020');
+    for (let t = 1; t <= 6; t += 1) dot(c - s * t, c - co * t, '#d0d0d0');
+    return;
+  }
+  // the clock's face: the upper half is day (blue sky, sun), the lower night (dark, moon)
+  ctx.save();
+  ctx.beginPath(); ctx.arc(c, c, 10, 0, Math.PI * 2); ctx.clip();
+  ctx.translate(c, c); ctx.rotate(a);
+  ctx.fillStyle = '#5a9be0'; ctx.fillRect(-12, -12, 24, 12);
+  ctx.fillStyle = '#1a2050'; ctx.fillRect(-12, 0, 24, 12);
+  ctx.fillStyle = '#ffe040'; ctx.fillRect(-3, -9, 6, 6);
+  ctx.fillStyle = '#e8e8f0'; ctx.fillRect(-3, 3, 6, 6);
+  ctx.restore();
+  ctx.fillStyle = '#202020'; ctx.fillRect(c - 1, 4, 2, 5); // the marker at the top
+}
+
 // Wool: soft noise with a faint woven pattern.
 function drawWool(p, c) {
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) p.px(x, y, shade(c, 0.92 + p.rand() * 0.12 - ((x + y * 3) % 4 === 0 ? 0.06 : 0)));
@@ -1287,6 +1309,23 @@ function drawItem(p, icon) {
     case 'brick_item':
       for (let y = 6; y < 11; y++) for (let x = 3; x < 13; x++) px(x, y, shade([150, 75, 55], y === 6 ? 1.15 : y === 10 ? 0.75 : 0.9 + rand() * 0.2));
       break;
+    case 'shield':
+      for (let y = 2; y < 15; y++) for (let x = 3; x < 13; x++) {
+        if (y > 10 && Math.abs(x - 7.5) > 15 - y) continue;
+        const rim = x === 3 || x === 12 || y === 2 || (y > 10 && Math.abs(x - 7.5) >= 14 - y);
+        px(x, y, rim ? [150, 150, 155] : shade([140, 100, 55], 0.85 + rand() * 0.2));
+      }
+      for (let y = 6; y < 9; y++) for (let x = 6; x < 10; x++) px(x, y, [170, 170, 175]);
+      break;
+    case 'compass': case 'clock': {
+      // the dial; the needle (or the turning day/night face) is drawn on top for each frame
+      const rimC = icon === 'compass' ? [120, 120, 125] : [230, 190, 50];
+      for (let y = 2; y < 14; y++) for (let x = 2; x < 14; x++) {
+        const d = Math.hypot(x - 7.5, y - 7.5);
+        if (d < 6.2) px(x, y, d > 5 ? shade(rimC, 0.9 + rand() * 0.2) : icon === 'compass' ? [70, 70, 75] : [60, 90, 160]);
+      }
+      break;
+    }
     case 'fishing_rod':
       for (let i = 0; i < 11; i++) { px(3 + i, 13 - i, shade([120, 80, 40], 0.9 + rand() * 0.2)); px(4 + i, 13 - i, [90, 60, 30]); }
       for (let y = 3; y < 12; y++) px(14, y, [220, 220, 220]);
@@ -1424,6 +1463,7 @@ export function createTextures() {
       }
     } else {
       ctx.drawImage(itemCanvases[ITEMS[id].icon], 0, 0, size, size);
+      if (typeof potion === 'number' && (id === ITEM.COMPASS || id === ITEM.CLOCK)) drawDial(ctx, id === ITEM.COMPASS, potion);
       if (potion || id === ITEM.POTION || id === ITEM.SPLASH_POTION) tintLiquid(ctx, size, potionColor(potion || 'water'));
     }
     const url = c.toDataURL();

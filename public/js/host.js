@@ -332,6 +332,7 @@ export class GameHost {
       xp: p.xp ?? prev.xp ?? 0,
       armor: p.armor ?? prev.armor ?? null,
       enchSeed: p.enchSeed ?? prev.enchSeed,
+      offhand: p.offhand !== undefined ? p.offhand : prev.offhand ?? null,
       rest: p.rest ?? prev.rest ?? 0,
       dim: p.dim,
     };
@@ -422,6 +423,7 @@ export class GameHost {
       xp: saved?.xp ?? 0,
       armor: saved?.armor ?? null,
       enchSeed: saved?.enchSeed,
+      offhand: saved?.offhand ?? null,
       rest: saved?.rest ?? 0, // ticks since last sleeping (or dying)
       isHost: !!msg.isHost && peerId === 'local',
       moved: true,
@@ -442,7 +444,7 @@ export class GameHost {
       spawn: this.save.spawn,
       time: this.time,
       mode: p.mode,
-      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed },
+      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed, offhand: p.offhand },
       players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
     this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, peerId);
@@ -1301,6 +1303,7 @@ export class GameHost {
     if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
     if (validArmor(msg.armor)) p.armor = msg.armor;
     if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;
+    if (msg.offhand !== undefined && (msg.offhand === null || validStack(msg.offhand))) p.offhand = msg.offhand;
     this.storePlayer(p);
   }
 

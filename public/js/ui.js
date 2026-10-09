@@ -35,13 +35,18 @@ function el(tag, className, parent) {
 }
 
 // Draws a stack into a slot element.
+// Which picture a compass or clock shows right now (0-15), set by the game every frame.
+const dials = {};
+export function setDials(compass, clock) { dials[ITEM.COMPASS] = compass; dials[ITEM.CLOCK] = clock; }
+const dialOf = (id) => dials[id];
+
 export function paintSlot(slotEl, stack, iconURL) {
   slotEl.innerHTML = '';
   slotEl.dataset.name = stack ? (stack.potion ? potionLabel(stack.id, stack.potion) + potionLines(stack.potion) : itemName(stack.id)) + (stack.ench ? '\n' + Object.entries(stack.ench).map(([n, l]) => enchantName(n, l)).join('\n') : '') : '';
   slotEl.classList.toggle('glint', !!stack?.ench);
   if (!stack) return;
   const img = el('img', 'icon', slotEl);
-  img.src = iconURL(stack.id, stack.potion);
+  img.src = iconURL(stack.id, stack.potion ?? dialOf(stack.id));
   img.draggable = false;
   if (stack.count > 1) el('span', 'count', slotEl).textContent = stack.count;
   const max = maxDurability(stack.id);
@@ -195,6 +200,18 @@ export class InventoryScreen {
         this.game.armorChanged();
       }, armor[i] ? '' : 'armor-empty armor-' + piece);
     });
+    // the offhand slot takes anything (shields, torches...)
+    this.slot(col, this.game.offhand, (button, shift) => {
+      const g = this.game;
+      if (shift) {
+        if (g.offhand && addItem(g.inv, g.offhand.id, g.offhand.count, g.offhand.dur, extras(g.offhand)) === 0) g.offhand = null;
+      } else {
+        const slots = [g.offhand];
+        this.cursor = clickSlot(slots, 0, this.cursor, button === 2 ? 2 : 0);
+        g.offhand = slots[0];
+      }
+      g.invDirty = true;
+    }, this.game.offhand ? 'offhand' : 'armor-empty armor-offhand offhand');
   }
 
   // inventory grid + hotbar, shared by every screen
@@ -594,13 +611,24 @@ export class HUD {
     this.food = row('food', 'food');
     this.air = row('air', 'bubble');
     this.armorIcons = row('armor', 'armor');
+    this.offhandEl = el('div', 'slot offhand-slot', this.hotbarEl);
+    if (!$('absorb')) { const a = el('div', '', $('stats')); a.id = 'absorb'; }
+    $('absorb').replaceChildren();
+    this.absorbIcons = row('absorb', 'heart gold');
     this.lastName = '';
     this.lastStats = '';
   }
 
-  render(inv, selected, stats, mode) {
+  render(inv, selected, stats, mode, offhand = null) {
+    const keyOf = (s) => JSON.stringify(s) + (s ? dialOf(s.id) ?? '' : '');
+    const offKey = keyOf(offhand);
+    if (this.offhandEl.dataset.key !== offKey) {
+      this.offhandEl.dataset.key = offKey;
+      paintSlot(this.offhandEl, offhand, this.iconURL);
+      this.offhandEl.classList.toggle('hidden', !offhand);
+    }
     for (let i = 0; i < HOTBAR_SIZE; i++) {
-      const key = JSON.stringify(inv[i]);
+      const key = keyOf(inv[i]);
       if (this.slots[i].dataset.key !== key) {
         this.slots[i].dataset.key = key;
         paintSlot(this.slots[i], inv[i], this.iconURL);
@@ -618,7 +646,7 @@ export class HUD {
       if (name) n.classList.add('fade');
     }
     $('itemname').classList.toggle('creative', !survival);
-    const key = [mode, Math.ceil(stats.health), stats.food, Math.ceil(stats.air / 15), stats.hurtFlash, stats.xpLevel, stats.xpProgress, stats.armorPoints].join();
+    const key = [mode, Math.ceil(stats.health), Math.ceil(stats.absorb || 0), stats.food, Math.ceil(stats.air / 15), stats.hurtFlash, stats.xpLevel, stats.xpProgress, stats.armorPoints].join();
     if (key === this.lastStats) return;
     this.lastStats = key;
     $('stats').classList.toggle('hidden', !survival);
@@ -626,6 +654,10 @@ export class HUD {
     if (!survival) return;
     setIcons(this.hearts, Math.ceil(stats.health));
     setIcons(this.armorIcons, stats.armorPoints || 0);
+    // absorption: golden hearts in a row above the red ones (the armor bar moves up)
+    const absorb = Math.ceil(stats.absorb || 0);
+    setIcons(this.absorbIcons, Math.min(20, absorb), true);
+    $('stats').classList.toggle('absorbing', absorb > 0);
     $('armor').classList.toggle('hidden', !stats.armorPoints);
     setIcons(this.food, stats.food);
     setIcons(this.air, stats.air < 300 ? Math.ceil(stats.air / 15) : 0, true);
@@ -643,7 +675,8 @@ function setIcons(icons, value, hideEmpty = false) {
     const state = v >= 2 ? 'full' : v === 1 ? (hideEmpty ? 'full' : 'half') : 'empty';
     if (icon.dataset.state !== state) {
       icon.dataset.state = state;
-      icon.className = icon.className.split(' ')[0] + ' ' + state;
+      icon.dataset.base ??= icon.className; // e.g. 'heart' or 'heart gold'
+      icon.className = icon.dataset.base + ' ' + state;
       icon.style.visibility = hideEmpty && state === 'empty' ? 'hidden' : '';
     }
   });

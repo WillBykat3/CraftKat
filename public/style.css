@@ -558,3 +558,16 @@ button.danger:hover { color: #ff8080; }
   outline: 2px solid rgba(16, 0, 16, 0.94);
   white-space: nowrap;
 }
+
+/* the offhand slot, left of the hotbar */
+#hotbar .offhand-slot {
+  left: -50px; top: 4px; width: 36px; height: 36px;
+  background: rgba(0, 0, 0, 0.45); border: 2px solid #8b8b8b; box-sizing: border-box; padding: 0;
+}
+#hotbar .offhand-slot .icon { width: 32px; height: 32px; }
+.armor-offhand::after { background-image: var(--art-slotOffhand, none); }
+/* golden absorption hearts */
+#absorb { position: absolute; display: flex; left: 0; bottom: 20px; }
+#stats.absorbing #armor { bottom: 40px; }
+.heart.gold.full { background-image: var(--art-heartGold) !important; }
+.heart.gold.half { background-image: var(--art-heartGoldHalf) !important; }

@@ -58,6 +58,7 @@ function kindsOf(id) {
   if (tool.kind === 'pickaxe' || tool.kind === 'shovel' || tool.kind === 'hoe') return ['digger', 'any'];
   if (tool.kind === 'bow') return ['bow', 'any'];
   if (tool.kind === 'fishing_rod') return ['fishing_rod', 'any'];
+  if (tool.kind === 'shield') return ['any'];
   if (tool.kind === 'shears' || tool.kind === 'lighter') return ['any'];
   return [];
 }

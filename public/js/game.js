@@ -12,7 +12,7 @@ import { collides, moveBody, boxOverlapsBlock } from './physics.js';
 import { BREED_FOOD } from './mob-ai.js';
 import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems, extras } from './inventory.js';
 import { EntityViews } from './entities.js';
-import { InventoryScreen, HUD } from './ui.js';
+import { InventoryScreen, HUD, setDials } from './ui.js';
 import { sound } from './sound.js';
 import { blockGeometry, hasBlockModel } from './textures.js';
 import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
@@ -63,6 +63,7 @@ export class Game {
     this.mode = 'survival';
     this.inv = new Array(INVENTORY_SIZE).fill(null);
     this.armor = [null, null, null, null]; // helmet, chestplate, leggings, boots
+    this.offhand = null; // F swaps it with the selected hotbar slot
     this.selected = 0;
     this.spawn = [0.5, 40, 0.5];
     this.time = 1000;
@@ -241,6 +242,7 @@ export class Game {
     this.stats.xpTotal = Number.isInteger(me.xp) ? me.xp : 0;
     this.enchSeed = Number.isInteger(me.enchSeed) ? me.enchSeed : Math.floor(Math.random() * 2 ** 31);
     this.armor = Array.isArray(me.armor) && me.armor.length === 4 ? me.armor.map((s) => (s ? { ...s } : null)) : [null, null, null, null];
+    this.offhand = me.offhand ? { ...me.offhand } : null;
     this.armorChanged();
     this.addXP(0);
     if (this.stats.health <= 0) this.stats.health = 20;
@@ -443,6 +445,7 @@ export class Game {
       if (n >= 1 && n <= 9) this.selected = n - 1;
     }
     if (e.code === 'KeyQ') this.dropSelected(e.shiftKey);
+    if (e.code === 'KeyF') { [this.inv[this.selected], this.offhand] = [this.offhand, this.inv[this.selected] ?? null]; this.invDirty = true; }
     if (e.code === 'F3') { this.showDebug = !this.showDebug; e.preventDefault(); }
     if (e.code === 'F1') { $('hud').classList.toggle('hidden-hud'); e.preventDefault(); }
     if (e.code === 'F5') { this.perspective = (this.perspective + 1) % 3; e.preventDefault(); }
@@ -619,7 +622,9 @@ export class Game {
     this.applyBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
     sound.broke(id);
     if (this.mode === 'survival') {
-      if (BLOCKS[id].hardness > 0) this.useTool(toolOf(this.heldId())?.kind === 'sword' ? 2 : 1);
+      // only tools wear out from breaking blocks (not bows, rods or shields)
+      const kind = toolOf(this.heldId())?.kind;
+      if (BLOCKS[id].hardness > 0 && ['pickaxe', 'axe', 'shovel', 'hoe', 'sword', 'shears'].includes(kind)) this.useTool(kind === 'sword' ? 2 : 1);
       this.stats.exhaustion += 0.005;
     }
   }
@@ -764,6 +769,13 @@ export class Game {
       return;
     }
     if (hit && held && held.id === ITEM.OAK_DOOR) { this.placeDoor(hit); return; }
+    if (hit && (!held || !isBlockId(held.id)) && this.offhand && isBlockId(this.offhand.id)) {
+      // the main hand has nothing to place: use the offhand (torches, blocks)
+      this.fromOffhand = true;
+      this.placeBlock(hit, this.offhand);
+      this.fromOffhand = false;
+      return;
+    }
     if (!hit || !held || !isBlockId(held.id)) return;
     this.placeBlock(hit, held);
   }
@@ -960,9 +972,34 @@ export class Game {
     this.swing = 1;
     this.useCooldown = 0.25;
     if (this.mode === 'survival') {
-      takeOne(this.inv, this.selected);
+      if (this.fromOffhand) { if (--this.offhand.count <= 0) this.offhand = null; }
+      else takeOne(this.inv, this.selected);
       this.invDirty = true;
     }
+  }
+
+  // Which hand holds a shield that right click would raise: 'main', 'off' or null.
+  shieldHand() {
+    const held = this.held();
+    if (held?.id === ITEM.SHIELD) return 'main';
+    if (this.offhand?.id !== ITEM.SHIELD) return null;
+    // the main hand goes first when it has a use of its own
+    if (held && (isBlockId(held.id) || ITEMS[held.id]?.food || ITEMS[held.id]?.drink || ITEMS[held.id]?.plants ||
+      [ITEM.BOW, ITEM.FISHING_ROD, ITEM.POTION, ITEM.SPLASH_POTION, ITEM.EXPERIENCE_BOTTLE, ITEM.EGG, ITEM.ENDER_PEARL, ITEM.EYE_OF_ENDER,
+        ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, ITEM.MILK_BUCKET, ITEM.FLINT_AND_STEEL, ITEM.GLASS_BOTTLE].includes(held.id))) return null;
+    return 'off';
+  }
+
+  // The pictures compasses and clocks show (0-15): the compass points at the world spawn, the
+  // clock shows the time of day; both spin wildly in the Nether and the End.
+  dialFrames() {
+    if (this.dim !== 'overworld') { const f = Math.floor(performance.now() / 70) % 16; return [f, (f * 7) % 16]; }
+    const p = this.player, [sx, , sz] = this.spawn || [0, 0, 0];
+    const dx = sx - p.x, dz = sz - p.z;
+    const ahead = -Math.sin(p.yaw) * dx - Math.cos(p.yaw) * dz, right = Math.cos(p.yaw) * dx - Math.sin(p.yaw) * dz;
+    const compass = (Math.round((Math.atan2(right, ahead) / (Math.PI * 2)) * 16) + 16) % 16;
+    const clock = (Math.round((((this.time || 0) - 6000) / 24000) * 16) % 16 + 16) % 16;
+    return [compass, clock];
   }
 
   // Empty bucket scoops up water; a water bucket pours it out.
@@ -1145,6 +1182,23 @@ export class Game {
   damage(amount, cause = 'died', from = null, armored = false, by = null) {
     if (this.mode !== 'survival' || this.dead || this.stats.invuln > 0) return;
     if (this.effects.fire_resistance && /lava|fire|flames|burn|floor was lava/.test(cause)) return;
+    if (this.blocking && from && /slain|shot|blown up|fireball|Fireball/.test(cause)) {
+      // a raised shield stops attacks from in front (within 90 degrees of where you're looking)
+      const p = this.player, dx = from[0] - p.x, dz = from[1] - p.z;
+      if (-Math.sin(p.yaw) * dx - Math.cos(p.yaw) * dz > 0) {
+        const hand = this.shieldHand();
+        const shield = hand === 'main' ? this.held() : this.offhand;
+        if (amount >= 3 && shield && wears(shield)) {
+          shield.dur -= 1 + Math.floor(amount);
+          if (shield.dur <= 0) { if (hand === 'main') this.inv[this.selected] = null; else this.offhand = null; sound.broke(BLOCK.GLASS); }
+        }
+        sound.shieldBlock();
+        const len = Math.hypot(dx, dz) || 1;
+        p.vx -= (dx / len) * 2; p.vz -= (dz / len) * 2; // a little push back
+        this.invDirty = true;
+        return;
+      }
+    }
     if (this.effects.resistance && !/out of the world/.test(cause)) amount *= Math.max(0, 1 - 0.2 * this.effectLevel('resistance'));
     if (this.absorb > 0) {
       // absorption hearts go first
@@ -1185,7 +1239,8 @@ export class Game {
     this.dead = true;
     this.effects = {};
     this.absorb = 0;
-    const items = this.inv.concat(this.armor).filter(Boolean);
+    const items = this.inv.concat(this.armor, [this.offhand]).filter(Boolean);
+    this.offhand = null;
     this.inv = new Array(INVENTORY_SIZE).fill(null);
     this.armor = [null, null, null, null];
     this.armorChanged();
@@ -1404,6 +1459,7 @@ export class Game {
     if (len > 0) { wx /= len; wz /= len; }
 
     let speed = p.flying ? (p.sprinting ? FLY * 2 : FLY) : p.sneaking ? SNEAK : p.sprinting ? SPRINT : WALK;
+    if (this.blocking && !p.flying) { speed = Math.min(speed, SNEAK); p.sprinting = false; } // slowed while blocking
     if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5 + 0.5 * Math.min(3, enchLevel(this.armor[3], 'depth_strider')) / 3;
     const under = BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))];
     if (p.onGround && under.slow) speed *= under.slow; // soul sand
@@ -1539,6 +1595,9 @@ export class Game {
     this.handCamera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 10);
     this.handGroup = new THREE.Group();
     this.handScene.add(this.handGroup);
+    this.offGroup = new THREE.Group(); // the offhand item, on the left
+    this.handScene.add(this.offGroup);
+    this.offKey = null;
     window.addEventListener('resize', () => {
       this.handCamera.aspect = window.innerWidth / window.innerHeight;
       this.handCamera.updateProjectionMatrix();
@@ -1562,9 +1621,11 @@ export class Game {
         mesh = new THREE.Mesh(blockGeometry(id, 0.28), new THREE.MeshBasicMaterial({ map: this.textures.atlasSRGB, alphaTest: 0.5 }));
         mesh.position.set(0.46, -0.4, -0.72);
         mesh.rotation.set(0.1, Math.PI / 4, 0);
+      } else if (id === ITEM.SHIELD) {
+        mesh = this.shieldMesh();
+        mesh.position.set(0.45, -0.45, -0.7);
       } else {
-        const map = isBlockId(id) ? this.textures.tileTexture(BLOCKS[id].tex[0]) : this.textures.itemTexture(id);
-        mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide }));
+        mesh = this.itemMesh(id);
         mesh.position.set(0.5, -0.35, -0.7);
         mesh.rotation.set(0, -Math.PI / 2.6, Math.PI / 16);
       }
@@ -1585,6 +1646,44 @@ export class Game {
     );
     this.handGroup.rotation.x = -swing * 0.6;
     this.handGroup.visible = !this.dead;
+    const blockWith = this.blocking ? this.shieldHand() : null;
+    if (blockWith === 'main') { mesh.position.set(0.18, -0.28, -0.55); mesh.rotation.set(0, 0.15, 0); this.handGroup.rotation.x = 0; }
+    else if (id === ITEM.SHIELD) mesh.rotation.set(0, -0.35, 0);
+    this.updateOffhand(brightness, blockWith === 'off');
+  }
+
+  // The offhand item, mirrored on the left (a raised shield moves to the middle).
+  updateOffhand(brightness, raised) {
+    const id = this.offhand?.id ?? 0;
+    if (id !== this.offKey) {
+      this.offKey = id;
+      for (const c of [...this.offGroup.children]) { this.offGroup.remove(c); c.geometry?.dispose(); c.material?.dispose(); }
+      if (id) {
+        let mesh;
+        if (id === ITEM.SHIELD) { mesh = this.shieldMesh(); mesh.position.set(-0.45, -0.45, -0.7); mesh.rotation.set(0, 0.35, 0); }
+        else if (isBlockId(id) && hasBlockModel(id)) {
+          mesh = new THREE.Mesh(blockGeometry(id, 0.28), new THREE.MeshBasicMaterial({ map: this.textures.atlasSRGB, alphaTest: 0.5 }));
+          mesh.position.set(-0.46, -0.4, -0.72); mesh.rotation.set(0.1, Math.PI / 4, 0);
+        } else { mesh = this.itemMesh(id); mesh.position.set(-0.5, -0.35, -0.7); mesh.rotation.set(0, Math.PI / 2.6, -Math.PI / 16); }
+        this.offBase = { p: mesh.position.clone(), r: mesh.rotation.clone(), color: mesh.material.color.clone() };
+        this.offGroup.add(mesh);
+      }
+    }
+    const mesh = this.offGroup.children[0];
+    this.offGroup.visible = !this.dead && !!mesh;
+    if (!mesh) return;
+    mesh.material.color.copy(this.offBase.color).multiplyScalar(brightness);
+    if (raised) { mesh.position.set(-0.18, -0.28, -0.55); mesh.rotation.set(0, -0.15, 0); }
+    else { mesh.position.copy(this.offBase.p); mesh.rotation.copy(this.offBase.r); mesh.position.y += Math.abs(Math.cos(this.bob)) * 0.02; }
+  }
+
+  itemMesh(id) {
+    const map = isBlockId(id) ? this.textures.tileTexture(BLOCKS[id].tex[0]) : this.textures.itemTexture(id);
+    return new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide }));
+  }
+
+  shieldMesh() {
+    return new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.05), new THREE.MeshBasicMaterial({ map: this.textures.itemTexture(ITEM.SHIELD), alphaTest: 0.5 }));
   }
 
   // ---------- main loop ----------
@@ -1693,6 +1792,12 @@ export class Game {
     }
     this.r.zoom = 1 - 0.15 * Math.min(1, this.bowDraw || 0);
 
+    // shields: hold right click to block (with a shield in either hand, when the main hand
+    // has nothing better to do); it takes a quarter of a second to raise
+    const wantBlock = this.mouse.right && !this.dead && this.locked() && this.eating === 0 && !(this.bowDraw > 0) && !!this.shieldHand();
+    this.blockTime = wantBlock ? (this.blockTime || 0) + dt : 0;
+    this.blocking = this.blockTime >= 0.25;
+
     // pick up nearby items (not while dead, or you'd grab back what you just dropped)
     const now = performance.now();
     for (const [id, v] of this.dead ? [] : this.entities.entities) {
@@ -1756,12 +1861,14 @@ export class Game {
     if (this.invDirty && this.saveTimer > 2) {
       this.saveTimer = 0;
       this.invDirty = false;
-      this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
+      this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     }
 
     // HUD
     this.stats.hurtFlash = (this.stats.hurtUntil || 0) > now;
-    this.hud.render(this.inv, this.selected, this.stats, this.mode);
+    this.stats.absorb = this.absorb;
+    setDials(...this.dialFrames());
+    this.hud.render(this.inv, this.selected, this.stats, this.mode, this.offhand);
     const dbg = $('debug');
     dbg.classList.toggle('hidden', !this.showDebug);
     if (this.showDebug && now - (this.debugUpdated || 0) > 250) {
@@ -1870,7 +1977,7 @@ export class Game {
 
   // Leaving the world: tell the host our final state.
   quit() {
-    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
+    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     this.playing = false;
     this.closed = true;
     this.screen.close();

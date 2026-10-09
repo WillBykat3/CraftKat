@@ -97,6 +97,7 @@ export const sound = {
   // a lit fuse
   hiss() { burst({ freq: 5000, q: 0.6, duration: 1.2, gain: 0.25, type: 'highpass' }); },
   // a bow being released
+  shieldBlock() { burst({ freq: 700, q: 2, duration: 0.15, gain: 0.4, type: 'lowpass' }); tone({ freq: 260, endFreq: 200, duration: 0.12, gain: 0.15, type: 'square' }); },
   cast() { burst({ freq: 1500, q: 1, duration: 0.2, gain: 0.15, type: 'highpass' }); },
   bow() { burst({ freq: 2200, q: 2, duration: 0.15, gain: 0.25 }); tone({ freq: 500, endFreq: 200, duration: 0.12, gain: 0.08, type: 'triangle' }); },
   // menu button: a short wooden "tock"

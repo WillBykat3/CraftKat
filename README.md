@@ -57,6 +57,12 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Anvils** combine enchantments and repair items (each use costs more), and wear out; the **grindstone** takes
   enchantments off for experience; librarians sell enchanted books
 - **Blocks of iron, gold, diamond, emerald, lapis and coal**
+- **Offhand and shields**: press F to swap the selected item into your offhand (shown left of the hotbar, and
+  under your armor in the inventory). Torches and blocks in the offhand are placed when your main hand has nothing to
+  place. Hold right click with a shield to block attacks from in front (it slows you down and wears the shield).
+  Absorption shows as golden hearts
+- **Compasses and clocks**: a compass points to the world spawn, a clock shows the time of day (both spin in the
+  Nether and the End)
 - **Fishing**: craft a fishing rod, cast it into water and reel in when the bobber dips. Mostly cod, salmon,
   tropical fish and pufferfish (cook the cod and salmon; pufferfish poison you but brew Water Breathing), sometimes
   junk, and now and then treasure: enchanted bows, rods and books, name tags and saddles. Lure and Luck of the Sea
@@ -133,6 +139,9 @@ enchantments; anvils can't rename items.
 beds, candles or shulker boxes; cocoa beans drop from jungle leaves (there are no cocoa pods); lambs take a parent's
 colour rather than mixing; only the poppy, dandelion and cornflower exist among the flowers.
 
+**Offhand differences from Minecraft:** you can't eat, drink, throw or fish with your offhand, other players don't
+see what's in it, and axes don't knock shields out of your hands; banners can't be put on shields.
+
 **Fishing differences from Minecraft:** there are no fish swimming in the water and no fishing particles to watch
 for, the bobber can't hook mobs or items, rain doesn't speed up bites, and name tags and saddles don't do anything yet.
 
@@ -200,11 +209,12 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 | Shift | Sneak (you won't fall off edges) · fly down |
 | Double-tap Space | Fly (creative mode) |
 | Left click (hold) | Break block · attack |
-| Right click | Place block · open doors, crafting tables, furnaces, chests · flip levers, press buttons, change a repeater's delay · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears, bone meal or flint and steel · throw an eye of ender, or put it in an End portal frame |
+| Right click | Place block · open doors, crafting tables, furnaces, chests · flip levers, press buttons, change a repeater's delay · sleep in a bed · eat (hold) · draw a bow (hold) · put on armor · till with a hoe · use bucket, shears, bone meal or flint and steel · throw an eye of ender, or put it in an End portal frame · cast and reel in a fishing rod · block with a shield (hold) · feed, breed and tame animals · dye sheep |
 | Middle click | Pick block |
 | 1–9 / mouse wheel | Choose hotbar slot |
 | E | Inventory and crafting |
 | Q | Drop item (Shift+Q: whole stack) |
+| F | Swap the selected item with your offhand |
 | T or Enter | Chat |
 | / | Command |
 | F3 | Coordinates and debug info |

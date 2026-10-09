@@ -439,3 +439,7 @@ RECIPES.push({ pattern: ['BB', 'BB'], keys: { B: [ITEM.BRICK] }, result: [BLOCK.
 
 // fishing
 RECIPES.push({ pattern: ['..S', '.ST', 'S.T'], keys: { S: [ITEM.STICK], T: [ITEM.STRING] }, result: [ITEM.FISHING_ROD, 1] });
+// shields, compasses and clocks
+RECIPES.push({ pattern: ['PIP', 'PPP', '.P.'], keys: { P: PLANKS, I: [ITEM.IRON_INGOT] }, result: [ITEM.SHIELD, 1] });
+RECIPES.push({ pattern: ['.I.', 'IRI', '.I.'], keys: { I: [ITEM.IRON_INGOT], R: [ITEM.REDSTONE] }, result: [ITEM.COMPASS, 1] });
+RECIPES.push({ pattern: ['.G.', 'GRG', '.G.'], keys: { G: [ITEM.GOLD_INGOT], R: [ITEM.REDSTONE] }, result: [ITEM.CLOCK, 1] });

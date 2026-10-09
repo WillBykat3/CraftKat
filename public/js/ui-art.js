@@ -93,6 +93,9 @@ export function createUIArt() {
   art.heartFullFlash = bitmap(HEART, flashPal);
   art.heartHalfFlash = bitmap(HEART_HALF, flashPal);
   art.heartEmptyFlash = bitmap(HEART_EMPTY, flashPal);
+  const goldPal = { o: '#000', r: '#e8b820', w: '#fff0a0', e: '#2a2000' };
+  art.heartGold = bitmap(HEART, goldPal);
+  art.heartGoldHalf = bitmap(HEART_HALF, goldPal);
   const foodPal = { o: '#2b1607', b: '#b5651d', w: '#f4e9d8', e: '#3a2a1e' };
   art.foodFull = bitmap(FOOD, foodPal);
   art.foodHalf = bitmap(FOOD_HALF, foodPal);
