@@ -108,6 +108,16 @@ function painter(ctx, ox, oy, rand) {
         for (let k = 0; k < size; k++) px(x + (k % 2), y + Math.floor(k / 2), shade(color, 0.85 + rand() * 0.3));
       }
     },
+    // chunky ore spots, lit from the top left (iron ore)
+    oreSpots(color) {
+      const spots = [[3, 3], [10, 2], [6, 8], [12, 9], [2, 12], [9, 13]];
+      for (const [cx, cy] of spots) {
+        const shape = [[0, 0], [1, 0], [0, 1], [1, 1], ...(rand() < 0.6 ? [[2, 1]] : []), ...(rand() < 0.6 ? [[1, 2]] : [])];
+        for (const [dx, dy] of shape) px(cx + dx, cy + dy, shade(color, 0.9 + rand() * 0.15));
+        px(cx, cy, shade(color, 1.18));
+        for (const [dx, dy] of shape) if (!shape.some(([ex, ey]) => ex === dx + 1 && ey === dy + 1)) px(cx + dx + 1, cy + dy + 1, shade(color, 0.55));
+      }
+    },
     // ore: clusters of coloured pixels on stone
     ore(color) {
       for (let i = 0; i < 6; i++) {
@@ -289,7 +299,7 @@ function drawBlockTile(p, name) {
       }
       break;
     case 'coal_ore': drawBlockTile(p, 'stone'); p.ore([30, 30, 30]); break;
-    case 'iron_ore': drawBlockTile(p, 'stone'); p.ore([216, 175, 147]); break;
+    case 'iron_ore': drawBlockTile(p, 'stone'); p.oreSpots([216, 175, 147]); break;
     case 'gold_ore': drawBlockTile(p, 'stone'); p.ore([250, 220, 60]); break;
     case 'diamond_ore': drawBlockTile(p, 'stone'); p.ore([95, 230, 225]); break;
     case 'water':
@@ -543,7 +553,7 @@ function drawBlockTile(p, name) {
       break;
     }
     case 'deepslate_coal_ore': drawBlockTile(p, 'deepslate'); p.ore([25, 25, 25]); break;
-    case 'deepslate_iron_ore': drawBlockTile(p, 'deepslate'); p.ore([216, 175, 147]); break;
+    case 'deepslate_iron_ore': drawBlockTile(p, 'deepslate'); p.oreSpots([216, 175, 147]); break;
     case 'deepslate_gold_ore': drawBlockTile(p, 'deepslate'); p.ore([250, 220, 60]); break;
     case 'deepslate_diamond_ore': drawBlockTile(p, 'deepslate'); p.ore([95, 230, 225]); break;
     case 'copper_ore': drawBlockTile(p, 'stone'); p.ore([224, 128, 80]); p.ore([90, 170, 130]); break;
@@ -911,6 +921,19 @@ function drawBlockTile(p, name) {
         break;
       }
       if (name === 'rail' || name === 'rail_corner' || name.startsWith('powered_rail')) { drawRail(p, name); break; }
+      if (name === 'bed_blanket') {
+        // a red wool blanket with a darker hem
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([170, 30, 30], (x === 0 || x === S - 1 ? 0.75 : 0.92) + rand() * 0.12));
+        break;
+      }
+      if (name === 'spawner') {
+        // a dark iron cage you can see into
+        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+          const bar = x % 5 === 0 || y % 5 === 0 || x === S - 1 || y === S - 1;
+          if (bar) px(x, y, shade([45, 55, 70], 0.8 + rand() * 0.4));
+        }
+        break;
+      }
       if (name === 'terracotta' || name.startsWith('terracotta_')) {
         p.noisy(name === 'terracotta' ? PLAIN_TERRACOTTA_RGB : TERRACOTTA_RGB[COLORS.indexOf(name.slice(11))], 0.05);
         break;
@@ -1025,20 +1048,20 @@ const TOOL_PATTERNS = {
   ],
   axe: [
     '................',
-    '.......HHH......',
-    '......HHHHS.....',
-    '.....HHHHHS.....',
-    '.....HHHH.S.....',
-    '......HH..S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
-    '..........S.....',
+    '.........HH.....',
+    '........HHHH....',
+    '.......HHHHHH...',
+    '......HHHHHHH...',
+    '.......HHHHSH...',
+    '........HHS.....',
+    '.........S......',
+    '........S.......',
+    '.......S........',
+    '......S.........',
+    '.....S..........',
+    '....S...........',
+    '...S............',
+    '..S.............',
     '................',
   ],
   shovel: [

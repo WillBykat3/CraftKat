@@ -33,8 +33,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
   for 4 seconds. The Nether has netherrack caverns between a bedrock floor and roof, a lava sea, glowstone, quartz and
   nether gold ore, soul sand valleys (soul sand slows you down) and basalt deltas, magma blocks (they burn unless you
   sneak), red fog, and nether fortresses. Zombified piglins (calm until you hit one, then the whole group comes for
-  you), ghasts (punch their fireballs back!), blazes (they drop blaze rods) and wither skeletons live there. One block
+  you), ghasts (punch their fireballs back!), blazes (from the blaze spawners on fortress bridges; they drop blaze
+  rods) and wither skeletons live there. One block
   in the Nether is 8 in the Overworld, and portals link up like Minecraft's. Beds explode in the Nether and the End.
+- **Ender pearls**: throw one and you're teleported where it lands (for 5 damage)
 - **Strongholds and the End**: craft eyes of ender (ender pearl + blaze powder) and throw them; they fly towards the
   nearest stronghold, deep underground 1280-2816 blocks from the middle of the world. Fill the 12 frames in its portal
   room with eyes to open the End portal. In the End, the Ender Dragon flies around the island, healed by end
@@ -138,6 +140,9 @@ in worlds created with this terrain version or later (older worlds can still vis
 **Redstone differences from Minecraft:** no comparators, observers, hoppers, dispensers, droppers or note blocks yet;
 repeaters can't be locked; pistons don't push players or mobs and have no quasi-connectivity; redstone torches don't
 burn out. Redstone only runs near players (like Minecraft's loaded chunks). It needs a keyboard and mouse, so phones and tablets aren't supported.
+
+**Monster spawners:** fortress bridges have blaze spawners; any spawner makes up to four of its mob every 10-40 seconds
+while a player is within 16 blocks (breaking one gives experience).
 
 **Village differences from Minecraft:** no raids, pillagers, wandering traders, zombie villagers, villager breeding or
 baby villagers; villagers don't claim new job sites or open doors; trades use only items in this game (librarians

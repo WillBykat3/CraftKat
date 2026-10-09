@@ -51,6 +51,7 @@ export class World {
     this.cavern = makeNoise3D(this.seed + 8);
     this.terrain = dim === 'overworld' && gen >= 3 ? new Terrain3(this.seed) : null;
     this.villages = this.terrain ? new Villages(this.seed, this.terrain) : null;
+    if (this.terrain) this.terrain.treeBlocked = (x, z) => this.villages.covers(x, z);
     this.other = dim === 'nether' ? new NetherTerrain(this.seed) : dim === 'end' ? new EndTerrain(this.seed) : null;
     this.biomes = new Map(); // chunkKey -> Uint8Array of biome ids (version 3)
     this.seaLevel = this.terrain ? SEA : dim === 'nether' ? NETHER_LAVA : SEA_LEVEL;

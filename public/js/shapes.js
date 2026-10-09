@@ -30,6 +30,15 @@ export function shapeBoxes(id, neighbor, collision = false) {
     case 'slab': return [[0, 0, 0, 1, 0.5, 1]];
     case 'farmland': return [[0, 0, 0, 1, 15 * P, 1]];
     case 'bed': return [[0, 0, 0, 1, 9 * P, 1]];
+    case 'bed2': {
+      // a mattress, with a pillow at the head end of the head half
+      const boxes = [[0, 0, 0, 1, 9 * P, 1]];
+      if (b.head && !collision) {
+        const pillow = [[2 * P, 1 * P, 14 * P, 7 * P], [9 * P, 2 * P, 15 * P, 14 * P], [2 * P, 9 * P, 14 * P, 15 * P], [1 * P, 2 * P, 7 * P, 14 * P]][b.facing];
+        boxes.push([pillow[0], 9 * P, pillow[1], pillow[2], 11 * P, pillow[3], 'wool']);
+      }
+      return boxes;
+    }
     case 'stairs': {
       // a bottom slab plus the back half on top, on the side the player faced when placing
       return [[0, 0, 0, 1, 0.5, 1], sideBox(b.facing, 0.5, 0.5, 1)];

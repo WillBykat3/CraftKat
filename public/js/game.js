@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import {
-  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
+  BLOCK, BLOCKS, HEIGHT, CHUNK, isSupported, isBed, otherBedHalf, blockItem, armorOf, canHoldAttached, ITEM, isBlockId, toolOf, breakTime, ITEMS, CREATIVE_BLOCKS,
   fluidOf, isSource, isFurnace, isContainer, maxDurability,
 } from './blocks.js';
 import { World, chunkKey } from './world.js';
@@ -746,7 +746,7 @@ export class Game {
         this.send({ t: 'chest_open', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
-      if (hit.id === BLOCK.BED) {
+      if (isBed(hit.id)) {
         this.send({ t: 'sleep', x: hit.x, y: hit.y, z: hit.z });
         return;
       }
@@ -804,13 +804,13 @@ export class Game {
       this.useCooldown = 0.3;
       return;
     }
-    if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE || held.id === ITEM.EGG)) {
+    if (held && (held.id === ITEM.SPLASH_POTION || held.id === ITEM.EXPERIENCE_BOTTLE || held.id === ITEM.EGG || held.id === ITEM.ENDER_PEARL)) {
       // throw it
-      this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : held.id === ITEM.EGG ? 'egg' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });
+      this.send({ t: 'throw', kind: held.id === ITEM.SPLASH_POTION ? 'splash' : held.id === ITEM.EGG ? 'egg' : held.id === ITEM.ENDER_PEARL ? 'pearl' : 'xp', potion: held.potion, yaw: this.player.yaw, pitch: this.player.pitch });
       if (this.mode === 'survival') takeOne(this.inv, this.selected);
       sound.bow();
       this.swing = 1;
-      this.useCooldown = 0.4;
+      this.useCooldown = held.id === ITEM.ENDER_PEARL ? 1 : 0.4; // (pearls: once a second, like Minecraft)
       this.invDirty = true;
       return;
     }
@@ -992,6 +992,7 @@ export class Game {
       return;
     }
     if (BLOCKS[id].shape === 'stairs') id += facingFromYaw(this.player.yaw);
+    if (id === BLOCK.BED) id = BLOCK.BED_FOOT + facingFromYaw(this.player.yaw) * 2; // two blocks long, the head the way you face
     if (BLOCKS[id].redstone === 'repeater') id += facingFromYaw(this.player.yaw);
     if (BLOCKS[id].redstone === 'piston') {
       // pistons face the player, up or down when placed from above or below
@@ -1029,6 +1030,12 @@ export class Game {
         const p = v.group.position;
         if (Math.abs(p.x - (x + 0.5)) < 0.9 && Math.abs(p.z - (z + 0.5)) < 0.9 && p.y < y + 1 && p.y + 1.8 > y) return;
       }
+    }
+    if (BLOCKS[id].shape === 'bed2') {
+      // the head half needs room too
+      const [hx, hy, hz] = otherBedHalf(id, x, y, z);
+      if (!BLOCKS[this.world.getBlock(hx, hy, hz)].replaceable || !BLOCKS[this.world.getBlock(hx, hy - 1, hz)].solid) return;
+      this.applyBlock(hx, hy, hz, id + 1);
     }
     this.send({ t: 'set', x, y, z, id });
     this.applyBlock(x, y, z, id);
@@ -2112,6 +2119,9 @@ export class Game {
     this.entities.clear();
     this.entities.setSelf(false);
     this.particles.clear();
+    this.precipitation.dispose(); // (the renderer outlives the game: don't leave frozen rain in the next world)
+    this.r.rain = this.r.thunder = 0;
+    setRain(0);
     this.r.clearChunks();
     document.exitPointerLock?.();
   }

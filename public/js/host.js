@@ -4,7 +4,7 @@
 
 import {
   BLOCK, BLOCKS, ITEM, HEIGHT, getDrops, isSupported, armorOf, supportOffset, FACING6, isBlockId, isValidId, maxStack, toolOf,
-  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS, woolOf, maxDurability,
+  SMELTING, FUEL, SMELT_SECONDS, fluidOf, isSource, isFurnace, isContainer, ITEMS, woolOf, maxDurability, isBed, otherBedHalf,
 } from './blocks.js';
 import { World, LATEST_GEN, DIMENSIONS } from './world.js';
 import { moveBody, collides } from './physics.js';
@@ -528,8 +528,11 @@ export class GameHost {
       (!BLOCKS[id].liquid || p.mode === 'creative') &&
       BLOCKS[current].replaceable && current !== id && this.inReach(p, x, y, z) && y >= 1 &&
       !this.blockedByEntity(x, y, z, id) && p.canBuild();
+    const head = BLOCKS[id].shape === 'bed2' && !BLOCKS[id].head ? otherBedHalf(id, x, y, z) : null;
+    if (BLOCKS[id].shape === 'bed2' && (!head || !BLOCKS[this.world.getBlock(...head)].replaceable || !BLOCKS[this.world.getBlock(head[0], head[1] - 1, head[2])].solid)) return this.correct(peerId, x, y, z);
     if (!ok) return this.correct(peerId, x, y, z);
     this.setBlock(x, y, z, id, peerId);
+    if (head) this.setBlock(head[0], head[1], head[2], id + 1, peerId);
     if (isRail(id)) this.shapeRails(x, y, z, p.yaw);
     if (isFurnace(id)) this.furnaces.set(`${x},${y},${z}`, { slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 });
     if (isContainer(id)) this.chests.set(`${x},${y},${z}`, { slots: new Array(27).fill(null) });
@@ -561,6 +564,8 @@ export class GameHost {
   breakBlock(x, y, z, tool, exceptPeer = null, ench = null) {
     const id = this.world.getBlock(x, y, z);
     let dropFrom = id;
+    const half = otherBedHalf(id, x, y, z);
+    if (half && isBed(this.world.getBlock(...half))) this.setBlock(half[0], half[1], half[2], BLOCK.AIR); // (only one bed drops)
     const pb = BLOCKS[id];
     if (pb.redstone === 'head' || (pb.redstone === 'piston' && pb.extended)) {
       // a piston and its head go together: breaking the head drops the piston, like Minecraft
@@ -589,6 +594,7 @@ export class GameHost {
     if (tool !== null) {
       const drops = getDrops(dropFrom, tool, this.random, ench);
       for (const [dropId, count] of drops) this.spawnItem(x + 0.5, y + 0.3, z + 0.5, dropId, count);
+      if (BLOCKS[id].spawner) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, 15 + Math.floor(this.random() * 29));
       const xp = ORE_XP[id];
       if (xp && drops.length && !(ench?.silk_touch && drops[0][0] === id)) this.spawnXP(x + 0.5, y + 0.5, z + 0.5, xp[0] + Math.floor(this.random() * (xp[1] - xp[0] + 1)));
     }
@@ -986,7 +992,7 @@ export class GameHost {
 
   // ---------- beds ----------
   onSleep(peerId, p, msg) {
-    if (!this.validCoords(msg) || this.world.getBlock(msg.x, msg.y, msg.z) !== BLOCK.BED || !this.inReach(p, msg.x, msg.y, msg.z)) return;
+    if (!this.validCoords(msg) || !isBed(this.world.getBlock(msg.x, msg.y, msg.z)) || !this.inReach(p, msg.x, msg.y, msg.z)) return;
     if (!this.world.hasSky) {
       // beds blow up in the Nether and the End
       this.setBlock(msg.x, msg.y, msg.z, BLOCK.AIR);
@@ -1019,7 +1025,7 @@ export class GameHost {
   homeOf(p, tell = false) {
     if (p.bed) {
       const [bx, by, bz] = p.bed;
-      if (this.dims.overworld.world.getBlock(bx, by, bz) === BLOCK.BED) return [bx + 0.5, by + 1, bz + 0.5];
+      if (isBed(this.dims.overworld.world.getBlock(bx, by, bz))) return [bx + 0.5, by + 1, bz + 0.5];
       p.bed = null;
       if (tell) this.send(p.peerId, { t: 'sys', msg: 'Your bed was missing, so you respawned at the world spawn.' });
     }
@@ -1679,18 +1685,19 @@ export class GameHost {
   // Splash potions and bottles o' enchanting fly like arrows and break where they land.
   onThrow(p, msg) {
     if (p.dead || !isNum(msg.yaw) || !isNum(msg.pitch)) return;
-    const kind = msg.kind === 'xp' ? 'xp_bottle' : msg.kind === 'egg' ? 'egg' : msg.kind === 'splash' && validPotion(msg.potion) ? 'potion' : null;
+    const kind = msg.kind === 'xp' ? 'xp_bottle' : msg.kind === 'egg' ? 'egg' : msg.kind === 'pearl' ? 'pearl' : msg.kind === 'splash' && validPotion(msg.potion) ? 'potion' : null;
     if (!kind) return;
     const dir = [-Math.sin(msg.yaw) * Math.cos(msg.pitch), Math.sin(msg.pitch) + 0.15, -Math.cos(msg.yaw) * Math.cos(msg.pitch)];
     this.addEntity({
       id: this.nextEntityId++, type: kind, potion: msg.potion, x: p.x + dir[0] * 0.6, y: p.y + 1.5, z: p.z + dir[2] * 0.6,
       halfW: 0.12, height: 0.25, vx: dir[0] * 14, vy: dir[1] * 14, vz: dir[2] * 14, yaw: msg.yaw, age: 0, thrower: p.name,
+      ...(kind === 'pearl' ? { vx: dir[0] * 24, vy: dir[1] * 24, vz: dir[2] * 24, gravity: 12 } : {}), // pearls fly further
     });
   }
 
   tickThrown(e, dt) {
     e.age += dt;
-    e.vy -= 20 * dt;
+    e.vy -= (e.gravity ?? 20) * dt;
     const steps = Math.max(1, Math.ceil(Math.hypot(e.vx, e.vy, e.vz) * dt / 0.25));
     for (let i = 0; i < steps; i++) {
       e.x += e.vx * dt / steps; e.y += e.vy * dt / steps; e.z += e.vz * dt / steps;
@@ -1698,12 +1705,27 @@ export class GameHost {
       const hitMob = e.age > 0.15 && [...this.entities.values()].some((m) => isMob(m) && m.dim === e.dim && Math.abs(m.x - e.x) < m.halfW + 0.2 && Math.abs(m.z - e.z) < m.halfW + 0.2 && e.y > m.y && e.y < m.y + m.height);
       if (!hitBlock && !hitMob && e.y > -20 && e.age < 10) continue;
       this.entities.delete(e.id);
+      if (e.type === 'pearl') return this.pearlLands(e, e.x - e.vx * dt / steps, e.y - e.vy * dt / steps, e.z - e.vz * dt / steps);
       this.broadcastHere({ t: 'sfx', s: 'shatter', x: e.x, y: e.y, z: e.z });
       if (e.type === 'xp_bottle') this.spawnXP(e.x, e.y + 0.3, e.z, 3 + Math.floor(this.random() * 9));
       else if (e.type === 'egg') this.hatchEgg(e.x - e.vx * 0.03, e.y + 0.2, e.z - e.vz * 0.03);
       else this.splash(e);
       return;
     }
+  }
+
+  // An ender pearl lands: whoever threw it is teleported there and takes 5 damage.
+  pearlLands(e, x, y, z) {
+    this.broadcastHere({ t: 'sfx', s: 'portal', x, y, z });
+    const p = [...this.players.values()].find((q) => q.name === e.thrower);
+    if (!p || p.dead || p.dim !== e.dim || y < -10) return;
+    this.dismount(p);
+    // land standing on the block it hit (or where it was, if that's open)
+    let ty = y;
+    for (let k = 0; k < 3 && this.world.getBlock(Math.floor(x), Math.floor(ty), Math.floor(z)) !== BLOCK.AIR && BLOCKS[this.world.getBlock(Math.floor(x), Math.floor(ty), Math.floor(z))].solid; k++) ty = Math.floor(ty) + 1;
+    this.send(p.peerId, { t: 'teleport', p: [x, ty, z] });
+    [p.x, p.y, p.z] = [x, ty, z];
+    if (p.mode === 'survival') this.send(p.peerId, { t: 'hurt', amount: 5, cause: 'fell from a high place', pearl: true });
   }
 
   // A splash potion breaks: everyone within 4 blocks gets its effects, less further away.
@@ -1883,6 +1905,7 @@ export class GameHost {
     if (this.acc.spawn >= 1) {
       this.acc.spawn = 0;
       this.spawnMobs();
+      this.tickSpawners(1);
       this.mergeItems();
       this.populateVillages();
     }
@@ -1974,7 +1997,7 @@ export class GameHost {
       if (e.type === 'fireball' || e.type === 'small_fireball' || e.type === 'dragon_fireball') { this.tickFireball(e, dt); continue; }
       if (e.type === 'breath') { this.tickBreath(e, dt); continue; }
       if (e.type === 'eye') { this.tickEye(e, dt); continue; }
-      if (e.type === 'potion' || e.type === 'xp_bottle' || e.type === 'egg') { this.tickThrown(e, dt); continue; }
+      if (e.type === 'potion' || e.type === 'xp_bottle' || e.type === 'egg' || e.type === 'pearl') { this.tickThrown(e, dt); continue; }
       if (e.type === 'bobber') { this.tickBobber(e, dt); continue; }
       if (e.type === 'xp') { this.tickXP(e, dt); continue; }
 
@@ -2206,6 +2229,42 @@ export class GameHost {
   // Slime chunks: one chunk in ten has slimes deep underground, whatever the light.
   isSlimeChunk(cx, cz) {
     return hash2(cx, cz, (this.save.seed | 0) + 7000) < 0.1;
+  }
+
+  // Monster spawners: within 16 blocks of a player, every 10-40 seconds one spawns up to four
+  // of its mob around it (not if six are already close), like Minecraft's.
+  tickSpawners(dt) {
+    this.spawnerDelay ??= new Map();
+    const seen = new Set();
+    for (const p of this.players.values()) {
+      if (p.dead) continue;
+      this.ctx = p.dim;
+      const px = Math.floor(p.x), py = Math.floor(p.y), pz = Math.floor(p.z);
+      for (let y = Math.max(1, py - 8); y <= Math.min(HEIGHT - 2, py + 8); y++) {
+        for (let z = pz - 16; z <= pz + 16; z++) for (let x = px - 16; x <= px + 16; x++) {
+          const mob = BLOCKS[this.world.getBlock(x, y, z)].spawner;
+          if (!mob) continue;
+          const key = `${p.dim},${x},${y},${z}`;
+          if (seen.has(key) || Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y, z + 0.5 - p.z) > 16) continue;
+          seen.add(key);
+          let left = this.spawnerDelay.get(key) ?? 1 + this.random() * 2;
+          left -= dt;
+          if (left <= 0) {
+            left = 10 + this.random() * 30;
+            let near = 0;
+            for (const e of this.entities.values()) if (e.type === mob && e.dim === p.dim && Math.abs(e.x - x) < 9 && Math.abs(e.y - y) < 5 && Math.abs(e.z - z) < 9) near++;
+            for (let i = 0; i < 4 && near < 6; i++) {
+              const sx = x + 0.5 + (this.random() * 2 - 1) * 4, sy = y + Math.floor(this.random() * 3) - 1, sz = z + 0.5 + (this.random() * 2 - 1) * 4;
+              const e = this.spawnMob(mob, sx, sy, sz);
+              if (collides(this.world, e) || !BLOCKS[this.world.getBlock(Math.floor(sx), sy - 1, Math.floor(sz))].solid && mob !== 'blaze') { this.entities.delete(e.id); continue; }
+              near++;
+              this.broadcastHere({ t: 'sfx', s: 'smoke', x: sx, y: sy, z: sz });
+            }
+          }
+          this.spawnerDelay.set(key, left);
+        }
+      }
+    }
   }
 
   // A random monster, with the biome's variant: husks in deserts, strays in the snow.
@@ -2988,9 +3047,13 @@ export class GameHost {
     if (e.phase === 'circle') {
       e.angle += dt * 0.28;
       goal = [DRAGON_HOME[0] + Math.cos(e.angle) * 50, DRAGON_HOME[1] + Math.sin(e.angle * 2) * 6, DRAGON_HOME[2] + Math.sin(e.angle) * 50];
-      if (e.phaseTime > 12 && target) {
+      if (e.phaseTime > 12) {
+        // like Minecraft, it lands more often as its crystals are destroyed (and with no one to
+        // attack, it only perches)
+        const crystals = [...this.entities.values()].filter((c) => c.type === 'end_crystal' && c.dim === e.dim).length;
+        const perch = 0.25 + 0.5 * (1 - Math.min(10, crystals) / 10);
         const r = this.random();
-        e.phase = r < 0.45 ? 'charge' : r < 0.75 ? 'strafe' : 'perch';
+        e.phase = !target ? (r < 0.5 ? 'perch' : 'circle') : r < perch ? 'perch' : r < perch + (1 - perch) * 0.6 ? 'charge' : 'strafe';
         e.phaseTime = 0;
       }
     } else if (e.phase === 'charge') {
@@ -3015,7 +3078,7 @@ export class GameHost {
     } else if (e.phase === 'perch') {
       goal = [0.5, FOUNTAIN_Y + 4, 0.5];
       const d = Math.hypot(e.x - goal[0], e.y - goal[1], e.z - goal[2]);
-      if (d < 2 && !e.perched) { e.perched = true; e.phaseTime = 0; }
+      if ((d < 2 || (d < 6 && e.phaseTime > 15)) && !e.perched) { e.perched = true; e.phaseTime = 0; e.x = goal[0]; e.y = goal[1]; e.z = goal[2]; e.vx = e.vy = e.vz = 0; }
       if (e.perched) {
         goal = [e.x, e.y, e.z];
         if (target) e.yaw = Math.atan2(-(target[0].x - e.x), -(target[0].z - e.z));
@@ -3139,12 +3202,19 @@ export class GameHost {
     if (p.dim !== 'nether' || counts.hostile >= 12 || this.random() < 0.4) return;
     const angle = this.random() * Math.PI * 2;
     const dist = 20 + this.random() * 28;
-    const x = Math.floor(p.x + Math.cos(angle) * dist), z = Math.floor(p.z + Math.sin(angle) * dist);
+    let x = Math.floor(p.x + Math.cos(angle) * dist), z = Math.floor(p.z + Math.sin(angle) * dist);
     const startY = Math.max(8, Math.min(118, Math.floor(p.y) + Math.floor(this.random() * 40) - 20));
     let y = -1;
     for (let yy = startY; yy > startY - 24 && yy > 5; yy--) {
       const floor = this.world.getBlock(x, yy - 1, z);
       if (BLOCKS[floor].solid && !BLOCKS[floor].transparent && this.world.getBlock(x, yy, z) === BLOCK.AIR && this.world.getBlock(x, yy + 1, z) === BLOCK.AIR) { y = yy; break; }
+    }
+    // near a fortress, half the tries are on its walkways (where blazes and wither skeletons live)
+    const fort = this.random() < 0.5 ? this.world.other?.fortressSpot?.(p.x, p.z, this.random) : null;
+    if (fort && this.world.getBlock(fort[0], fort[1] - 1, fort[2]) === BLOCK.NETHER_BRICKS &&
+      this.world.getBlock(fort[0], fort[1], fort[2]) === BLOCK.AIR && this.world.getBlock(fort[0], fort[1] + 1, fort[2]) === BLOCK.AIR &&
+      Math.hypot(fort[0] - p.x, fort[2] - p.z) > 12 && Math.hypot(fort[0] - p.x, fort[2] - p.z) < 64) {
+      [x, y, z] = fort;
     }
     if (y < 0) return;
     const floor = this.world.getBlock(x, y - 1, z);

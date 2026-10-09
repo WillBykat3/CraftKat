@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GameHost, newWorldSave } from '../public/js/host.js';
 import { World } from '../public/js/world.js';
-import { BLOCK, BLOCKS, ITEM } from '../public/js/blocks.js';
+import { BLOCK, BLOCKS, ITEM, isBed } from '../public/js/blocks.js';
 import { mulberry32 } from '../public/js/noise.js';
 import { TRADES, offersFor } from '../public/js/trades.js';
 
@@ -35,7 +35,7 @@ test('villages generate with a well, paths, houses, beds and job sites', () => {
   for (let dx = -2; dx <= 1; dx++) for (let dz = -2; dz <= 1; dz++) if (w.getBlock(v.x + dx, v.y - 1, v.z + dz) === BLOCK.WATER) water++;
   assert.equal(water, 4);
   // beds and job sites are where the village says
-  for (const b of v.beds) assert.equal(w.getBlock(b.x, b.y, b.z), BLOCK.BED, `bed at ${b.x},${b.y},${b.z}`);
+  for (const b of v.beds) assert.ok(isBed(w.getBlock(b.x, b.y, b.z)) && w.getBlock(b.x, b.y, b.z) !== BLOCK.BED, `two-block bed at ${b.x},${b.y},${b.z}`);
   let paths = 0;
   for (let d = 4; d < 20; d++) if (w.getBlock(v.x + d, w.terrain.column(v.x + d, v.z).h, v.z) === BLOCK.DIRT_PATH) paths++;
   assert.ok(paths > 5, `paths: ${paths}`);

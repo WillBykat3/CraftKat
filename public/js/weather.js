@@ -27,6 +27,12 @@ export class Precipitation {
     this.intensity = 0;
   }
 
+  dispose() {
+    this.lines.parent?.remove(this.lines);
+    this.lines.geometry.dispose();
+    this.lines.material.dispose();
+  }
+
   // What falls on a column: [the y it lands on, 0 nothing / 1 rain / 2 snow].
   column(world, x, z) {
     const key = x + ',' + z;

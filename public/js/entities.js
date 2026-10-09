@@ -158,13 +158,20 @@ const MOB_BUILDERS = {
   pig: () => quadruped(0xf0a5a2, 0xf0a5a2, [0.6, 0.55, 0.9, 0.35], {
     decorate: (head) => { const s = box(0.25, 0.18, 0.06, 0xd98580); s.position.set(0, -0.06, -0.44); head.add(s); },
   }),
-  cow: () => quadruped(0x4a3424, 0x4a3424, [0.7, 0.65, 1.1, 0.6], {
-    bodyFaces: [0x4a3424, 0xe8e8e8, 0x4a3424, 0xe8e8e8, 0x4a3424, 0x4a3424],
+  cow: () => {
+    const m = quadruped(0x4a3424, 0x4a3424, [0.7, 0.65, 1.1, 0.6], {
     decorate: (head) => {
       const s = box(0.3, 0.18, 0.06, 0xb8a090); s.position.set(0, -0.12, -0.44); head.add(s);
       for (const hx of [-0.3, 0.3]) { const h = box(0.08, 0.15, 0.08, 0xe0d8c0); h.position.set(hx, 0.25, -0.2); head.add(h); }
     },
-  }),
+    });
+    // white patches on both sides and the back, like Minecraft's cow
+    for (const [w, h, d, x, y, z] of [[0.02, 0.3, 0.35, 0.36, 0.95, 0.15], [0.02, 0.25, 0.3, -0.36, 1.0, -0.2], [0.02, 0.2, 0.25, -0.36, 0.85, 0.35],
+      [0.3, 0.02, 0.4, 0.1, 1.255, 0.1], [0.5, 0.02, 0.5, 0, 0.595, 0.1]]) {
+      const patch = box(w, h, d, 0xe8e8e8); patch.position.set(x, y, z); m.group.add(patch);
+    }
+    return m;
+  },
   zombie: () => humanoid(0x5d9b4a, 0x2f8f9b, 0x3a3f9b, true),
   sheep: () => {
     const m = quadruped(0xe6c3b0, 0xe6c3b0, [0.5, 0.45, 0.85, 0.5], {
@@ -239,7 +246,7 @@ const MOB_BUILDERS = {
         const leg = box(0.9, 0.08, 0.08, 0x2a221c);
         leg.position.x = side * 0.45;
         pivot.add(leg);
-        pivot.rotation.z = side * 0.45;
+        pivot.rotation.z = -side * 0.5; // legs reach out and down to the ground
         pivot.rotation.y = (i - 1.5) * 0.35 * side;
         g.add(pivot);
         legs.push(pivot);
@@ -823,9 +830,9 @@ export class EntityViews {
       // only a ghast's fireball can be punched back
       return { fireball: true, mob: kind === 'fireball' ? 'fireball' : undefined, group, sprite, target: new THREE.Vector3(), yaw: 0, tYaw: 0, spin: 0 };
     }
-    if (kind === 'potion' || kind === 'xp_bottle' || kind === 'egg') {
+    if (kind === 'potion' || kind === 'xp_bottle' || kind === 'egg' || kind === 'pearl') {
       // a thrown splash potion, bottle o' enchanting or egg, tumbling through the air
-      const map = this.textures.itemTexture(kind === 'potion' ? ITEM.SPLASH_POTION : kind === 'egg' ? ITEM.EGG : ITEM.EXPERIENCE_BOTTLE);
+      const map = this.textures.itemTexture(kind === 'potion' ? ITEM.SPLASH_POTION : kind === 'egg' ? ITEM.EGG : kind === 'pearl' ? ITEM.ENDER_PEARL : ITEM.EXPERIENCE_BOTTLE);
       map.userData.shared = true;
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, alphaTest: 0.5 }));
       sprite.scale.set(0.35, 0.35, 1);

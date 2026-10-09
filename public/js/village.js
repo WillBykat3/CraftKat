@@ -65,6 +65,12 @@ export class Villages {
     return out;
   }
 
+  // Whether (x, z) is in a village's grounds (no trees grow there).
+  covers(x, z) {
+    const v = this.inCell(Math.floor(x / VILLAGE_CELL), Math.floor(z / VILLAGE_CELL));
+    return !!v && Math.abs(x - v.x) <= ARM + 12 && Math.abs(z - v.z) <= ARM + 12;
+  }
+
   // The nearest village centre to (x, z) within `range`, or null.
   nearest(x, z, range = 128) {
     let best = null, bestD = range;
@@ -241,7 +247,11 @@ export class Villages {
     // inside: beds, a torch, and maybe a job site block
     const beds = pc.kind === 'bighouse' ? [[1, D - 2], [W - 2, D - 2]] : [[1, D - 2]];
     for (const [lx, lz] of beds) {
-      put(lx, 0, lz, BLOCK.BED);
+      // a two-block bed with its head against the back wall
+      const [fx, fz] = at(lx, lz), [hx, hz] = at(lx, lz + 1);
+      const facing = FACING.findIndex(([dx, , dz]) => dx === hx - fx && dz === hz - fz);
+      put(lx, 0, lz, BLOCK.BED_FOOT + facing * 2);
+      put(lx, 0, lz + 1, BLOCK.BED_FOOT + facing * 2 + 1);
       const [bx, bz] = at(lx, lz);
       v.beds.push({ x: bx, y, z: bz, job: 0 });
     }

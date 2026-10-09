@@ -56,6 +56,17 @@ export class NetherTerrain {
       gz * FORT_CELL + m + Math.floor(hash2(gx, gz, this.seed + 3102) * (FORT_CELL - 2 * m))];
   }
 
+  // A random spot on the walkway of a fortress near (x, z) (within its reach), or null:
+  // where fortress monsters spawn.
+  fortressSpot(x, z, rand) {
+    const c = this.fortressIn(Math.floor(x / FORT_CELL), Math.floor(z / FORT_CELL));
+    if (!c || Math.abs(x - c[0]) > FORT_ARM + 24 || Math.abs(z - c[1]) > FORT_ARM + 24) return null;
+    const along = Math.floor((rand() * 2 - 1) * FORT_ARM), across = Math.floor(rand() * 3) - 1;
+    const r = rand();
+    if (r < 0.2) return [c[0] + Math.floor(rand() * 13) - 6, FORT_Y + 1, c[1] + Math.floor(rand() * 13) - 6]; // the hall
+    return r < 0.6 ? [c[0] + along, FORT_Y + 1, c[1] + across] : [c[0] + across, FORT_Y + 1, c[1] + along];
+  }
+
   // The fortress block at (x, y, z), or undefined if no fortress is there.
   // Each fortress is a cross of nether brick bridges with railings, a hall in the
   // middle and pillars down into the lava.
@@ -87,6 +98,11 @@ export class NetherTerrain {
     // bridges
     const across = onX ? az : ax;
     const along = onX ? ax : az;
+    // blaze spawners on two of the bridges, on a raised step
+    if (along === FORT_ARM - 8 && ((onX && dx > 0) || (onZ && dz < 0))) {
+      if (ry === 1 && across === 0) return BLOCK.SPAWNER;
+      if (ry === 1 && across === 1) return BLOCK.NETHER_BRICKS;
+    }
     if (ry === 0) return BLOCK.NETHER_BRICKS;
     if (ry === -1 && across <= 1) return BLOCK.NETHER_BRICKS;
     if (ry === 1 && across === 2) return BLOCK.NETHER_BRICKS;

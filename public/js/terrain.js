@@ -358,6 +358,7 @@ export class Terrain3 {
     const col = this.column(tx, tz);
     const density = TREE_DENSITY[col.biome] || 0;
     if (density === 0 || hash2(gx, gz, s + 100) > density) return null;
+    if (this.treeBlocked?.(tx, tz)) return null; // (villages clear their ground)
     const h = col.h;
     if (h < SEA) return null;
     // no trees on cliffs or in cave openings

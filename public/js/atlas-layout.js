@@ -38,7 +38,7 @@ export const TILE_NAMES = [
   'brown_mushroom', 'red_mushroom', 'melon_top', 'melon_side', 'slime_block',
   ...COLORS.slice(1).map((c) => 'wool_' + c), ...COLORS.map((c) => 'stained_glass_' + c),
   'terracotta', ...COLORS.map((c) => 'terracotta_' + c),
-  'rail', 'rail_corner', 'powered_rail', 'powered_rail_on',
+  'rail', 'rail_corner', 'powered_rail', 'powered_rail_on', 'spawner', 'bed_blanket',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

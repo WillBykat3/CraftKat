@@ -40,7 +40,8 @@ export const BLOCK = {
   ENCHANTING_TABLE: 1046, ANVIL: 1047, CHIPPED_ANVIL: 1048, DAMAGED_ANVIL: 1049,
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
   BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066, SLIME_BLOCK: 1067,
-  STAINED_GLASS: 1085, TERRACOTTA: 1101, RAIL: 1120, POWERED_RAIL: 1130, // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
+  STAINED_GLASS: 1085, TERRACOTTA: 1101, RAIL: 1120, POWERED_RAIL: 1130, SPAWNER: 1142, // SPAWNER + 0 blaze, 1 zombie, 2 skeleton, 3 spider
+  BED_FOOT: 1150, // two-block beds: BED_FOOT + facing * 2 + (head ? 1 : 0); BED is the item (and old one-block beds) // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -290,6 +291,8 @@ COLORS.forEach((c, i) => {
 // rails: RAIL + shape (0-9), POWERED_RAIL + shape (0-5) + (powered ? 6 : 0) (see rails.js)
 for (let i = 0; i < 10; i++) def(1120 + i, 'Rail', { tex: ['rail', 'rail_corner'], render: 'rail', shape: 'rail', solid: false, transparent: true, hardness: 0.7, tool: 'pickaxe', needsSupport: true, hidden: i > 0, item: 1120 });
 for (let i = 0; i < 12; i++) def(1130 + i, 'Powered Rail', { tex: [i >= 6 ? 'powered_rail_on' : 'powered_rail'], render: 'rail', shape: 'rail', solid: false, transparent: true, hardness: 0.7, tool: 'pickaxe', needsSupport: true, hidden: i > 0, item: 1130, redstone: 'powered_rail', on: i >= 6 });
+['blaze', 'zombie', 'skeleton', 'spider'].forEach((mob, i) => def(1142 + i, 'Monster Spawner', { tex: ['spawner'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, spawner: mob, hidden: i > 0, item: 1142 }));
+for (let i = 0; i < 8; i++) def(1150 + i, 'Bed', { tex: ['bed_blanket', 'bed_side', 'planks'], hardness: 0.2, transparent: true, shape: 'bed2', facing: i >> 1, head: (i & 1) === 1, hidden: true, item: 49 });
 def(1101, 'Terracotta', { tex: ['terracotta'], hardness: 1.25, tool: 'pickaxe', needsTier: 0 });
 def(1067, 'Slime Block', { tex: ['slime_block'], hardness: 0, transparent: true, translucent: true, bouncy: true });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
@@ -651,6 +654,7 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.BEDROCK: return [];
     case BLOCK.CLAY: return [[ITEM.CLAY_BALL, 4]];
     case BLOCK.SNOW: return [[BLOCK.SNOW, 1]];
+    case BLOCK.SPAWNER: case BLOCK.SPAWNER + 1: case BLOCK.SPAWNER + 2: case BLOCK.SPAWNER + 3: return []; // (even with Silk Touch)
     default: break;
   }
   if (b.translucent && b.color !== undefined) return []; // stained glass breaks (unless Silk Touch)
@@ -735,3 +739,12 @@ export const SMELT_SECONDS = 10;
 export const woolOf = (c) => (c === 0 ? BLOCK.WOOL : 1069 + c);
 export const colorOf = (id) => (id === BLOCK.WOOL ? 0 : ITEMS[id]?.dye ?? BLOCKS[id]?.color ?? -1);
 export const isWool = (id) => id === BLOCK.WOOL || (id >= 1070 && id <= 1084);
+
+// Beds: the old one-block bed, or either half of a two-block one.
+export const isBed = (id) => id === BLOCK.BED || (id >= 1150 && id < 1158);
+// The other half of a two-block bed at (x, y, z): [x, y, z], or null.
+export function otherBedHalf(id, x, y, z) {
+  if (!(id >= 1150 && id < 1158)) return null;
+  const b = B[id], [dx, , dz] = FACING[b.facing];
+  return b.head ? [x - dx, y, z - dz] : [x + dx, y, z + dz];
+}
