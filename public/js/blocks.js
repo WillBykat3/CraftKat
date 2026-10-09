@@ -41,7 +41,7 @@ export const BLOCK = {
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
   BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066, SLIME_BLOCK: 1067,
   STAINED_GLASS: 1085, TERRACOTTA: 1101, RAIL: 1120, POWERED_RAIL: 1130, SPAWNER: 1142, // SPAWNER + 0 blaze, 1 zombie, 2 skeleton, 3 spider
-  MOSSY_COBBLESTONE: 1160, BED_FOOT: 1150,
+  MOSSY_COBBLESTONE: 1160, BED_FOOT: 1150, SWEET_BERRY_BUSH: 1240, // + age (0-3)
   CONCRETE: 1170, CONCRETE_POWDER: 1186, CARPET: 1202, GLASS_PANE: 1218, STAINED_PANE: 1219, // (+ colour) // two-block beds: BED_FOOT + facing * 2 + (head ? 1 : 0); BED is the item (and old one-block beds) // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
@@ -301,6 +301,7 @@ COLORS.forEach((c, i) => {
   def(1219 + i, `${COLOR_NAMES[i]} Stained Glass Pane`, { tex: ['stained_glass_' + c], hardness: 0.3, shape: 'pane', solid: true, transparent: true, translucent: true, color: i });
 });
 def(1218, 'Glass Pane', { tex: ['glass'], hardness: 0.3, shape: 'pane', solid: true, transparent: true });
+for (let i = 0; i < 4; i++) def(1240 + i, 'Sweet Berry Bush', { tex: ['sweet_berry_bush_' + i], render: 'cross', solid: false, transparent: true, hardness: 0, needsSupport: true, berry: i, hidden: true, item: 0 });
 def(1160, 'Mossy Cobblestone', { tex: ['mossy_cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0 });
 def(1101, 'Terracotta', { tex: ['terracotta'], hardness: 1.25, tool: 'pickaxe', needsTier: 0 });
 def(1067, 'Slime Block', { tex: ['slime_block'], hardness: 0, transparent: true, translucent: true, bouncy: true });
@@ -378,7 +379,7 @@ export const ITEM = {
   PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363, EGG: 364, SLIMEBALL: 365, INK_SAC: 366, RAW_RABBIT: 367,
   COOKED_RABBIT: 368, RABBIT_HIDE: 369, DYE: 370, COCOA_BEANS: 386, CLAY_BALL: 398, BRICK: 399, // (dyes are 370 + colour)
   FISHING_ROD: 387, RAW_COD: 388, COOKED_COD: 389, RAW_SALMON: 390, COOKED_SALMON: 391, TROPICAL_FISH: 392,
-  SHIELD: 393, COMPASS: 394, CLOCK: 395, NAME_TAG: 396, SADDLE: 397, BOAT: 400, CARROT_ON_A_STICK: 401, MINECART: 402,
+  SHIELD: 393, COMPASS: 394, CLOCK: 395, NAME_TAG: 396, SADDLE: 397, BOAT: 400, CARROT_ON_A_STICK: 401, MINECART: 402, SWEET_BERRIES: 403,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -465,6 +466,7 @@ item(397, 'Saddle', { icon: 'saddle', stack: 1 });
 item(400, 'Boat', { icon: 'boat', stack: 1 });
 item(401, 'Carrot on a Stick', { icon: 'carrot_on_a_stick', stack: 1, tool: { kind: 'carrot_stick', tier: -1, speed: 1, damage: 1, durability: 25 } });
 item(402, 'Minecart', { icon: 'minecart', stack: 1 });
+item(403, 'Sweet Berries', { icon: 'sweet_berries', food: 2, plants: 1240 });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });
@@ -663,6 +665,9 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.BEDROCK: return [];
     case BLOCK.CLAY: return [[ITEM.CLAY_BALL, 4]];
     case BLOCK.SNOW: return [[BLOCK.SNOW, 1]];
+    case BLOCK.SWEET_BERRY_BUSH + 2: return [[ITEM.SWEET_BERRIES, 1 + Math.floor(rand() * 2)]];
+    case BLOCK.SWEET_BERRY_BUSH + 3: return [[ITEM.SWEET_BERRIES, 2 + Math.floor(rand() * 2)]];
+    case BLOCK.SWEET_BERRY_BUSH: case BLOCK.SWEET_BERRY_BUSH + 1: return [];
     case BLOCK.SPAWNER: case BLOCK.SPAWNER + 1: case BLOCK.SPAWNER + 2: case BLOCK.SPAWNER + 3: return []; // (even with Silk Touch)
     default: break;
   }
@@ -762,6 +767,6 @@ export function otherBedHalf(id, x, y, z) {
 // Saturation each food gives (Minecraft's values): it's used up before the hunger bar.
 const SATURATION = {
   279: 2.4, 280: 1.8, 281: 12.8, 282: 1.8, 283: 12.8, 284: 0.8, 285: 6, 352: 3.2, 355: 1.2, 357: 14.4, 360: 0.2, 362: 9.6,
-  367: 1.8, 368: 6, 388: 0.4, 389: 6, 390: 0.4, 391: 9.6, 392: 0.2, 292: 1.2, 293: 7.2, 294: 1.2, 295: 9.6, 327: 3.6, 328: 0.6, 329: 6,
+  403: 0.4, 367: 1.8, 368: 6, 388: 0.4, 389: 6, 390: 0.4, 391: 9.6, 392: 0.2, 292: 1.2, 293: 7.2, 294: 1.2, 295: 9.6, 327: 3.6, 328: 0.6, 329: 6,
 };
 for (const [id, sat] of Object.entries(SATURATION)) if (I[id]) I[id].saturation = sat;

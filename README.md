@@ -129,13 +129,19 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
     cream)
   - **Witches** that throw potions and drink healing ones, **drowned** in oceans and rivers at night, **squid** (ink
     sacs), **bats** in dark caves, and **phantoms**, which swoop down on players who haven't slept for three days
+  - **Cats** live in villages: tame a stray with raw cod or salmon; creepers run away from cats
+  - **Foxes** in taigas (white ones in snowy taigas) sleep in the day, keep away from you, hunt chickens and rabbits at
+    night and eat sweet berries
+  - **Goats** leap about mountain peaks and sometimes ram you; milk them with a bucket
+  - **Polar bears** in snowy plains are calm, unless you hit one or go near a cub
+  - **Sweet berry bushes** in taigas: pick the berries (eat or plant them); walking through a bush slows and pricks you
   - In the Nether: **magma cubes** in basalt deltas and fortresses, and **piglins** in the nether wastes, which attack
     unless you wear a piece of gold armor; drop a gold ingot near one and it gives you something for it
 - **Creative mode**: every block, flying, instant breaking
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** cats, foxes, bees, axolotls and many other mobs, maps, and many of Minecraft's newer blocks. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** bees, axolotls, frogs, llamas and many other mobs, maps, and many of Minecraft's newer blocks. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no hoglins, piglin brutes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no

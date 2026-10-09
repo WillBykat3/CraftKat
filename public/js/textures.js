@@ -928,6 +928,17 @@ function drawBlockTile(p, name) {
         break;
       }
       if (name === 'rail' || name === 'rail_corner' || name.startsWith('powered_rail')) { drawRail(p, name); break; }
+      if (name.startsWith('sweet_berry_bush_')) {
+        // a leafy bush; older ones have more (and redder) berries
+        const age = Number(name.slice(-1));
+        const size = [6, 9, 12, 13][age];
+        for (let i = 0; i < 90; i++) {
+          const x = Math.floor(8 + (rand() - 0.5) * size * 1.1), y = Math.floor(16 - rand() * size);
+          px(x, y, shade([40, 100, 50], 0.7 + rand() * 0.5));
+        }
+        for (let i = 0; i < [0, 0, 4, 8][age]; i++) px(Math.floor(4 + rand() * 9), Math.floor(16 - rand() * size), age === 3 ? [200, 20, 40] : [120, 160, 60]);
+        break;
+      }
       if (name === 'bed_blanket') {
         // a red wool blanket with a darker hem
         for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) px(x, y, shade([170, 30, 30], (x === 0 || x === S - 1 ? 0.75 : 0.92) + rand() * 0.12));
@@ -1369,6 +1380,7 @@ function drawItem(p, icon) {
       }
       px(6, 6, [200, 255, 220]); px(7, 5, [200, 255, 220]);
       break;
+    case 'sweet_berries': for (const [x, y] of [[6, 7], [9, 6], [7, 10], [10, 10]]) blob([190, 20, 40], x, y, 2, 2, 0.2); px(8, 3, [70, 120, 50]); px(8, 4, [70, 120, 50]); break;
     case 'cocoa_beans': blob([110, 65, 35], 8, 8.5, 3.5, 4.5, 0.25); for (let y = 5; y < 12; y++) px(8, y, [80, 45, 25]); break;
     case 'clay_ball': blob([160, 166, 179], 8, 8.5, 4, 3.5, 0.15); break;
     case 'brick_item':

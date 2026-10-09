@@ -680,7 +680,7 @@ export class Game {
       this.swing = 1;
       return;
     }
-    if (mob && held?.id === ITEM.BUCKET && this.entities.entities.get(mob.id)?.mob === 'cow') {
+    if (mob && held?.id === ITEM.BUCKET && ['cow', 'goat'].includes(this.entities.entities.get(mob.id)?.mob)) {
       if (this.mode === 'survival') {
         takeOne(this.inv, this.selected);
         const left = addItem(this.inv, ITEM.MILK_BUCKET, 1);
@@ -699,7 +699,7 @@ export class Game {
       this.useCooldown = 0.25;
       return;
     }
-    if (kind === 'wolf' && (flags & 4096)) { this.send({ t: 'interact', e: mob.id }); this.useCooldown = 0.25; return; } // sit / stand
+    if ((kind === 'wolf' || kind === 'cat') && (flags & 4096)) { this.send({ t: 'interact', e: mob.id }); this.useCooldown = 0.25; return; } // sit / stand
     if (kind === 'horse' && held && [ITEM.WHEAT, ITEM.SUGAR, ITEM.APPLE, ITEM.GOLDEN_CARROT, ITEM.GOLDEN_APPLE, BLOCK.HAY_BALE].includes(held.id)) {
       this.send({ t: 'interact', e: mob.id, tool: held.id }); // feed it (the host replies 'consume' if it eats)
       this.swing = 1; this.useCooldown = 0.25;
@@ -746,6 +746,13 @@ export class Game {
       if (isContainer(hit.id)) {
         this.openScreen('chest', { at, name: BLOCKS[hit.id].name });
         this.send({ t: 'chest_open', x: hit.x, y: hit.y, z: hit.z });
+        return;
+      }
+      if (BLOCKS[hit.id].berry >= 2) {
+        // pick the berries
+        this.send({ t: 'use', x: hit.x, y: hit.y, z: hit.z });
+        this.swing = 1;
+        this.useCooldown = 0.3;
         return;
       }
       if (isBed(hit.id)) {
@@ -1598,6 +1605,12 @@ export class Game {
 
     let speed = p.flying ? (p.sprinting ? FLY * 2 : FLY) : p.sneaking ? SNEAK : p.sprinting ? SPRINT : WALK;
     if (this.blocking && !p.flying) { speed = Math.min(speed, SNEAK); p.sprinting = false; } // slowed while blocking
+    // sweet berry bushes slow you down and prick you while you move through them
+    if (!p.flying && this.touching((id) => BLOCKS[id].berry > 0)) {
+      speed *= 0.4;
+      this.berryPrick = (this.berryPrick || 0) + dt;
+      if ((forward || strafe) && this.berryPrick > 0.5) { this.berryPrick = 0; this.damage(1, 'was poked to death by a sweet berry bush'); }
+    }
     if (p.inWater && !p.flying) speed *= p.inLava ? 0.3 : 0.5 + 0.5 * Math.min(3, enchLevel(this.armor[3], 'depth_strider')) / 3;
     const under = BLOCKS[this.world.getBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))];
     if (p.onGround && under.slow) speed *= under.slow; // soul sand

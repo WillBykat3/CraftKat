@@ -40,6 +40,7 @@ export const TILE_NAMES = [
   'terracotta', ...COLORS.map((c) => 'terracotta_' + c),
   'rail', 'rail_corner', 'powered_rail', 'powered_rail_on', 'spawner', 'bed_blanket', 'mossy_cobble',
   ...COLORS.map((c) => 'concrete_' + c), ...COLORS.map((c) => 'concrete_powder_' + c),
+  'sweet_berry_bush_0', 'sweet_berry_bush_1', 'sweet_berry_bush_2', 'sweet_berry_bush_3',
 ];
 
 const INDEX = new Map(TILE_NAMES.map((name, i) => [name, i]));

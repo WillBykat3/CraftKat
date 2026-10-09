@@ -560,6 +560,57 @@ const MOB_BUILDERS = {
     g.add(bottom, seat);
     return { group: g, head: new THREE.Group(), legs: [], arms: [] };
   },
+  cat: () => {
+    const m = quadruped(0x8a8a8a, 0x8a8a8a, [0.3, 0.3, 0.75, 0.3], {
+      decorate: (head) => {
+        for (const ex of [-0.12, 0.12]) { const ear = box(0.08, 0.1, 0.06, 0x8a8a8a); ear.position.set(ex, 0.26, -0.15); head.add(ear); }
+        const nose = box(0.16, 0.1, 0.06, 0xd8a0a0); nose.position.set(0, -0.08, -0.44); head.add(nose);
+      },
+    });
+    m.head.scale.setScalar(0.6);
+    m.head.position.y = 0.6;
+    const tail = box(0.06, 0.06, 0.5, 0x8a8a8a); tail.position.set(0, 0.55, 0.55); tail.rotation.x = -0.6; m.group.add(tail);
+    m.coatParts = [m.group.children.find((c) => c.geometry?.parameters?.depth === 0.75), tail];
+    m.coats = [0x8a7a60, 0x262626, 0xe8e8e8, 0xd88a3a];
+    m.sitsDown = true;
+    return m;
+  },
+  fox: () => {
+    const m = quadruped(0xd8721e, 0xd8721e, [0.35, 0.32, 0.75, 0.3], {
+      decorate: (head) => {
+        for (const ex of [-0.15, 0.15]) { const ear = box(0.1, 0.16, 0.06, 0x2a2a2a); ear.position.set(ex, 0.3, -0.12); head.add(ear); }
+        const snout = box(0.2, 0.16, 0.22, 0xf0f0f0); snout.position.set(0, -0.1, -0.5); head.add(snout);
+      },
+    });
+    m.head.scale.setScalar(0.7);
+    m.head.position.y = 0.6;
+    const tail = box(0.22, 0.22, 0.55, 0xd8721e); tail.position.set(0, 0.5, 0.6); tail.rotation.x = 0.4; m.group.add(tail);
+    const tip = box(0.23, 0.23, 0.15, 0xf0f0f0); tip.position.set(0, 0.42, 0.85); tip.rotation.x = 0.4; m.group.add(tip);
+    m.coatParts = [m.group.children.find((c) => c.geometry?.parameters?.depth === 0.75), tail];
+    m.coats = [0xd8721e, 0xece8e0];
+    m.sitsDown = true;
+    return m;
+  },
+  goat: () => {
+    const m = quadruped(0xe6e0d4, 0xe6e0d4, [0.5, 0.55, 0.9, 0.6], {
+      decorate: (head) => {
+        for (const ex of [-0.12, 0.12]) { const horn = box(0.07, 0.3, 0.07, 0x8a8070); horn.position.set(ex, 0.35, 0); horn.rotation.x = 0.4; head.add(horn); }
+        const beard = box(0.1, 0.2, 0.06, 0xd8d0c0); beard.position.set(0, -0.3, -0.4); head.add(beard);
+      },
+    });
+    return m;
+  },
+  polar_bear: () => {
+    const m = quadruped(0xf2f0ea, 0xf2f0ea, [0.85, 0.8, 1.4, 0.6], {
+      decorate: (head) => {
+        const snout = box(0.3, 0.22, 0.2, 0xe6e2d8); snout.position.set(0, -0.08, -0.5); head.add(snout);
+        const nose = box(0.12, 0.08, 0.04, 0x202020); nose.position.set(0, -0.02, -0.61); head.add(nose);
+        for (const ex of [-0.2, 0.2]) { const ear = box(0.1, 0.1, 0.06, 0xf2f0ea); ear.position.set(ex, 0.28, -0.15); head.add(ear); }
+      },
+    });
+    m.head.scale.setScalar(1.2);
+    return m;
+  },
   minecart: () => {
     const g = new THREE.Group();
     const iron = 0x8a8a90, dark = 0x55555a;
@@ -617,7 +668,7 @@ const HITBOX = {
   fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
   wolf: [0.35, 0.9], rabbit: [0.25, 0.55], witch: [0.35, 1.95], drowned: [0.35, 1.95], phantom: [0.5, 0.5],
   squid: [0.45, 0.95], bat: [0.3, 0.9], piglin: [0.35, 1.95], slime: [0.26, 0.52], magma_cube: [0.26, 0.52],
-  boat: [0.7, 0.6], horse: [0.7, 1.7], minecart: [0.5, 0.75],
+  boat: [0.7, 0.6], horse: [0.7, 1.7], minecart: [0.5, 0.75], cat: [0.35, 0.75], fox: [0.35, 0.75], goat: [0.5, 1.35], polar_bear: [0.75, 1.5],
 };
 
 function itemMesh(id, textures) {
@@ -1051,6 +1102,12 @@ export class EntityViews {
       if (v.model.flap) {
         const t = performance.now() / 1000;
         for (const w of v.model.flap) w.rotation.z = Math.sin(t * v.model.flapSpeed) * 0.6 * w.userData.side;
+      }
+      if (v.model.coats) {
+        const coat = (v.flags >> 14) & 15;
+        if (v.coat !== coat) { v.coat = coat; for (const part of v.model.coatParts) if (part) recolor(part, v.model.coats[coat] ?? v.model.coats[0]); }
+        // sitting (tame cats) or asleep (foxes): crouched down
+        if (v.model.sitsDown && (v.flags & 2048)) { v.model.legs[0].rotation.x = v.model.legs[1].rotation.x = 0; v.model.legs[2].rotation.x = v.model.legs[3].rotation.x = -1.3; }
       }
       if (v.model.horse) {
         v.model.saddle.visible = (v.flags & 1) !== 0;

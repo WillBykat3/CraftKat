@@ -184,3 +184,50 @@ test('the new mobs spawn where they should', () => {
   assert.ok(seen.has('squid'), 'squid');
   assert.ok(seen.has('drowned'), 'drowned');
 });
+
+test('cats, foxes, goats and polar bears', () => {
+  const { host, p, inbox, mobs } = setup();
+  host.time = 1000;
+  // a stray cat is tamed with raw fish, then sits when clicked
+  const cat = host.spawnMob('cat', 2.5, 200, 0.5);
+  for (let i = 0; i < 30 && !cat.tamed; i++) host.message('a', { t: 'interact', e: cat.id, tool: ITEM.RAW_COD });
+  assert.ok(cat.tamed && cat.owner === 'Steve');
+  assert.ok(inbox.some((m) => m.t === 'consume'));
+  // creepers run from cats
+  p.mode = 'survival';
+  cat.sitting = true;
+  const creeper = host.spawnMob('creeper', 5.5, 200, 0.5);
+  host.time = 18000;
+  for (let i = 0; i < 40; i++) host.tick(0.05);
+  assert.ok(creeper.x > 5.5 && !(creeper.fuse > 0), `the creeper backed off (${creeper.x.toFixed(1)})`);
+  p.mode = 'creative';
+  // a polar bear defends its cub
+  host.entities.clear();
+  const mother = host.spawnMob('polar_bear', -4.5, 200, 0.5);
+  const cub = host.spawnMob('polar_bear', -1.5, 200, 0.5);
+  cub.baby = 1000;
+  p.mode = 'survival';
+  inbox.length = 0;
+  for (let i = 0; i < 80; i++) host.tick(0.05);
+  assert.ok(inbox.some((m) => m.t === 'hurt' && m.cause === 'was slain by a Polar Bear'), 'mama bear attacked');
+  assert.ok(mother);
+  // foxes sleep in the daytime
+  host.entities.clear();
+  p.x = 30; // (well away)
+  host.time = 6000;
+  const fox = host.spawnMob('fox', 0.5, 200, 0.5);
+  for (let i = 0; i < 10; i++) host.tick(0.05);
+  assert.ok(fox.sleeping);
+  assert.ok(mobs('fox').length === 1);
+});
+
+test('sweet berry bushes grow and can be picked', () => {
+  const { host, p } = setup();
+  p.canBuild = () => true;
+  host.setBlock(1, 200, 1, BLOCK.SWEET_BERRY_BUSH);
+  for (let i = 0; i < 20 * 600 && host.world.getBlock(1, 200, 1) !== BLOCK.SWEET_BERRY_BUSH + 3; i++) host.tick(0.05);
+  assert.equal(host.world.getBlock(1, 200, 1), BLOCK.SWEET_BERRY_BUSH + 3, 'ripe');
+  host.message('a', { t: 'use', x: 1, y: 200, z: 1 });
+  assert.equal(host.world.getBlock(1, 200, 1), BLOCK.SWEET_BERRY_BUSH + 1, 'picked');
+  assert.ok([...host.entities.values()].some((e) => e.type === 'item' && e.item === ITEM.SWEET_BERRIES && e.count >= 2));
+});

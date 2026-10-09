@@ -45,7 +45,7 @@ const PLANTS = {
   [BIOME.FLOWER_FOREST]: [0.08, 0, 0.22, [D, P, CF]],
   [BIOME.BIRCH_FOREST]: [0.1, 0, 0.012, [D, P]],
   [BIOME.DARK_FOREST]: [0.08, 0, 0.004, [P]],
-  [BIOME.TAIGA]: [0.08, 0.15, 0, []],
+  [BIOME.TAIGA]: [0.08, 0.15, 0.012, [BLOCK.SWEET_BERRY_BUSH + 3]], // (sweet berry bushes)
   [BIOME.SAVANNA]: [0.3, 0, 0.003, [D]],
   [BIOME.JUNGLE]: [0.3, 0.12, 0.004, [P]],
   [BIOME.SWAMP]: [0.08, 0, 0.003, [P]],

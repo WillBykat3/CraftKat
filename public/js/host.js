@@ -19,6 +19,7 @@ import { portalCenter } from './stronghold.js';
 import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 import { validEnch, level as enchLevel, rollEnchants, randomBook } from './enchant.js';
 import { mobAI, BREED_FOOD, SLIME_SIZES } from './mob-ai.js';
+import { mobs2, CAT_FOOD } from './mobs2.js';
 import { hash2 } from './noise.js';
 import { dungeonLoot } from './dungeons.js';
 import { isRail, railInfo, railId, computeShape, railConnected, UPHILL } from './rails.js';
@@ -59,6 +60,10 @@ const MOB_TYPES = {
   bat: { hp: 6, halfW: 0.25, height: 0.9, speed: 3, hostile: false, custom: 'batTick' },
   piglin: { hp: 16, halfW: 0.3, height: 1.95, speed: 2.3, hostile: true, ai: 'piglinMind', damage: 5 },
   horse: { hp: 22, halfW: 0.7, height: 1.6, speed: 1.6, hostile: false, ai: 'horseMind' },
+  cat: { hp: 10, halfW: 0.3, height: 0.7, speed: 2.4, hostile: false, ai: 'catMind' },
+  fox: { hp: 10, halfW: 0.3, height: 0.7, speed: 2.8, hostile: false, ai: 'foxMind' },
+  goat: { hp: 10, halfW: 0.45, height: 1.3, speed: 1.8, hostile: false, ai: 'goatMind' },
+  polar_bear: { hp: 30, halfW: 0.7, height: 1.4, speed: 1.8, hostile: false, ai: 'polarBearMind' },
   // vehicles: hit them to break them (they drop themselves)
   boat: { hp: 4, halfW: 0.65, height: 0.56, speed: 0, hostile: false, vehicle: true, custom: 'vehicleTick' },
   minecart: { hp: 6, halfW: 0.49, height: 0.7, speed: 0, hostile: false, vehicle: true, custom: 'vehicleTick' },
@@ -506,7 +511,7 @@ export class GameHost {
   setBlock(x, y, z, id, exceptPeer = null) {
     this.world.setBlock(x, y, z, id);
     const key = `${x},${y},${z}`;
-    if (BLOCKS[id].crop || BLOCKS[id].wart !== undefined) this.crops.add(key); else this.crops.delete(key);
+    if (BLOCKS[id].crop || BLOCKS[id].wart !== undefined || BLOCKS[id].berry !== undefined) this.crops.add(key); else this.crops.delete(key);
     this.redstone?.changed(x, y, z, id);
     this.fluids?.changed(x, y, z);
     this.hardenConcrete(x, y, z);
@@ -771,6 +776,7 @@ export class GameHost {
       Object.assign(e, { speed: 4.74 + avg() * 9.49, jump: 0.4 + avg() * 0.6, temper: 0, color: Math.floor(this.random() * 7) });
       e.hp = e.maxHp = 15 + Math.floor(avg() * 15);
     }
+    if (type === 'cat') e.color = Math.floor(this.random() * 4); // tabby, black, white, ginger
     if (type === 'sheep') {
       // like Minecraft: mostly white, some black, grey, light grey or brown, and very rarely pink
       const r = this.random();
@@ -913,6 +919,8 @@ export class GameHost {
       rabbit: [[ITEM.RAW_RABBIT, Math.floor(r() * 2)], [ITEM.RABBIT_HIDE, Math.floor(r() * 2)], [ITEM.RABBIT_FOOT, r() < 0.1 ? 1 : 0]],
       squid: [[ITEM.INK_SAC, 1 + Math.floor(r() * 3)]],
       boat: [[ITEM.BOAT, 1]],
+      cat: [[ITEM.STRING, Math.floor(r() * 3)]],
+      polar_bear: [[r() < 0.75 ? ITEM.RAW_COD : ITEM.RAW_SALMON, Math.floor(r() * 3)]],
       minecart: [[ITEM.MINECART, 1]],
       horse: [[ITEM.LEATHER, Math.floor(r() * 3)], [ITEM.SADDLE, e.saddled ? 1 : 0]],
       iron_golem: [[ITEM.IRON_INGOT, 3 + Math.floor(r() * 3)], [BLOCK.POPPY, Math.floor(r() * 3)]],
@@ -1079,6 +1087,12 @@ export class GameHost {
     const id = this.world.getBlock(x, y, z);
     const def = BLOCKS[id];
     if (this.redstone.use(x, y, z, msg.item)) return;
+    if (def.berry >= 2) {
+      // picking sweet berries leaves the bush to grow more
+      this.spawnItem(x + 0.5, y + 0.5, z + 0.5, ITEM.SWEET_BERRIES, def.berry === 3 ? 2 + Math.floor(this.random() * 2) : 1 + Math.floor(this.random() * 2));
+      this.setBlock(x, y, z, BLOCK.SWEET_BERRY_BUSH + 1);
+      return;
+    }
     if (msg.item === ITEM.EYE_OF_ENDER && id === BLOCK.END_PORTAL_FRAME) {
       // an eye in every frame around the 3 x 3 opens the portal
       this.setBlock(x, y, z, BLOCK.END_PORTAL_FRAME + 1);
@@ -1126,6 +1140,10 @@ export class GameHost {
       if (!near) continue;
       const id = this.world.getBlock(x, y, z);
       const def = BLOCKS[id];
+      if (def.berry !== undefined) {
+        if (def.berry < 3 && this.random() < dt / 60) this.setBlock(x, y, z, id + 1); // sweet berries ripen
+        continue;
+      }
       if (def.wart !== undefined) {
         // nether wart grows slowly, without water or light
         if (def.wart < 3 && this.random() < dt / 60) this.setBlock(x, y, z, id + 1);
@@ -1167,11 +1185,15 @@ export class GameHost {
       if (!e.tamed) e.temper = Math.min(100, (e.temper || 0) + temper);
       return this.send(p.peerId, { t: 'consume' });
     }
-    if ((BREED_FOOD[e.type] || e.type === 'wolf') && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS && ITEMS[msg.tool]?.dye === undefined) {
+    if ((BREED_FOOD[e.type] || e.type === 'wolf') && e.type !== 'cat' && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS && ITEMS[msg.tool]?.dye === undefined) {
       if (this.feedAnimal(p, e, msg.tool)) this.send(p.peerId, { t: 'consume' });
       return;
     }
-    if (e.type === 'wolf' && e.tamed && e.owner === p.name) { e.sitting = !e.sitting; return; }
+    if (e.type === 'cat' && CAT_FOOD.includes(msg.tool)) {
+      if (e.tamed ? e.owner === p.name && this.feedAnimal(p, e, msg.tool) : this.feedCat(p, e, msg.tool)) this.send(p.peerId, { t: 'consume' });
+      return;
+    }
+    if ((e.type === 'wolf' || e.type === 'cat') && e.tamed && e.owner === p.name) { e.sitting = !e.sitting; return; }
     if (e.type === 'sheep' && msg.tool === ITEM.SHEARS && !e.sheared) {
       e.sheared = true;
       e.regrow = 60 + this.random() * 60;
@@ -2115,7 +2137,13 @@ export class GameHost {
         } else if (target) {
           const [p, dist] = target;
           e.yaw = Math.atan2(-(p.x - e.x), -(p.z - e.z));
-          if (e.type === 'creeper') {
+          const cat = e.type === 'creeper' && this.nearestOf(e, 'cat', 6);
+          if (cat) {
+            // creepers are scared of cats
+            e.yaw = Math.atan2(cat[0].x - e.x, cat[0].z - e.z); // (away from it)
+            e.fuse = 0;
+            targetSpeed = t.speed;
+          } else if (e.type === 'creeper') {
             // creepers walk up to you, hiss, and explode unless you run away
             targetSpeed = dist > 2 ? t.speed : 0;
             if (dist < 3) e.fuse = (e.fuse || 0) + dt;
@@ -2225,7 +2253,13 @@ export class GameHost {
       } else if (wantPassive) {
         if (RABBIT_BIOMES.has(biome) && this.random() < 0.5 && BLOCKS[ground].solid) this.spawnGroup('rabbit', x, y + 1, z, 2 + Math.floor(this.random() * 2));
         else if (WOLF_BIOMES.has(biome) && this.random() < 0.2 && (ground === BLOCK.GRASS || ground === BLOCK.SNOWY_GRASS)) this.spawnGroup('wolf', x, y + 1, z, biome === BIOME.FOREST ? 1 : 4);
-        else if (HORSE_BIOMES.has(biome) && this.random() < 0.15 && ground === BLOCK.GRASS) this.spawnGroup('horse', x, y + 1, z, 2 + Math.floor(this.random() * 5));
+        else if ((biome === BIOME.TAIGA || biome === BIOME.SNOWY_TAIGA) && this.random() < 0.25 && BLOCKS[ground].solid) {
+          for (const f of this.spawnGroup('fox', x, y + 1, z, 2 + Math.floor(this.random() * 3))) f.color = biome === BIOME.SNOWY_TAIGA ? 1 : 0;
+        } else if ((biome === BIOME.SNOWY_SLOPES || biome === BIOME.FROZEN_PEAKS || biome === BIOME.STONY_PEAKS) && this.random() < 0.4 && BLOCKS[ground].solid) this.spawnGroup('goat', x, y + 1, z, 1 + Math.floor(this.random() * 3));
+        else if ((biome === BIOME.SNOWY_PLAINS || biome === BIOME.FROZEN_OCEAN) && this.random() < 0.15 && BLOCKS[ground].solid) {
+          const bears = this.spawnGroup('polar_bear', x, y + 1, z, 1 + (this.random() < 0.3 ? 1 : 0));
+          if (bears[1]) Object.assign(bears[1], { baby: 1200, halfW: bears[1].halfW / 2, height: bears[1].height / 2 });
+        } else if (HORSE_BIOMES.has(biome) && this.random() < 0.15 && ground === BLOCK.GRASS) this.spawnGroup('horse', x, y + 1, z, 2 + Math.floor(this.random() * 5));
         else if (ground === BLOCK.GRASS) this.spawnGroup(PASSIVE[Math.floor(this.random() * PASSIVE.length)], x, y + 1, z, 2 + Math.floor(this.random() * 3));
       }
     }
@@ -2439,6 +2473,11 @@ export class GameHost {
         }
         const g = this.spawnMob('iron_golem', v.x + 3.5, v.y, v.z + 3.5);
         Object.assign(g, { persist: true, home: [v.x, v.z] });
+        // and a cat or two
+        for (let i = 0; i < 1 + Math.floor(v.beds.length / 4); i++) {
+          const c = this.spawnMob('cat', v.x - 3.5 + i, v.y, v.z - 3.5);
+          c.persist = true;
+        }
       });
     }
   }
@@ -3295,7 +3334,7 @@ export class GameHost {
           : e.type === 'bobber' ? (e.owner << 2) | (e.bite > 0 ? 2 : 0)
           : (e.sheared || e.saddled ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
             (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
-            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting || e.charged ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
+            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting || e.charged || e.sleeping ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
@@ -3353,3 +3392,4 @@ export class GameHost {
 
 // more mobs' behaviour lives in mob-ai.js
 Object.assign(GameHost.prototype, mobAI);
+Object.assign(GameHost.prototype, mobs2);
