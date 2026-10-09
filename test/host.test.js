@@ -349,6 +349,7 @@ test('shears give wool from sheep, which regrows', () => {
   standAtSpawn(host, 'a');
   const p = host.players.get('a');
   const sheep = host.spawnMob('sheep', p.x + 1, p.y, p.z);
+  sheep.color = 0; // (a white one: sheep come in several natural colours)
   host.message('a', { t: 'interact', e: sheep.id, tool: ITEM.SHEARS });
   assert.ok(sheep.sheared);
   assert.ok([...host.entities.values()].some((e) => e.item === BLOCK.WOOL));

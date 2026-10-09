@@ -13,10 +13,11 @@ import { BREED_FOOD } from './mob-ai.js';
 import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, countItem, takeItems, extras } from './inventory.js';
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD, setDials } from './ui.js';
-import { sound } from './sound.js';
+import { Precipitation, lightningBolt } from './weather.js';
+import { sound, setRain } from './sound.js';
 import { blockGeometry, hasBlockModel } from './textures.js';
 import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
-import { BIOMES } from './biomes.js';
+import { BIOMES, BIOME, FROZEN } from './biomes.js';
 import { VERSION } from './version.js';
 import { Particles } from './particles.js';
 import { levelInfo, pointsForLevel } from './xp.js';
@@ -102,6 +103,8 @@ export class Game {
       return new THREE.Vector3(p.x, p.y + this.eyeHeight(), p.z).addScaledVector(f, 1).addScaledVector(right, 0.42).add(new THREE.Vector3(0, 0.3, 0));
     };
     this.particles = new Particles(renderer.scene, textures);
+    this.precipitation = new Precipitation(renderer.scene);
+    this.weather = 'clear';
     this.perspective = 0; // 0 first person, 1 third person behind, 2 third person in front (F5)
     this.bobAmount = 0;
     this.caveTimer = 60;
@@ -141,6 +144,15 @@ export class Game {
       case 'chat': return this.addChat(`<${msg.from}> ${msg.msg}`);
       case 'sys': return this.addChat(msg.msg, 'sys');
       case 'time': this.time = msg.time; return;
+      case 'weather': this.weather = msg.w; return;
+      case 'lightning': {
+        if (this.dim !== 'overworld') return;
+        lightningBolt(this.r.scene, msg.x, msg.y, msg.z);
+        this.r.flash = 1;
+        const d = Math.hypot(msg.x - this.player.x, msg.z - this.player.z);
+        setTimeout(() => sound.thunder(d), Math.min(3000, d * 15)); // sound is slower than light
+        return;
+      }
       case 'mode':
         this.mode = msg.mode;
         if (msg.mode === 'survival') this.player.flying = false;
@@ -230,6 +242,7 @@ export class Game {
     this.world.importEdits(msg.edits);
     this.spawn = msg.spawn;
     this.time = msg.time;
+    this.weather = msg.weather || 'clear';
     this.mode = msg.mode;
     const me = msg.me;
     [this.player.x, this.player.y, this.player.z] = me.pos;
@@ -978,6 +991,15 @@ export class Game {
     }
   }
 
+  // Whether rain is falling on the player (not snow, not in a desert, nothing overhead).
+  inRain() {
+    if (this.dim !== 'overworld' || this.weather === 'clear') return false;
+    const x = Math.floor(this.player.x), z = Math.floor(this.player.z);
+    const biome = this.world.biomeAt(x, z);
+    if (biome === BIOME.DESERT || biome === BIOME.SAVANNA || FROZEN.has(biome)) return false;
+    return this.world.topBlockY(x, z) < this.player.y + 1.6;
+  }
+
   // Which hand holds a shield that right click would raise: 'main', 'off' or null.
   shieldHand() {
     const held = this.held();
@@ -1336,6 +1358,7 @@ export class Game {
       this.onFire = Math.max(this.onFire || 0, 8);
     } else s.fireTimer = 0.5;
     if (pl.inWater && !pl.inLava) this.onFire = 0;
+    if (this.onFire > 0 && this.inRain()) this.onFire = 0; // the rain puts you out
     if (this.onFire > 0) {
       this.onFire -= dt;
       s.burnTimer = (s.burnTimer || 0) + dt;
@@ -1816,7 +1839,13 @@ export class Game {
     const fogTint = this.dim === 'nether' ? NETHER_FOG[this.world.netherBiome(Math.floor(p.x), Math.floor(p.z))] : null;
     this.r.nightVision = !!this.effects.night_vision;
     this.r.blind = !!this.effects.blindness;
+    // weather: the sky greys over as rain comes in, and clears slowly
+    const raining = this.dim === 'overworld' && this.weather !== 'clear';
+    this.r.rain = (this.r.rain ?? 0) + ((raining ? 1 : 0) - (this.r.rain ?? 0)) * Math.min(1, dt * 0.4);
+    this.r.thunder = (this.r.thunder ?? 0) + ((raining && this.weather === 'thunder' ? 1 : 0) - (this.r.thunder ?? 0)) * Math.min(1, dt * 0.4);
     this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking, fogTint);
+    const rainLight = Math.max(0.25, this.entities.lightAt(cam.position.x, cam.position.y, cam.position.z));
+    setRain(this.precipitation.update(dt, cam.position, this.dim === 'overworld' ? this.world : null, raining ? 1 : 0, rainLight) * (p.headInWater ? 0.3 : 1));
     // nausea makes the view sway
     this.r.camera.rotation.z = this.effects.nausea ? Math.sin(performance.now() / 600) * 0.12 : 0;
     this.lightBudget = 1;

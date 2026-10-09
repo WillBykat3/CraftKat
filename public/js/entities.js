@@ -1006,6 +1006,13 @@ export class EntityViews {
         const angry = (v.flags & 8192) !== 0;
         if (v.angry !== angry) { v.angry = angry; v.model.head.children.forEach((c) => { if (c.geometry?.parameters?.depth === 0.02) recolor(c, angry ? 0xc02020 : 0x111111); }); } // angry eyes
       }
+      if (v.mob === 'creeper' && (v.flags & 2048) && !v.aura) {
+        // a charged creeper crackles with a blue glow
+        v.aura = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.95, 0.85), new THREE.MeshBasicMaterial({ color: 0x60a0ff, transparent: true, opacity: 0.35, depthWrite: false }));
+        v.aura.position.y = 0.95;
+        g.add(v.aura);
+      }
+      if (v.aura) v.aura.material.opacity = 0.25 + Math.sin(performance.now() / 90) * 0.12;
       if (v.model.faces) {
         v.model.faces.open.visible = (v.flags & 2) !== 0;
         v.model.faces.shut.visible = !v.model.faces.open.visible;

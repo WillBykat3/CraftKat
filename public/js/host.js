@@ -75,6 +75,7 @@ const HOSTILE = [['zombie', 0.36], ['skeleton', 0.24], ['creeper', 0.19], ['spid
 const RABBIT_BIOMES = new Set([BIOME.DESERT, BIOME.SNOWY_PLAINS, BIOME.SNOWY_TAIGA, BIOME.FLOWER_FOREST, BIOME.MEADOW, BIOME.CHERRY_GROVE]);
 const WOLF_BIOMES = new Set([BIOME.FOREST, BIOME.TAIGA, BIOME.SNOWY_TAIGA]);
 const WATER_BIOMES = new Set([BIOME.OCEAN, BIOME.DEEP_OCEAN, BIOME.WARM_OCEAN, BIOME.FROZEN_OCEAN, BIOME.RIVER, BIOME.FROZEN_RIVER]);
+const DRY_BIOMES = new Set([BIOME.DESERT, BIOME.SAVANNA]); // it never rains (or snows) there
 const REST_TICKS = 72000; // three in-game days awake before phantoms come
 const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
@@ -224,6 +225,9 @@ export class GameHost {
     this.nextPlayerId = 1;
     this.nextEntityId = 1;
     this.time = save.time ?? 1000;
+    // weather: clear, rain or thunder, each lasting a while (seconds), like Minecraft's
+    this.weather = ['clear', 'rain', 'thunder'].includes(save.weather?.kind) && isNum(save.weather.time)
+      ? { kind: save.weather.kind, time: save.weather.time } : { kind: 'clear', time: 600 + this.random() * 6000 };
     // villagers, golems (and later pets) are kept in the save, like Minecraft keeps them in chunks
     for (const saved of this.restoreEntities) {
       if (!saved || !MOB_TYPES[saved.type] || !DIMENSIONS.includes(saved.dim) || ![saved.x, saved.y, saved.z].every(isNum)) continue;
@@ -443,6 +447,7 @@ export class GameHost {
       edits: this.world.exportEdits(),
       spawn: this.save.spawn,
       time: this.time,
+      weather: this.weather.kind,
       mode: p.mode,
       me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed, offhand: p.offhand },
       players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
@@ -963,7 +968,7 @@ export class GameHost {
     p.bed = [msg.x, msg.y, msg.z];
     this.storePlayer(p);
     const t = this.time % DAY_TICKS;
-    if (t < 12542 || t > 23460) {
+    if ((t < 12542 || t > 23460) && this.weather.kind !== 'thunder') {
       this.send(peerId, { t: 'sys', msg: 'Respawn point set. You can only sleep at night.' });
       return;
     }
@@ -1241,7 +1246,7 @@ export class GameHost {
     const findPlayer = (name) => [...this.players.values()].find((q) => q.name.toLowerCase() === String(name).toLowerCase());
     switch (cmd.toLowerCase()) {
       case 'help':
-        return reply('Commands: /list, /seed, /spawn, /gamemode survival|creative [player], /time set day|night, /tp <player>, /locate stronghold, /kill');
+        return reply('Commands: /list, /seed, /spawn, /gamemode survival|creative [player], /time set day|night, /weather clear|rain|thunder, /tp <player>, /locate stronghold, /kill');
       case 'list':
         return reply(`Online (${this.players.size}): ${[...this.players.values()].map((q) => q.name).join(', ')}`);
       case 'seed':
@@ -1277,6 +1282,12 @@ export class GameHost {
         this.broadcast({ t: 'time', time: this.time });
         return this.sys(`Time set to ${args[1]}`);
       }
+      case 'weather': {
+        if (!allowed) return reply('Only the host can change the weather in this world.');
+        if (!['clear', 'rain', 'thunder'].includes(args[0])) return reply('Usage: /weather clear|rain|thunder');
+        this.setWeather(args[0], Number(args[1]) > 0 ? Number(args[1]) : undefined);
+        return this.sys(`Weather set to ${args[0]}`);
+      }
       case 'tp': {
         if (!allowed) return reply('Only the host can teleport in this world.');
         const target = findPlayer(args.join(' '));
@@ -1305,6 +1316,72 @@ export class GameHost {
     if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;
     if (msg.offhand !== undefined && (msg.offhand === null || validStack(msg.offhand))) p.offhand = msg.offhand;
     this.storePlayer(p);
+  }
+
+  // ---------- weather ----------
+  // Clear spells last 10 minutes to 2.5 hours, rain 10-20 minutes; a quarter of rains are
+  // thunderstorms, with lightning striking near players.
+  tickWeather(dt) {
+    const w = this.weather;
+    w.time -= dt;
+    if (w.time <= 0) {
+      if (w.kind === 'clear') this.setWeather(this.random() < 0.25 ? 'thunder' : 'rain');
+      else this.setWeather('clear');
+    }
+    if (w.kind !== 'thunder') return;
+    for (const p of this.players.values()) {
+      if (p.dim !== 'overworld' || this.random() > dt / 8) continue; // about one strike every 8 seconds near each player
+      const a = this.random() * Math.PI * 2, d = this.random() * 64;
+      this.inDim('overworld', () => this.lightning(Math.floor(p.x + Math.cos(a) * d), Math.floor(p.z + Math.sin(a) * d)));
+    }
+  }
+
+  setWeather(kind, seconds) {
+    const w = this.weather;
+    w.kind = kind;
+    w.time = seconds ?? (kind === 'clear' ? 600 + this.random() * 8400 : 600 + this.random() * 600);
+    this.broadcast({ t: 'weather', w: kind });
+    this.dirty = true;
+  }
+
+  // Whether rain falls on this spot right now: raining, in a biome where it rains (not snows),
+  // with nothing overhead.
+  rainsAt(x, y, z) {
+    if (this.weather.kind === 'clear' || !this.world.hasSky || this.ctx !== 'overworld') return false;
+    const bx = Math.floor(x), bz = Math.floor(z);
+    const biome = this.world.biomeAt(bx, bz);
+    if (DRY_BIOMES.has(biome) || FROZEN.has(biome)) return false;
+    return this.world.topBlockY(bx, bz) < y;
+  }
+
+  // A bolt of lightning at the top of this column: it sets fire to the ground, hurts and burns
+  // whatever is close, and changes some mobs (charged creepers, pigs into zombified piglins,
+  // villagers into witches).
+  lightning(x, z) {
+    const y = this.world.topBlockY(x, z);
+    if (y < 1 || y >= HEIGHT - 2) return;
+    const biome = this.world.biomeAt(x, z);
+    if (DRY_BIOMES.has(biome)) return;
+    this.broadcastHere({ t: 'lightning', x: x + 0.5, y: y + 1, z: z + 0.5 });
+    const ground = this.world.getBlock(x, y, z);
+    if (BLOCKS[ground].solid && !BLOCKS[ground].liquid && this.world.getBlock(x, y + 1, z) === BLOCK.AIR) this.setBlock(x, y + 1, z, BLOCK.FIRE);
+    const near = (q) => Math.hypot(q.x - (x + 0.5), q.z - (z + 0.5)) < 3 && Math.abs(q.y - (y + 1)) < 4;
+    for (const p of this.here()) {
+      if (!near(p) || p.dead) continue;
+      this.send(p.peerId, { t: 'hurt', amount: 5, cause: 'was struck by lightning', fire: 8 });
+    }
+    for (const e of [...this.entities.values()]) {
+      if (e.dim !== this.ctx || !near(e) || !isMob(e)) continue;
+      if (e.type === 'creeper') { e.charged = true; e.persist = true; continue; }
+      if (e.type === 'pig' || e.type === 'villager') {
+        this.entities.delete(e.id);
+        this.broadcastHere({ t: 'mobdeath', e: e.id });
+        this.spawnMob(e.type === 'pig' ? 'zombified_piglin' : 'witch', e.x, e.y, e.z);
+        continue;
+      }
+      e.fireTime = Math.max(e.fireTime || 0, 8);
+      this.hurtMob(e, 5, 0, 0, null, 0);
+    }
   }
 
   // ---------- fishing ----------
@@ -1339,7 +1416,7 @@ export class GameHost {
       e.vy = under ? Math.min(e.vy + 20 * dt, 1.5) : Math.max(e.vy - 10 * dt, -1);
       const drag = Math.exp(-4 * dt);
       e.vx *= drag; e.vz *= drag;
-      if (e.wait === null) e.wait = Math.max(1, 5 + this.random() * 25 - 5 * e.lure);
+      if (e.wait === null) e.wait = Math.max(1, (5 + this.random() * 25 - 5 * e.lure) * (this.rainsAt(e.x, e.y, e.z) ? 0.8 : 1));
       if (e.bite > 0) {
         e.bite -= dt;
         if (e.bite <= 0) e.wait = null; // it got away
@@ -1669,6 +1746,7 @@ export class GameHost {
     this.tickEndFight();
     this.ctx = 'overworld';
     this.tickSleep(dt);
+    this.tickWeather(dt);
 
     this.acc.spawn += dt;
     if (this.acc.spawn >= 1) {
@@ -1721,6 +1799,7 @@ export class GameHost {
         this.time = 0;
         this.sleepTimer = 0;
         for (const p of players) { p.sleeping = false; p.rest = 0; }
+        if (this.weather.kind !== 'clear') this.setWeather('clear');
         this.broadcast({ t: 'time', time: this.time });
         this.broadcast({ t: 'wake' });
         this.sys('Good morning!');
@@ -1823,7 +1902,8 @@ export class GameHost {
       }
 
       // zombies and skeletons burn in sunlight when nothing is above them
-      if (t.burns && this.world.hasSky && light > 0.6 && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y &&
+      if (e.fireTime > 0 && this.rainsAt(e.x, e.y, e.z)) e.fireTime = 0; // the rain puts it out
+      if (t.burns && this.world.hasSky && light > 0.6 && !this.rainsAt(e.x, e.y, e.z) && this.world.topBlockY(Math.floor(e.x), Math.floor(e.z)) < e.y &&
         fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.2), Math.floor(e.z))) !== 'water') {
         e.fireTime = Math.max(e.fireTime || 0, 2); // catches fire (see above)
       }
@@ -1856,7 +1936,7 @@ export class GameHost {
             if (e.fuse >= CREEPER_FUSE) {
               this.entities.delete(e.id);
               this.broadcast({ t: 'mobdeath', e: e.id });
-              this.explode(e.x, e.y + 0.5, e.z, 3);
+              this.explode(e.x, e.y + 0.5, e.z, e.charged ? 6 : 3); // a charged creeper's blast is twice as big
               continue;
             }
           } else if (e.type === 'skeleton' || e.type === 'stray') {
@@ -1919,7 +1999,7 @@ export class GameHost {
   }
 
   spawnMobs() {
-    const light = daylight(this.time);
+    const light = daylight(this.time) * (this.weather.kind === 'thunder' ? 0.25 : this.weather.kind === 'rain' ? 0.8 : 1);
     for (const p of this.players.values()) {
       this.ctx = p.dim;
       const counts = { passive: 0, hostile: 0, squid: 0, bat: 0 };
@@ -2417,6 +2497,7 @@ export class GameHost {
       const [x, y, z] = k.split(',').map(Number);
       if (this.world.getBlock(x, y, z) !== BLOCK.FIRE) { fires.delete(k); d.fireAge.delete(k); continue; }
       if (!players.some((p) => Math.abs(p.x - x) < 128 && Math.abs(p.z - z) < 128)) continue;
+      if (this.rainsAt(x + 0.5, y, z + 0.5) && this.random() < 0.6) { this.setBlock(x, y, z, BLOCK.AIR); continue; } // rain puts fires out
       const below = this.world.getBlock(x, y - 1, z);
       const eternal = below === BLOCK.NETHERRACK || below === BLOCK.MAGMA_BLOCK || (this.ctx === 'end' && below === BLOCK.BEDROCK);
       const age = Math.min(15, (d.fireAge.get(k) || 0) + Math.floor(this.random() * 3));
@@ -2977,7 +3058,7 @@ export class GameHost {
           : e.type === 'bobber' ? (e.owner << 2) | (e.bite > 0 ? 2 : 0)
           : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
             (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
-            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
+            (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting || e.charged ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);
       }
       // an empty list is still sent once, so the client removes what it was showing
@@ -2992,6 +3073,7 @@ export class GameHost {
     const o = this.dims.overworld;
     this.save.edits = o.world.exportEdits();
     this.save.time = this.time;
+    this.save.weather = { ...this.weather };
     this.save.furnaces = Object.fromEntries(o.furnaces);
     this.save.chests = Object.fromEntries(o.chests);
     this.save.brewers = Object.fromEntries(o.brewers);

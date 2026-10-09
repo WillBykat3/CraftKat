@@ -93,6 +93,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Obsidian**: water meeting a lava source (it needs a diamond pickaxe to mine)
 - **Chests** for storage, **beds** to sleep through the night and set your respawn point, **buckets** for water, **shears** for wool
 - **Day and night**: a 20-minute day with sunrise, sunset, stars and drifting 3D clouds
+- **Weather**: rain (snow in cold biomes, nothing in deserts and savannas) comes and goes, greying the sky; rain puts
+  out fires and burning players and mobs, and stops zombies burning in the day. Thunderstorms are dark enough for
+  monsters, let you sleep, and bring lightning, which starts fires, hurts, charges creepers (twice the blast) and turns
+  pigs into zombified piglins and villagers into witches. Sleeping clears the weather; `/weather clear|rain|thunder`
 - **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
   screen, view bobbing, third-person view (F5), calm generated piano music and cave sounds
 - **Real lighting**: caves are dark, torches light them up, smooth shading
@@ -116,7 +120,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts, weather and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no hoglins, piglin brutes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
@@ -141,6 +145,9 @@ colour rather than mixing; only the poppy, dandelion and cornflower exist among 
 
 **Offhand differences from Minecraft:** you can't eat, drink, throw or fish with your offhand, other players don't
 see what's in it, and axes don't knock shields out of your hands; banners can't be put on shields.
+
+**Weather differences from Minecraft:** snow doesn't pile up and water doesn't freeze, rain doesn't fill cauldrons,
+there are no lightning rods, and it rains everywhere at once (and stays dry in the Nether and the End, as in Minecraft).
 
 **Fishing differences from Minecraft:** there are no fish swimming in the water and no fishing particles to watch
 for, the bobber can't hook mobs or items, rain doesn't speed up bites, and name tags and saddles don't do anything yet.
@@ -226,7 +233,7 @@ Follow **[SETUP-LOGIN.md](SETUP-LOGIN.md)** once (about 10 minutes, free). After
 Click **📖 Recipe Book** in a crafting screen to see every recipe; click one to fill the grid (Shift+click for as many as you can make).
 
 **Commands:** `/help`, `/list`, `/seed`, `/spawn`, `/kill`, and for the host (or everyone, if the world allows it):
-`/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/tp <player>` (also into another
+`/gamemode survival|creative [player]`, `/time set day|noon|night|midnight`, `/weather clear|rain|thunder`, `/tp <player>` (also into another
 dimension), `/locate stronghold`.
 
 **Options** (title screen or Esc menu): render distance, FOV, brightness, sensitivity, master volume, music,

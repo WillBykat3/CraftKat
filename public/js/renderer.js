@@ -483,21 +483,25 @@ export class Renderer {
     }
     const underwater = medium === 'water';
     const t = ((time % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
-    const day = daylightAt(t);
+    // rain makes it darker (thunderstorms even more), and lightning lights it up for a moment
+    const wet = this.rain ?? 0, storm = this.thunder ?? 0;
+    this.flash = Math.max(0, (this.flash ?? 0) - 0.08);
+    const day = Math.min(1, daylightAt(t) * (1 - wet * 0.3 - storm * 0.45) + this.flash);
     const skyFactor = 4 / 15 + day * 11 / 15; // night sky light ~4, like Minecraft
     this.uniforms.skyFactor.value = skyFactor;
     this.skyFactor = skyFactor;
 
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day);
     const sunsetAmount = Math.max(0, 1 - Math.abs(t - 12900) / 1300) + Math.max(0, 1 - Math.abs(t - 23100) / 1300);
-    sky.lerp(SKY_SUNSET, Math.min(0.55, sunsetAmount * 0.55));
+    sky.lerp(SKY_SUNSET, Math.min(0.55, sunsetAmount * 0.55) * (1 - wet));
+    if (wet > 0) { const grey = (sky.r + sky.g + sky.b) / 3 * 0.85; sky.lerp(new THREE.Color(grey, grey, grey * 1.05), wet * 0.8); }
     const fog = medium === 'lava' ? LAVA_FOG : underwater ? WATER_FOG : sky;
     this.scene.background = sky;
     const srgb = {};
     fog.getRGB(srgb, THREE.SRGBColorSpace);
     this.uniforms.fogColor.value.set(srgb.r, srgb.g, srgb.b);
     const far = this.renderDistance * CHUNK;
-    this.uniforms.fogNear.value = medium === 'lava' ? 0 : underwater ? 2 : far * 0.6;
+    this.uniforms.fogNear.value = medium === 'lava' ? 0 : underwater ? 2 : far * (0.6 - wet * 0.25);
     this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : underwater ? 18 : far * 0.95;
 
     // sun travels east to west; t=0 is sunrise
@@ -510,7 +514,9 @@ export class Renderer {
     this.moon.lookAt(cam);
     this.stars.position.copy(cam);
     this.stars.rotation.z = angle;
-    this.stars.material.opacity = Math.max(0, 1 - day * 1.5);
+    this.stars.material.opacity = Math.max(0, 1 - day * 1.5) * (1 - wet);
+    this.sun.material.opacity = this.moon.material.opacity = 1 - wet;
+    this.sun.material.transparent = this.moon.material.transparent = true;
     const drift = performance.now() / 1000 * 0.6; // blocks; clouds drift slowly west to east
     this.clouds.position.set(cam.x, this.cloudY, cam.z);
     this.cloudUniforms.offset.value.set(drift / 768, 0);

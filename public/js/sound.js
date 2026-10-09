@@ -27,6 +27,28 @@ export function setVolume(v) {
   volume = Math.max(0, Math.min(1, v));
 }
 
+// The steady hiss of rain (level 0 = silent), looped filtered noise.
+let rainNode = null;
+export function setRain(level) {
+  const a = ctx; // (only once sound has started; rain alone doesn't start it)
+  if (!a) return;
+  if (!rainNode) {
+    if (level <= 0) return;
+    const src = a.createBufferSource();
+    src.buffer = noise;
+    src.loop = true;
+    const filter = a.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1400;
+    const g = a.createGain();
+    g.gain.value = 0;
+    src.connect(filter).connect(g).connect(a.destination);
+    src.start();
+    rainNode = g;
+  }
+  rainNode.gain.setTargetAtTime(Math.max(0, level) * 0.12 * volume, a.currentTime, 0.5);
+}
+
 // filtered noise burst
 function burst({ freq, q = 1, duration, gain, type = 'bandpass' }) {
   const a = audio();
@@ -97,6 +119,13 @@ export const sound = {
   // a lit fuse
   hiss() { burst({ freq: 5000, q: 0.6, duration: 1.2, gain: 0.25, type: 'highpass' }); },
   // a bow being released
+  // thunder: a crack when close, a long low rumble when far (distance in blocks)
+  thunder(distance = 50) {
+    const near = distance < 24;
+    if (near) burst({ freq: 2500, q: 0.5, duration: 0.25, gain: 0.5, type: 'highpass' });
+    burst({ freq: near ? 300 : 120, q: 0.4, duration: near ? 2.5 : 4, gain: near ? 0.8 : 0.5, type: 'lowpass' });
+    setTimeout(() => burst({ freq: 90, q: 0.4, duration: 3, gain: 0.35, type: 'lowpass' }), 600);
+  },
   shieldBlock() { burst({ freq: 700, q: 2, duration: 0.15, gain: 0.4, type: 'lowpass' }); tone({ freq: 260, endFreq: 200, duration: 0.12, gain: 0.15, type: 'square' }); },
   cast() { burst({ freq: 1500, q: 1, duration: 0.2, gain: 0.15, type: 'highpass' }); },
   bow() { burst({ freq: 2200, q: 2, duration: 0.15, gain: 0.25 }); tone({ freq: 500, endFreq: 200, duration: 0.12, gain: 0.08, type: 'triangle' }); },
