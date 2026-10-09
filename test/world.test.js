@@ -210,10 +210,10 @@ function findBiomes(t, wanted) {
   return found;
 }
 
-test('version 3: tall terrain with sea level 63 (shown y), bedrock and deepslate at the bottom', () => {
+test('version 3: tall terrain with sea level 63 (shown y), up to 320, bedrock and deepslate at the bottom', () => {
   const w = new World(2024, 3);
   assert.equal(w.seaLevel - w.yOffset, 63);
-  assert.equal(HEIGHT - w.yOffset, 192);
+  assert.equal(HEIGHT - w.yOffset, 320); // (the build limit, like Minecraft's)
   const data = w.getChunk(0, 0);
   for (let i = 0; i < CHUNK * CHUNK; i++) assert.equal(data[i], BLOCK.BEDROCK);
   let deepslate = 0;
@@ -225,7 +225,7 @@ test('version 3: tall terrain with sea level 63 (shown y), bedrock and deepslate
     const h = w.heightAt(x, z) - w.yOffset;
     lo = Math.min(lo, h); hi = Math.max(hi, h);
   }
-  assert.ok(lo < 35 && hi > 150 && hi < 192, `heights ${lo}..${hi}`);
+  assert.ok(lo < 35 && hi > 150 && hi < 310, `heights ${lo}..${hi}`);
 });
 
 test('version 3: oceans fill with water (or ice) up to sea level', () => {

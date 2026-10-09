@@ -62,7 +62,7 @@ export class Game {
       yaw: 0, pitch: 0, onGround: false, flying: false, sneaking: false, sprinting: false,
       inWater: false, headInWater: false, fallStart: null,
     };
-    this.stats = { health: 20, food: 20, air: MAX_AIR, exhaustion: 0, regen: 0, starve: 0, invuln: 0, hurtFlash: false, xpTotal: 0, xpLevel: 0, xpProgress: 0 };
+    this.stats = { health: 20, food: 20, saturation: 5, air: MAX_AIR, exhaustion: 0, regen: 0, starve: 0, invuln: 0, hurtFlash: false, xpTotal: 0, xpLevel: 0, xpProgress: 0 };
     this.mode = 'survival';
     this.inv = new Array(INVENTORY_SIZE).fill(null);
     this.armor = [null, null, null, null]; // helmet, chestplate, leggings, boots
@@ -266,6 +266,7 @@ export class Game {
     else this.giveCreativeStarter();
     this.stats.health = me.health ?? 20;
     this.stats.food = me.food ?? 20;
+    this.stats.saturation = typeof me.saturation === 'number' ? me.saturation : 5;
     this.stats.xpTotal = Number.isInteger(me.xp) ? me.xp : 0;
     this.enchSeed = Number.isInteger(me.enchSeed) ? me.enchSeed : Math.floor(Math.random() * 2 ** 31);
     this.armor = Array.isArray(me.armor) && me.armor.length === 4 ? me.armor.map((s) => (s ? { ...s } : null)) : [null, null, null, null];
@@ -490,6 +491,7 @@ export class Game {
   }
 
   showPause(show) {
+    this.paused = show;
     $('pause').classList.toggle('hidden', !show);
     if (show) this.onPause?.();
   }
@@ -1377,7 +1379,7 @@ export class Game {
   respawn() {
     this.dead = false;
     $('death').classList.add('hidden');
-    Object.assign(this.stats, { health: 20, food: 20, air: MAX_AIR, exhaustion: 0, invuln: 1 });
+    Object.assign(this.stats, { health: 20, food: 20, saturation: 5, air: MAX_AIR, exhaustion: 0, invuln: 1 });
     const p = this.player;
     [p.x, p.y, p.z] = this.spawn;
     p.vx = p.vy = p.vz = 0;
@@ -1432,10 +1434,24 @@ export class Game {
     } else this.hotTimer = 0;
 
     // hunger
-    while (s.exhaustion >= 4) { s.exhaustion -= 4; s.food = Math.max(0, s.food - 1); this.invDirty = true; }
-    if (s.food >= 18 && s.health < 20) {
+    // (like Minecraft: exhaustion uses up saturation first, then the hunger bar; with a full
+    // bar and saturation left you heal every half second, otherwise every 4 seconds at 9+ drumsticks)
+    while (s.exhaustion >= 4) {
+      s.exhaustion -= 4;
+      if (s.saturation > 0) s.saturation = Math.max(0, s.saturation - 1);
+      else s.food = Math.max(0, s.food - 1);
+      this.invDirty = true;
+    }
+    const fast = s.food >= 20 && s.saturation > 0;
+    if ((fast || s.food >= 18) && s.health < 20) {
       s.regen += dt;
-      if (s.regen >= 4) { s.regen = 0; s.health = Math.min(20, s.health + 1); s.exhaustion += 6; this.invDirty = true; }
+      if (s.regen >= (fast ? 0.5 : 4)) {
+        s.regen = 0;
+        const use = fast ? Math.min(6, s.saturation) : 6;
+        s.health = Math.min(20, s.health + (fast ? use / 6 : 1));
+        s.exhaustion += use;
+        this.invDirty = true;
+      }
     } else s.regen = 0;
     if (s.food === 0) {
       s.starve += dt;
@@ -1499,6 +1515,7 @@ export class Game {
       return;
     }
     s.food = Math.min(20, s.food + foodValue(held.id));
+    s.saturation = Math.min(s.food, (s.saturation || 0) + (ITEMS[held.id].saturation ?? foodValue(held.id) * 0.6));
     for (const [name, amp, seconds, chance = 1] of FOOD_EFFECTS[held.id] || []) if (Math.random() < chance) this.addEffect(name, amp, seconds);
     takeOne(this.inv, this.selected);
   }
@@ -1507,7 +1524,7 @@ export class Game {
   addEffect(name, amp, seconds) {
     if (name === 'instant_health') { this.stats.health = Math.min(20, this.stats.health + 4 * 2 ** amp); this.invDirty = true; return; }
     if (name === 'instant_damage') { this.damage(6 * 2 ** amp, 'was killed by magic'); return; }
-    if (name === 'saturation') { this.stats.food = Math.min(20, this.stats.food + amp + 1); return; }
+    if (name === 'saturation') { const s = this.stats; s.food = Math.min(20, s.food + amp + 1); s.saturation = Math.min(s.food, s.saturation + 2 * (amp + 1)); return; }
     const cur = this.effects[name];
     if (cur && (cur.amp > amp || (cur.amp === amp && cur.time > seconds))) return;
     this.effects[name] = { amp, time: seconds };
@@ -1810,7 +1827,8 @@ export class Game {
   // ---------- main loop ----------
   update(rawDt) {
     if (!this.playing || !this.world) return;
-    const dt = Math.min(0.25, rawDt);
+    // paused alone: time stands still for you too (hunger, effects, falling)
+    const dt = this.paused && this.canPause?.() ? 0 : Math.min(0.25, rawDt);
     const p = this.player;
 
     this.physicsTime += dt;
@@ -1995,7 +2013,7 @@ export class Game {
     if (this.invDirty && this.saveTimer > 2) {
       this.saveTimer = 0;
       this.invDirty = false;
-      this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
+      this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, saturation: this.stats.saturation, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     }
 
     // HUD
@@ -2111,7 +2129,7 @@ export class Game {
 
   // Leaving the world: tell the host our final state.
   quit() {
-    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
+    if (this.playing) this.send({ t: 'save', inv: this.inv, armor: this.armor, offhand: this.offhand, health: this.stats.health, food: this.stats.food, saturation: this.stats.saturation, xp: this.stats.xpTotal, enchSeed: this.enchSeed });
     this.playing = false;
     this.closed = true;
     this.screen.close();

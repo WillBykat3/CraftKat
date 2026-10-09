@@ -32,6 +32,7 @@ let game = null;
 let host = null;
 let hostNet = null;
 let ticker = null;
+let friends = 0; // players connected to the world we host
 let autosave = null;
 let currentSave = null;
 
@@ -272,6 +273,7 @@ async function playWorld(id) {
   }
   if (!save) { loading(null); return; }
   currentSave = save;
+  friends = 0;
   host = new GameHost(save, (peer, msg) => hostNet.deliver(peer, msg), {
     onLog: (text) => console.log('[world]', text),
   });
@@ -289,6 +291,7 @@ async function playWorld(id) {
   ticker.onmessage = () => {
     if (!host) return;
     const now = performance.now();
+    if (game?.paused && friends === 0) { last = now; return; } // the pause menu stops the world when you play alone
     let dt = Math.min((now - last) / 1000, 1);
     last = now;
     while (dt > 0) {
@@ -322,6 +325,7 @@ $('btn-open').addEventListener('click', () => {
   if (!currentSave.roomId) currentSave.roomId = randomRoomId();
   const password = $('invite-password').value;
   const updateCount = (n) => {
+    friends = n;
     $('invite-status').textContent = n === 0 ? 'Waiting for friends to join…' : `${n} friend${n === 1 ? '' : 's'} connected`;
     $('friends-badge').textContent = `👥 ${n + 1} playing`;
     $('friends-badge').classList.toggle('hidden', n === 0);
@@ -394,6 +398,7 @@ function startGame(conn, isHost) {
   renderer.clearChunks();
   game = new Game({ renderer, textures, conn, isHost, settings, onQuit: (reason) => quitToTitle(reason) });
   game.onPause = () => $('btn-invite').classList.toggle('hidden', !isHost);
+  game.canPause = () => isHost && friends === 0;
   $('menus').classList.add('hidden');
   $('hud').classList.remove('hidden');
   $('invite-panel').classList.add('hidden');

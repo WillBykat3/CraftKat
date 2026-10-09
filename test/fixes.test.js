@@ -78,3 +78,27 @@ test("trees don't grow inside villages", () => {
   for (let x = v.x - 30; x <= v.x + 30; x++) for (let z = v.z - 30; z <= v.z + 30; z++) for (let y = v.y; y < v.y + 20; y++) if (/Leaves/.test(BLOCKS[w.getBlock(x, y, z)].name)) leaves++;
   assert.equal(leaves, 0);
 });
+
+test('mobs forget their grudge when the player dies; saturation is saved', () => {
+  const { host, p } = setup();
+  const piglin = host.spawnMob('zombified_piglin', 3.5, 200, 0.5);
+  piglin.angryAt = 'Steve'; piglin.angry = true;
+  const wolf = host.spawnMob('wolf', -3.5, 200, 0.5);
+  wolf.angryAt = 'Steve';
+  host.message('a', { t: 'died', items: [], cause: 'was slain by Zombified Piglin', xp: 0 });
+  assert.equal(piglin.angryAt, null);
+  assert.equal(piglin.angry, false);
+  assert.equal(wolf.angryAt, null);
+  host.message('a', { t: 'save', saturation: 3.5, food: 18 });
+  host.storePlayer(p);
+  assert.equal(host.save.players.steve.saturation, 3.5);
+});
+
+test('you can build up to y 319 and mountains are no longer cut flat', async () => {
+  const { HEIGHT } = await import('../public/js/blocks.js');
+  const w = new World(2024, 3);
+  assert.equal(HEIGHT - w.yOffset, 320);
+  let max = 0;
+  for (let x = -4000; x <= 4000; x += 41) for (let z = -4000; z <= 4000; z += 41) max = Math.max(max, w.terrain.column(x, z).h - w.yOffset);
+  assert.ok(max > 182, `peaks reach ${max}`);
+});

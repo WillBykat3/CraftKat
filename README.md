@@ -9,14 +9,15 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 ## What's in it
 
 - **Logins**: everyone needs an account to play, and only you can create them, on your private admin page (see below)
-- **Big, tall worlds** (y −64 to 191, sea level 63, like Minecraft): oceans, rivers, beaches, rolling hills and
+- **Big, tall worlds** (y −64 to 319, sea level 63, like Minecraft): oceans, rivers, beaches, rolling hills and
   snowy mountain peaks, with 27 biomes: plains, forests, birch and dark forests, taiga, snowy plains, desert, savanna,
   jungle, swamp, cherry groves, meadows and more. Grass, leaves and water change colour from biome to biome.
 - **Trees and plants**: oak, birch, spruce, acacia, dark oak, jungle and cherry trees; cactus, sugar cane, ferns,
   dead bushes, flowers, tall grass, and ice on frozen water
 - **Caves and ores**: winding tunnels and big caverns with lava lakes at the bottom, coal, iron, copper, gold,
   redstone, lapis, diamond and (in mountains) emerald ore, deepslate below y 0, granite, diorite and andesite
-- **Survival mode**: health, hunger, fall damage, drowning, death and respawning (you drop your items)
+- **Survival mode**: health, hunger with Minecraft's saturation (each food has its own; a full bar heals you quickly),
+  fall damage, drowning, death and respawning (you drop your items). The pause menu stops the world while you play alone
 - **Mining and tools**: blocks take time to break (with flying bits of block), the right tool is faster,
   wooden → stone → iron → diamond tools with durability, some ores need a better pickaxe
 - **Experience**: orbs from mobs, ores and smelting, an XP bar and levels; dying drops some of it

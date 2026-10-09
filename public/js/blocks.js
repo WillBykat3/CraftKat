@@ -2,7 +2,7 @@
 // IDs are saved in worlds, so only ever append new entries; never reorder.
 
 export const CHUNK = 16;    // chunk width/depth in blocks
-export const HEIGHT = 256;  // world height in blocks (generator 3 shows y as -64..191)
+export const HEIGHT = 384;  // world height in blocks (generator 3 shows y as -64..319, like Minecraft)
 export const SEA_LEVEL = 30; // sea level of generator versions 1-2; see World.seaLevel
 export const ITEM_BASE = 256; // ids below this are blocks, from here on items (up to 999)
 export const HIGH_BLOCKS = 1000; // later blocks: ids 1000 to MAX_BLOCK - 1 (chunks store 16-bit ids)
@@ -404,7 +404,7 @@ item(280, 'Raw Porkchop', { icon: 'raw_porkchop', food: 3 });
 item(281, 'Cooked Porkchop', { icon: 'cooked_porkchop', food: 8 });
 item(282, 'Raw Beef', { icon: 'raw_beef', food: 3 });
 item(283, 'Steak', { icon: 'steak', food: 8 });
-item(284, 'Rotten Flesh', { icon: 'rotten_flesh', food: 2 });
+item(284, 'Rotten Flesh', { icon: 'rotten_flesh', food: 4 });
 item(285, 'Bread', { icon: 'bread', food: 5 });
 item(286, 'Leather', { icon: 'leather' });
 item(287, 'Raw Copper', { icon: 'raw_copper' });
@@ -748,3 +748,10 @@ export function otherBedHalf(id, x, y, z) {
   const b = B[id], [dx, , dz] = FACING[b.facing];
   return b.head ? [x - dx, y, z - dz] : [x + dx, y, z + dz];
 }
+
+// Saturation each food gives (Minecraft's values): it's used up before the hunger bar.
+const SATURATION = {
+  279: 2.4, 280: 1.8, 281: 12.8, 282: 1.8, 283: 12.8, 284: 0.8, 285: 6, 352: 3.2, 355: 1.2, 357: 14.4, 360: 0.2, 362: 9.6,
+  367: 1.8, 368: 6, 388: 0.4, 389: 6, 390: 0.4, 391: 9.6, 392: 0.2, 292: 1.2, 293: 7.2, 294: 1.2, 295: 9.6, 327: 3.6, 328: 0.6, 329: 6,
+};
+for (const [id, sat] of Object.entries(SATURATION)) if (I[id]) I[id].saturation = sat;

@@ -342,6 +342,7 @@ export class GameHost {
       inv: p.inv ?? prev.inv ?? null,
       health: p.health ?? prev.health ?? 20,
       food: p.food ?? prev.food ?? 20,
+      saturation: p.saturation ?? prev.saturation ?? 5,
       bed: p.bed ?? prev.bed ?? null,
       xp: p.xp ?? prev.xp ?? 0,
       armor: p.armor ?? prev.armor ?? null,
@@ -436,6 +437,7 @@ export class GameHost {
       inv: saved?.inv ?? null,
       health: saved?.health ?? 20,
       food: saved?.food ?? 20,
+      saturation: saved?.saturation ?? 5,
       bed: saved?.bed ?? null,
       xp: saved?.xp ?? 0,
       armor: saved?.armor ?? null,
@@ -462,7 +464,7 @@ export class GameHost {
       time: this.time,
       weather: this.weather.kind,
       mode: p.mode,
-      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed, offhand: p.offhand },
+      me: { pos: [p.x, p.y, p.z], rot: [p.yaw, p.pitch], inv: p.inv, health: p.health, food: p.food, saturation: p.saturation, bed: p.bed, xp: p.xp, armor: p.armor, enchSeed: p.enchSeed, offhand: p.offhand },
       players: this.here().filter((q) => q !== p).map((q) => this.playerInfo(q)),
     });
     this.broadcastHere({ t: 'join', ...this.playerInfo(p) }, peerId);
@@ -799,6 +801,14 @@ export class GameHost {
 
   onDied(p, msg) {
     p.dead = true;
+    // mobs forget a grudge against someone who died
+    for (const e of this.entities.values()) {
+      if (e.angryAt !== p.name) continue;
+      e.angryAt = null;
+      e.angry = false;
+      e.angerTime = undefined;
+      e.target = null;
+    }
     if (Array.isArray(msg.items)) {
       for (const s of msg.items.slice(0, 40)) {
         if (validStack(s) && s) this.spawnItem(p.x, p.y + 0.5, p.z, s.id, s.count, s.dur, undefined, extrasOf(s));
@@ -1358,6 +1368,7 @@ export class GameHost {
     if (Array.isArray(msg.inv) && msg.inv.length === 36 && msg.inv.every(validStack)) p.inv = msg.inv;
     if (isNum(msg.health)) p.health = Math.max(0, Math.min(20, msg.health));
     if (isNum(msg.food)) p.food = Math.max(0, Math.min(20, msg.food));
+    if (isNum(msg.saturation)) p.saturation = Math.max(0, Math.min(20, msg.saturation));
     if (isInt(msg.xp) && msg.xp >= 0 && msg.xp < 1e7) p.xp = msg.xp;
     if (validArmor(msg.armor)) p.armor = msg.armor;
     if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;

@@ -185,6 +185,8 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
             const [dx, dy, dz] = face.dir;
             const nid = get(x + dx, y + dy, z + dz);
             if (same(nid) || OPAQUE[nid] || (kind === 'water' && nid === BLOCK.ICE)) continue;
+            // farmland and paths cover the side of the water next to them (drawing it made the two flicker)
+            if (dy === 0 && (BLOCKS[nid].shape === 'farmland' || BLOCKS[nid].shape === 'path')) continue;
             const [u0, v0, u1, v1] = uvOf(def.tex[face.slot]);
             const ls = skyAt(x + dx, y + dy, z + dz);
             const lb = blockAt(x + dx, y + dy, z + dz);
