@@ -813,7 +813,7 @@ export class EntityViews {
     animateLimbs(v, Math.hypot(p.x - v.last[0], p.z - v.last[1]), Math.max(dt, 1e-3));
     if (this.selfSitting) sitPose(v.model);
     v.last = [p.x, p.z];
-    const l = this.lightAt(p.x, p.y + 1.6, p.z);
+    const l = this.lit(v, p.x, p.y + 1.6, p.z, dt);
     this.setMaterialTint(g, l, l, l);
   }
 
@@ -959,6 +959,18 @@ export class EntityViews {
     return best;
   }
 
+  // Light for a view: eases towards the light where it stands, and keeps the
+  // last value while the light there hasn't been worked out yet (no flicker)
+  // (the brighter of two probes half a block apart, so a mob bobbing in water
+  // doesn't blink as it crosses the surface)
+  lit(v, x, y, z, dt) {
+    const a = this.lightAt(x, y, z), b = this.lightAt(x, y + 0.5, z);
+    if (a == null && b == null) return v.light ?? 1;
+    const l = Math.max(a ?? 0, b ?? 0);
+    v.light = v.light === undefined ? l : v.light + (l - v.light) * Math.min(1, dt * 6);
+    return v.light;
+  }
+
   setMaterialTint(group, r, g, b) {
     group.traverse((o) => {
       if (o.material && !o.isSprite) o.material.color.setRGB(r, g, b);
@@ -979,7 +991,7 @@ export class EntityViews {
       v.model.head.rotation.x = v.pitch;
       animateLimbs(v, Math.hypot(g.position.x - bx, g.position.z - bz), dt);
       if (v.sitting) sitPose(v.model);
-      const lp = this.lightAt(g.position.x, g.position.y + 1.6, g.position.z);
+      const lp = this.lit(v, g.position.x, g.position.y + 1.6, g.position.z, dt);
       this.setMaterialTint(g, lp, lp, lp);
     }
     for (const v of this.entities.values()) {
@@ -990,13 +1002,13 @@ export class EntityViews {
         v.spin += dt * 1.5;
         v.mesh.rotation.y = v.spin;
         v.mesh.position.y = 0.2 + Math.sin(v.spin * 1.3) * 0.06;
-        const li = this.lightAt(g.position.x, g.position.y + 0.3, g.position.z);
+        const li = this.lit(v, g.position.x, g.position.y + 0.3, g.position.z, dt);
         this.setMaterialTint(g, li, li, li);
         continue;
       }
       if (v.tnt) {
         // lit TNT flashes white
-        const l = this.lightAt(g.position.x, g.position.y + 0.5, g.position.z);
+        const l = this.lit(v, g.position.x, g.position.y + 0.5, g.position.z, dt);
         const flash = (v.flags & 2) ? 2.5 : 1;
         v.mesh.material.color.setRGB(l * flash, l * flash, l * flash);
         continue;
@@ -1066,7 +1078,7 @@ export class EntityViews {
       }
       if (v.arrow) {
         g.rotation.y = v.tYaw;
-        const la = this.lightAt(g.position.x, g.position.y, g.position.z);
+        const la = this.lit(v, g.position.x, g.position.y, g.position.z, dt);
         this.setMaterialTint(g, la, la, la);
         continue;
       }
@@ -1161,7 +1173,7 @@ export class EntityViews {
         v.model.headWool.visible = !sheared;
       }
       v.hurt = Math.max(0, v.hurt - dt);
-      const lm = this.lightAt(g.position.x, g.position.y + 1, g.position.z);
+      const lm = this.lit(v, g.position.x, g.position.y + 1, g.position.z, dt);
       if (v.hurt > 0) this.setMaterialTint(g, Math.max(lm, 0.3), lm * 0.2, lm * 0.2);
       else if (v.flags & 2 && Math.sin(performance.now() / 60) > 0) this.setMaterialTint(g, 2, 2, 2); // creeper about to blow
       else if (v.flags & 4) { const f = 1.4 + Math.sin(performance.now() / 50) * 0.4; this.setMaterialTint(g, f, f * 0.55, f * 0.15); } // on fire

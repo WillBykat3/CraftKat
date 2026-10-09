@@ -113,7 +113,7 @@ export class Particles {
       this.rect.set(p.rect, i * 4);
       this.size[i] = p.size;
       // particles are drawn without the chunk shader's curve, so use the light where they are
-      this.bright[i] = (i & 7) === 0 || p.bright === undefined ? (p.bright = Math.pow(lightAt(p.x, p.y, p.z), 1 / 2.2)) : p.bright;
+      this.bright[i] = (i & 7) === 0 || p.bright === undefined ? (p.bright = particleLight(lightAt(p.x, p.y, p.z), p.bright)) : p.bright;
     }
     this.geo.setDrawRange(0, n);
     for (const name of ['position', 'uvRect', 'size', 'bright']) this.geo.attributes[name].needsUpdate = true;
@@ -127,4 +127,9 @@ export class Particles {
     this.list.length = 0;
     this.geo.setDrawRange(0, 0);
   }
+}
+
+// light where a particle is (gamma'd for the shader); keeps the old value if not worked out yet
+function particleLight(l, old) {
+  return l === null || l === undefined ? old ?? 1 : Math.pow(l, 1 / 2.2);
 }

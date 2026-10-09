@@ -79,6 +79,12 @@ const END_SKY = new THREE.Color(0x120c1a);
 const BLACK = new THREE.Color(0x000000);
 export const toLinear = (v) => Math.pow(v, 2.2);
 
+// Where fog starts for a view distance in blocks: Java's fog fades in over the last
+// clamp(distance / 10, 4, 64) blocks (ending a little short of the edge here, to hide chunks loading in)
+export function terrainFogNear(far) {
+  return Math.max(0, far * 0.95 - Math.min(64, Math.max(4, far / 10)));
+}
+
 function freeArray() {
   this.array = null;
 }
@@ -501,7 +507,9 @@ export class Renderer {
     fog.getRGB(srgb, THREE.SRGBColorSpace);
     this.uniforms.fogColor.value.set(srgb.r, srgb.g, srgb.b);
     const far = this.renderDistance * CHUNK;
-    this.uniforms.fogNear.value = medium === 'lava' ? 0 : underwater ? 2 : far * (0.6 - wet * 0.25);
+    // like Java Edition, fog only covers the last stretch before the edge of the world you can see
+    // (starting it earlier washed nearby trees out to a pale blue at low render distances)
+    this.uniforms.fogNear.value = medium === 'lava' ? 0 : underwater ? 2 : terrainFogNear(far);
     this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : underwater ? 18 : far * 0.95;
 
     // sun travels east to west; t=0 is sunrise
@@ -575,7 +583,7 @@ export class Renderer {
     this.uniforms.fogColor.value.set(srgb.r, srgb.g, srgb.b);
     const far = this.renderDistance * CHUNK;
     // like Minecraft, the Nether's fog starts almost at your feet and ends halfway to the view distance
-    this.uniforms.fogNear.value = medium === 'lava' ? 0 : medium === 'water' ? 2 : nether ? far * 0.05 : far * 0.6;
+    this.uniforms.fogNear.value = medium === 'lava' ? 0 : medium === 'water' ? 2 : nether ? far * 0.05 : terrainFogNear(far);
     this.uniforms.fogFar.value = medium === 'lava' ? 1.5 : medium === 'water' ? 18 : nether ? Math.min(far, 192) * 0.5 : far * 0.95;
     this.updateFov(sprintFov);
     this.applyEffects();

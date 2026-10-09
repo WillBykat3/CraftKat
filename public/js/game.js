@@ -340,7 +340,7 @@ export class Game {
     // broken (or replaced, like ice melting): pieces fly off, if it's near enough to see
     if (old !== id && old !== BLOCK.AIR && !BLOCKS[old].liquid && (id === BLOCK.AIR || BLOCKS[id].liquid)) {
       const p = this.player;
-      if (Math.abs(p.x - x) + Math.abs(p.y - y) + Math.abs(p.z - z) < 48) this.particles.breakBlock(x, y, z, old, this.lightAt(x + 0.5, y + 0.5, z + 0.5));
+      if (Math.abs(p.x - x) + Math.abs(p.y - y) + Math.abs(p.z - z) < 48) this.particles.breakBlock(x, y, z, old, this.lightAt(x + 0.5, y + 0.5, z + 0.5) ?? this.handLight ?? 1);
     }
     this.r.blockChanged(x, y, z, id);
     // light can change up to 15 blocks away: forget cached light for nearby chunks
@@ -1911,7 +1911,7 @@ export class Game {
         this.breaking.sound -= dt;
         if (this.breaking.sound <= 0) {
           sound.dig(hit.id);
-          this.particles.hitBlock(hit, this.lightAt(hit.x + 0.5 + hit.normal[0], hit.y + 0.5 + hit.normal[1], hit.z + 0.5 + hit.normal[2]));
+          this.particles.hitBlock(hit, this.lightAt(hit.x + 0.5 + hit.normal[0], hit.y + 0.5 + hit.normal[1], hit.z + 0.5 + hit.normal[2]) ?? this.handLight ?? 1);
           this.breaking.sound = 0.25;
           this.swing = 1;
         }
@@ -1973,7 +1973,7 @@ export class Game {
     this.r.rain = (this.r.rain ?? 0) + ((raining ? 1 : 0) - (this.r.rain ?? 0)) * Math.min(1, dt * 0.4);
     this.r.thunder = (this.r.thunder ?? 0) + ((raining && this.weather === 'thunder' ? 1 : 0) - (this.r.thunder ?? 0)) * Math.min(1, dt * 0.4);
     this.r.updateEnvironment(this.time, p.headInLava ? 'lava' : p.headInWater ? 'water' : null, p.sprinting && !p.sneaking, fogTint);
-    const rainLight = Math.max(0.25, this.entities.lightAt(cam.position.x, cam.position.y, cam.position.z));
+    const rainLight = Math.max(0.25, this.lightAt(cam.position.x, cam.position.y, cam.position.z) ?? this.handLight ?? 1);
     setRain(this.precipitation.update(dt, cam.position, this.dim === 'overworld' ? this.world : null, raining ? 1 : 0, rainLight) * (p.headInWater ? 0.3 : 1));
     // nausea makes the view sway
     this.r.camera.rotation.z = this.effects.nausea ? Math.sin(performance.now() / 600) * 0.12 : 0;
@@ -1993,14 +1993,15 @@ export class Game {
     this.caveTimer -= dt;
     if (this.caveTimer <= 0) {
       this.caveTimer = 60 + Math.random() * 120;
-      const light = this.lightCache.get(chunkKey(Math.floor(p.x / CHUNK), Math.floor(p.z / CHUNK)));
       const by = Math.floor(p.y + 1);
-      if (light && by > 0 && by < HEIGHT && p.y < this.world.seaLevel - 8) {
-        const i = regionIndex(Math.floor(p.x) - Math.floor(p.x / CHUNK) * CHUNK, by, Math.floor(p.z) - Math.floor(p.z / CHUNK) * CHUNK);
-        if (light.sky[i] === 0 && light.block[i] < 8) sound.cave();
+      const light = by > 0 && by < HEIGHT ? this.lightLevels(Math.floor(p.x), by, Math.floor(p.z)) : null;
+      if (light && p.y < this.world.seaLevel - 8) {
+        if (light[0] === 0 && light[1] < 8) sound.cave();
       }
     }
-    this.updateHand(dt, this.lightAt(p.x, p.y + this.eyeHeight(), p.z));
+    const hl = this.lightAt(p.x, p.y + this.eyeHeight(), p.z);
+    if (hl !== null) this.handLight = this.handLight === undefined ? hl : this.handLight + (hl - this.handLight) * Math.min(1, dt * 10);
+    this.updateHand(dt, this.handLight ?? 1);
     $('water-overlay').classList.toggle('hidden', !p.headInWater);
     this.updatePortalOverlay(dt);
 
@@ -2055,11 +2056,8 @@ export class Game {
       : (fx > 0 ? 'east (Towards positive X)' : 'west (Towards negative X)');
     const yawDeg = ((((180 - p.yaw * 180 / Math.PI) % 360) + 540) % 360) - 180; // Minecraft's yaw: 0 = south
     let light = '';
-    const lc = this.lightCache.get(chunkKey(cx, cz));
-    if (lc && by >= 0 && by < HEIGHT) {
-      const i = regionIndex(bx - cx * CHUNK, by, bz - cz * CHUNK);
-      light = `Client Light: ${Math.max(lc.sky[i], lc.block[i])} (${lc.sky[i]} sky, ${lc.block[i]} block)`;
-    }
+    const lc = by >= 0 && by < HEIGHT ? this.lightLevels(bx, by, bz) : null;
+    if (lc) light = `Client Light: ${Math.max(lc[0], lc[1])} (${lc[0]} sky, ${lc[1]} block)`;
     const biome = this.dim === 'nether' ? ['nether_wastes', 'soul_sand_valley', 'basalt_deltas'][w.netherBiome(bx, bz)]
       : this.dim === 'end' ? (Math.hypot(bx, bz) < 900 ? 'the_end' : 'end_highlands') : BIOMES[w.biomeAt(bx, bz)]?.name || '?';
     const day = Math.floor(this.time / 24000);
@@ -2110,23 +2108,38 @@ export class Game {
 
   // Light for mobs, items and the hand, using the same light engine as the terrain.
   // Light is computed per chunk on demand (at most one new chunk per frame) and cached.
+  // [sky, block] light (0-15) at a block, or null if its chunk's light isn't worked out yet.
+  // Each chunk's light is kept packed (sky << 4 | block) for up to 160 chunks, the least
+  // recently used going first (a small cache that kept being wiped made mobs flicker).
+  lightLevels(bx, by, bz) {
+    const cx = Math.floor(bx / CHUNK), cz = Math.floor(bz / CHUNK);
+    const key = chunkKey(cx, cz);
+    let packed = this.lightCache.get(key);
+    if (packed) { this.lightCache.delete(key); this.lightCache.set(key, packed); } // (most recently used)
+    else if (this.lightBudget > 0) {
+      this.lightBudget--;
+      const light = computeLight(gatherRegion(this.world, cx, cz), this.world.hasSky);
+      packed = new Uint8Array(CHUNK * CHUNK * HEIGHT);
+      for (let y = 0; y < HEIGHT; y++) for (let lz = 0; lz < CHUNK; lz++) for (let lx = 0; lx < CHUNK; lx++) {
+        const i = regionIndex(lx, y, lz);
+        packed[(y * CHUNK + lz) * CHUNK + lx] = (light.sky[i] << 4) | light.block[i];
+      }
+      if (this.lightCache.size >= 160) this.lightCache.delete(this.lightCache.keys().next().value);
+      this.lightCache.set(key, packed);
+    }
+    if (!packed) return null;
+    const v = packed[(by * CHUNK + (bz - cz * CHUNK)) * CHUNK + (bx - cx * CHUNK)];
+    return [v >> 4, v & 15];
+  }
+
   lightAt(x, y, z) {
     const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
     const skyFactor = this.r.skyFactor ?? 1;
     if (by >= HEIGHT) return toLinear(lightCurve(skyFactor));
     if (by < 0) return toLinear(lightCurve(0));
-    const cx = Math.floor(bx / CHUNK), cz = Math.floor(bz / CHUNK);
-    const key = chunkKey(cx, cz);
-    let light = this.lightCache.get(key);
-    if (!light && this.lightBudget > 0) {
-      this.lightBudget--;
-      if (this.lightCache.size > 12) this.lightCache.clear();
-      light = computeLight(gatherRegion(this.world, cx, cz), this.world.hasSky);
-      this.lightCache.set(key, light);
-    }
-    if (!light) return toLinear(lightCurve(skyFactor * 0.8)); // not computed yet: assume outdoors
-    const i = regionIndex(bx - cx * CHUNK, by, bz - cz * CHUNK);
-    return toLinear(lightCurve(Math.max(light.sky[i] / 15 * skyFactor, light.block[i] / 15)));
+    const l = this.lightLevels(bx, by, bz);
+    if (!l) return null; // not worked out yet (callers keep what they had)
+    return toLinear(lightCurve(Math.max(l[0] / 15 * skyFactor, l[1] / 15)));
   }
 
   canFit(id) {

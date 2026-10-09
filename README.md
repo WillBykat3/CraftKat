@@ -114,7 +114,8 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
   pigs into zombified piglins and villagers into witches. Sleeping clears the weather; `/weather clear|rain|thunder`
 - **Looks and sounds like the real thing**: its own pixel font, Minecraft-style menus, hearts and hunger, an F3 debug
   screen, view bobbing, third-person view (F5), calm generated piano music and cave sounds
-- **Real lighting**: caves are dark, torches light them up, smooth shading
+- **Real lighting**: caves are dark, torches light them up, smooth shading; mobs, items and your hand are lit by
+  the same light as the blocks around them, and distance fog only covers the edge of your render distance, as in Java
 - **Mobs**: pigs, cows, sheep and chickens; at night (and anywhere dark underground) zombies and skeletons (both burn in
   sunlight), spiders that climb walls, creepers that explode, husks in deserts, strays in the snow, and endermen that
   attack if you look them in the eye. Also:
