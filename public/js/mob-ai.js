@@ -10,6 +10,7 @@ import { moveBody, collides } from './physics.js';
 export const BREED_FOOD = {
   cow: [ITEM.WHEAT], sheep: [ITEM.WHEAT], pig: [ITEM.CARROT, ITEM.POTATO], chicken: [ITEM.WHEAT_SEEDS],
   rabbit: [ITEM.CARROT, ITEM.GOLDEN_CARROT, BLOCK.DANDELION],
+  horse: [ITEM.GOLDEN_CARROT, ITEM.GOLDEN_APPLE], // (only tame horses breed)
   wolf: [ITEM.RAW_BEEF, ITEM.STEAK, ITEM.RAW_PORKCHOP, ITEM.COOKED_PORKCHOP, ITEM.RAW_CHICKEN, ITEM.COOKED_CHICKEN, ITEM.RAW_MUTTON, ITEM.COOKED_MUTTON, ITEM.ROTTEN_FLESH],
 };
 const GROW_UP = 1200;     // seconds for a baby to grow up (20 minutes, like Minecraft)

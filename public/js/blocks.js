@@ -363,7 +363,7 @@ export const ITEM = {
   PHANTOM_MEMBRANE: 361, GOLDEN_APPLE: 362, MILK_BUCKET: 363, EGG: 364, SLIMEBALL: 365, INK_SAC: 366, RAW_RABBIT: 367,
   COOKED_RABBIT: 368, RABBIT_HIDE: 369, DYE: 370, COCOA_BEANS: 386, CLAY_BALL: 398, BRICK: 399, // (dyes are 370 + colour)
   FISHING_ROD: 387, RAW_COD: 388, COOKED_COD: 389, RAW_SALMON: 390, COOKED_SALMON: 391, TROPICAL_FISH: 392,
-  SHIELD: 393, COMPASS: 394, CLOCK: 395, NAME_TAG: 396, SADDLE: 397,
+  SHIELD: 393, COMPASS: 394, CLOCK: 395, NAME_TAG: 396, SADDLE: 397, BOAT: 400, CARROT_ON_A_STICK: 401, MINECART: 402,
 };
 
 // tool: {kind, tier, speed, damage, durability}; food: hunger points restored
@@ -447,6 +447,9 @@ item(393, 'Shield', { icon: 'shield', stack: 1, tool: { kind: 'shield', tier: -1
 item(394, 'Compass', { icon: 'compass' });
 item(395, 'Clock', { icon: 'clock' });
 item(397, 'Saddle', { icon: 'saddle', stack: 1 });
+item(400, 'Boat', { icon: 'boat', stack: 1 });
+item(401, 'Carrot on a Stick', { icon: 'carrot_on_a_stick', stack: 1, tool: { kind: 'carrot_stick', tier: -1, speed: 1, damage: 1, durability: 25 } });
+item(402, 'Minecart', { icon: 'minecart', stack: 1 });
 item(291, 'Shears', { icon: 'shears', stack: 1, tool: { kind: 'shears', tier: 2, speed: 5, damage: 1, durability: 238 } });
 item(292, 'Raw Chicken', { icon: 'raw_chicken', food: 2 });
 item(293, 'Cooked Chicken', { icon: 'cooked_chicken', food: 6 });

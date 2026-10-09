@@ -56,6 +56,9 @@ const MOB_TYPES = {
   squid: { hp: 10, halfW: 0.4, height: 0.8, speed: 1.2, hostile: false, custom: 'squidTick', swims: true },
   bat: { hp: 6, halfW: 0.25, height: 0.9, speed: 3, hostile: false, custom: 'batTick' },
   piglin: { hp: 16, halfW: 0.3, height: 1.95, speed: 2.3, hostile: true, ai: 'piglinMind', damage: 5 },
+  horse: { hp: 22, halfW: 0.7, height: 1.6, speed: 1.6, hostile: false, ai: 'horseMind' },
+  // vehicles: hit them to break them (they drop themselves)
+  boat: { hp: 4, halfW: 0.65, height: 0.56, speed: 0, hostile: false, vehicle: true, custom: 'vehicleTick' },
   // villages
   villager: { hp: 20, halfW: 0.3, height: 1.95, speed: 1.4, hostile: false, villager: true },
   iron_golem: { hp: 100, halfW: 0.7, height: 2.7, speed: 1.5, hostile: false, golem: true },
@@ -71,12 +74,16 @@ const MOB_NAMES = {
   zombified_piglin: 'a Zombified Piglin', blaze: 'a Blaze', wither_skeleton: 'a Wither Skeleton',
 };
 const PASSIVE = ['pig', 'cow', 'sheep', 'chicken'];
+const HORSE_BIOMES = new Set([BIOME.PLAINS, BIOME.SUNFLOWER_PLAINS, BIOME.SAVANNA, BIOME.MEADOW]);
 const HOSTILE = [['zombie', 0.36], ['skeleton', 0.24], ['creeper', 0.19], ['spider', 0.14], ['enderman', 0.05], ['witch', 0.02]];
 const RABBIT_BIOMES = new Set([BIOME.DESERT, BIOME.SNOWY_PLAINS, BIOME.SNOWY_TAIGA, BIOME.FLOWER_FOREST, BIOME.MEADOW, BIOME.CHERRY_GROVE]);
 const WOLF_BIOMES = new Set([BIOME.FOREST, BIOME.TAIGA, BIOME.SNOWY_TAIGA]);
 const WATER_BIOMES = new Set([BIOME.OCEAN, BIOME.DEEP_OCEAN, BIOME.WARM_OCEAN, BIOME.FROZEN_OCEAN, BIOME.RIVER, BIOME.FROZEN_RIVER]);
 const DRY_BIOMES = new Set([BIOME.DESERT, BIOME.SAVANNA]); // it never rains (or snows) there
-const REST_TICKS = 72000; // three in-game days awake before phantoms come
+const REST_TICKS = 72000;
+// what a horse eats: item -> [health, temper]
+const HORSE_FOOD = { [ITEM.WHEAT]: [2, 3], [ITEM.SUGAR]: [1, 3], [ITEM.APPLE]: [3, 3], [ITEM.GOLDEN_CARROT]: [4, 5], [ITEM.GOLDEN_APPLE]: [10, 10], [BLOCK.HAY_BALE]: [20, 0] };
+const SEAT = { boat: 0.15, horse: 1.05, pig: 0.55, minecart: 0.25 }; // where the rider sits, above the vehicle's feet // three in-game days awake before phantoms come
 const DESERT_BIOMES = new Set([BIOME.DESERT]);
 const CREEPER_FUSE = 1.5;            // seconds from hissing to boom
 const ARROW_DAMAGE = 3;
@@ -231,7 +238,7 @@ export class GameHost {
     // villagers, golems (and later pets) are kept in the save, like Minecraft keeps them in chunks
     for (const saved of this.restoreEntities) {
       if (!saved || !MOB_TYPES[saved.type] || !DIMENSIONS.includes(saved.dim) || ![saved.x, saved.y, saved.z].every(isNum)) continue;
-      const e = { ...saved, id: this.nextEntityId++, vx: 0, vy: 0, vz: 0, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false };
+      const e = { ...saved, id: this.nextEntityId++, vx: 0, vy: 0, vz: 0, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false, rider: null };
       this.entities.set(e.id, e);
     }
     this.sleepTimer = 0;
@@ -306,6 +313,7 @@ export class GameHost {
   disconnect(peerId) {
     const p = this.players.get(peerId);
     if (!p) return;
+    this.dismount(p);
     this.storePlayer(p);
     this.players.delete(peerId);
     this.closeViewers(peerId);
@@ -359,7 +367,10 @@ export class GameHost {
       case 'dig': return this.onDig(peerId, p, msg);
       case 'pickup': return this.onPickup(peerId, p, msg);
       case 'drop': return this.onDrop(p, msg);
-      case 'died': return this.onDied(p, msg);
+      case 'died': this.dismount(p); return this.onDied(p, msg);
+      case 'mount': return this.onMount(p, msg);
+      case 'dismount': return this.dismount(p);
+      case 'place_vehicle': return this.onPlaceVehicle(p, msg);
       case 'respawn': return this.onRespawn(peerId, p);
       case 'attack': return this.onAttack(p, msg);
       case 'chat': return this.onChat(peerId, p, msg);
@@ -470,6 +481,11 @@ export class GameHost {
     p.held = isValidId(msg.h) ? msg.h : 0;
     p.invisible = msg.inv === 1;
     p.moved = true;
+    const v = p.riding ? this.entities.get(p.riding) : null;
+    if (v && Array.isArray(msg.v) && msg.v.length === 4 && msg.v.every(isNum) && Math.hypot(msg.v[0] - p.x, msg.v[2] - p.z) < 4) {
+      [v.x, v.y, v.z, v.yaw] = msg.v;
+      v.vx = v.vy = v.vz = 0;
+    }
   }
 
   inReach(p, x, y, z) {
@@ -736,6 +752,12 @@ export class GameHost {
       hp: t.hp, yaw: this.random() * 6.28, age: 0, think: 0, walk: 0, panic: 0, attackCooldown: 0, onGround: false,
     };
     if (t.custom === 'slimeTick') this.setSlimeSize(e, SLIME_SIZES[Math.floor(this.random() * SLIME_SIZES.length)]);
+    if (type === 'horse') {
+      // like Minecraft, each horse has its own speed, jump and health (averages of random rolls)
+      const avg = () => (this.random() + this.random() + this.random()) / 3;
+      Object.assign(e, { speed: 4.74 + avg() * 9.49, jump: 0.4 + avg() * 0.6, temper: 0, color: Math.floor(this.random() * 7) });
+      e.hp = e.maxHp = 15 + Math.floor(avg() * 15);
+    }
     if (type === 'sheep') {
       // like Minecraft: mostly white, some black, grey, light grey or brown, and very rarely pink
       const r = this.random();
@@ -869,6 +891,8 @@ export class GameHost {
       phantom: [[ITEM.PHANTOM_MEMBRANE, Math.floor(r() * 2)]],
       rabbit: [[ITEM.RAW_RABBIT, Math.floor(r() * 2)], [ITEM.RABBIT_HIDE, Math.floor(r() * 2)], [ITEM.RABBIT_FOOT, r() < 0.1 ? 1 : 0]],
       squid: [[ITEM.INK_SAC, 1 + Math.floor(r() * 3)]],
+      boat: [[ITEM.BOAT, 1]],
+      horse: [[ITEM.LEATHER, Math.floor(r() * 3)], [ITEM.SADDLE, e.saddled ? 1 : 0]],
       iron_golem: [[ITEM.IRON_INGOT, 3 + Math.floor(r() * 3)], [BLOCK.POPPY, Math.floor(r() * 3)]],
       villager: [],
       zombified_piglin: [[ITEM.ROTTEN_FLESH, Math.floor(r() * 2)], [ITEM.GOLD_NUGGET, Math.floor(r() * 2)], [ITEM.GOLD_INGOT, r() < 0.025 ? 1 : 0]],
@@ -881,7 +905,7 @@ export class GameHost {
       const extra = e.looting && n >= 0 && id !== BLOCK.WOOL ? Math.floor(this.random() * (e.looting + 1)) : 0;
       if (n + extra > 0) this.spawnItem(e.x, e.y + 0.5, e.z, id, n + extra);
     }
-    if (e.type !== 'villager' && e.type !== 'iron_golem') this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
+    if (e.type !== 'villager' && e.type !== 'iron_golem' && !MOB_TYPES[e.type].vehicle) this.spawnXP(e.x, e.y + 0.5, e.z, e.type === 'blaze' ? 10 : MOB_TYPES[e.type].hostile ? 5 : 1 + Math.floor(r() * 3));
     if (e.type === 'villager') this.sys(`Villager died${e.angryAt ? ` (killed by ${e.angryAt})` : ''}`);
     this.broadcast({ t: 'mobdeath', e: e.id });
   }
@@ -1100,6 +1124,19 @@ export class GameHost {
       e.trading = this.now() + 5000;
       return this.sendTrades(p, e);
     }
+    if ((e.type === 'horse' && e.tamed || e.type === 'pig') && msg.tool === ITEM.SADDLE && !e.saddled && !(e.baby > 0)) {
+      Object.assign(e, { saddled: true, persist: true });
+      return this.send(p.peerId, { t: 'consume' });
+    }
+    if (e.type === 'horse' && HORSE_FOOD[msg.tool] && !(e.baby > 0 && msg.tool === ITEM.GOLDEN_CARROT && e.tamed)) {
+      // feeding a horse heals it and makes a wild one trust you more (tame ones breed on golden food)
+      const [heal, temper] = HORSE_FOOD[msg.tool];
+      if (e.tamed && (msg.tool === ITEM.GOLDEN_CARROT || msg.tool === ITEM.GOLDEN_APPLE) && e.hp >= (e.maxHp || 22) && this.feedAnimal(p, e, msg.tool)) return this.send(p.peerId, { t: 'consume' });
+      if (e.hp >= (e.maxHp || 22) && (e.tamed || e.temper >= 100)) return;
+      e.hp = Math.min(e.maxHp || 22, e.hp + heal);
+      if (!e.tamed) e.temper = Math.min(100, (e.temper || 0) + temper);
+      return this.send(p.peerId, { t: 'consume' });
+    }
     if ((BREED_FOOD[e.type] || e.type === 'wolf') && isValidId(msg.tool) && msg.tool !== ITEM.SHEARS && ITEMS[msg.tool]?.dye === undefined) {
       if (this.feedAnimal(p, e, msg.tool)) this.send(p.peerId, { t: 'consume' });
       return;
@@ -1316,6 +1353,71 @@ export class GameHost {
     if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;
     if (msg.offhand !== undefined && (msg.offhand === null || validStack(msg.offhand))) p.offhand = msg.offhand;
     this.storePlayer(p);
+  }
+
+  // ---------- riding ----------
+  // Boats and minecarts take anyone; a horse takes anyone but bucks off riders it doesn't
+  // trust yet; a pig needs a saddle. The rider's game moves the vehicle (see onPos).
+  onMount(p, msg) {
+    const e = this.entities.get(msg.e);
+    if (!e || e.dim !== p.dim || p.dead || p.riding || e.rider || e.baby > 0) return;
+    if (Math.hypot(e.x - p.x, e.y - p.y, e.z - p.z) > 5) return;
+    if (!(MOB_TYPES[e.type]?.vehicle || e.type === 'horse' || (e.type === 'pig' && e.saddled))) return;
+    e.rider = p.id;
+    e.persist = e.persist || e.type !== 'pig';
+    p.riding = e.id;
+    if (e.type === 'horse' && !e.tamed) e.buckAt = this.now() + 1500 + this.random() * 2500;
+    this.send(p.peerId, { t: 'mounted', e: e.id, kind: e.type, x: e.x, y: e.y, z: e.z, yaw: e.yaw, seat: SEAT[e.type] ?? 0.5,
+      speed: e.speed, jump: e.jump, tamed: !!e.tamed, saddled: !!e.saddled });
+  }
+
+  dismount(p, thrown = false) {
+    const e = p.riding ? this.entities.get(p.riding) : null;
+    p.riding = null;
+    if (!e) return;
+    e.rider = null;
+    if (thrown) this.send(p.peerId, { t: 'dismounted', thrown: true });
+  }
+
+  // Each tick for something being ridden: an untamed horse decides whether to keep its rider.
+  riddenTick(e, dt) {
+    const rider = [...this.players.values()].find((q) => q.id === e.rider);
+    if (!rider || rider.riding !== e.id || rider.dim !== e.dim) { e.rider = null; return; }
+    if (e.type === 'horse' && !e.tamed && this.now() >= (e.buckAt ?? 0)) {
+      if (this.random() * 100 < (e.temper || 0)) {
+        Object.assign(e, { tamed: true, owner: rider.name, persist: true });
+        this.broadcastHere({ t: 'sfx', s: 'love', x: e.x, y: e.y, z: e.z });
+      } else {
+        e.temper = Math.min(100, (e.temper || 0) + 5); // it'll trust you a bit more next time
+        this.broadcastHere({ t: 'sfx', s: 'horseAngry', x: e.x, y: e.y, z: e.z });
+        this.dismount(rider, true);
+      }
+    }
+  }
+
+  // Unridden vehicles: boats float and drift to a stop.
+  vehicleTick(e, t, dt) {
+    const inWater = fluidOf(this.world.getBlock(Math.floor(e.x), Math.floor(e.y + 0.3), Math.floor(e.z))) === 'water';
+    const drag = Math.exp(-(inWater ? 1.5 : 6) * dt);
+    e.vx *= drag; e.vz *= drag;
+    if (inWater) e.vy = Math.min(e.vy + 25 * dt, 1.5);
+    else e.vy = Math.max(-30, e.vy - 28 * dt);
+    if (inWater) e.vy *= Math.exp(-3 * dt);
+    const res = moveBody(this.world, e, dt, 0);
+    e.onGround = res.onGround;
+    if (e.y < -20) this.entities.delete(e.id);
+  }
+
+  horseMind(e, t, dt) {
+    return this.animalMind(e, t, dt); // in love: find a mate; otherwise wander (riders move them)
+  }
+
+  // Putting a boat on water.
+  onPlaceVehicle(p, msg) {
+    if (msg.kind !== 'boat' || ![msg.x, msg.y, msg.z].every(isNum) || Math.hypot(msg.x - p.x, msg.z - p.z) > 6) return;
+    const e = this.spawnMob('boat', msg.x, msg.y, msg.z);
+    e.yaw = isNum(msg.yaw) ? msg.yaw : 0;
+    e.persist = true;
   }
 
   // ---------- weather ----------
@@ -1866,6 +1968,7 @@ export class GameHost {
       const t = MOB_TYPES[e.type];
       this.tickMobEffects(e, dt);
       if (!this.entities.has(e.id)) continue;
+      if (e.rider) { this.riddenTick(e, dt); continue; } // the rider moves it
       e.attackCooldown = Math.max(0, e.attackCooldown - dt);
       e.panic = Math.max(0, e.panic - dt);
       e.think -= dt;
@@ -2005,6 +2108,7 @@ export class GameHost {
       const counts = { passive: 0, hostile: 0, squid: 0, bat: 0 };
       for (const e of this.entities.values()) {
         if (!isMob(e) || e.dim !== p.dim || Math.hypot(e.x - p.x, e.z - p.z) > 64) continue;
+        if (MOB_TYPES[e.type].vehicle) continue;
         if (e.type === 'squid' || e.type === 'bat') counts[e.type]++; // water and cave creatures have their own limits
         else if (MOB_TYPES[e.type].hostile) counts.hostile++; else counts.passive++;
       }
@@ -2037,6 +2141,7 @@ export class GameHost {
       } else if (wantPassive) {
         if (RABBIT_BIOMES.has(biome) && this.random() < 0.5 && BLOCKS[ground].solid) this.spawnGroup('rabbit', x, y + 1, z, 2 + Math.floor(this.random() * 2));
         else if (WOLF_BIOMES.has(biome) && this.random() < 0.2 && (ground === BLOCK.GRASS || ground === BLOCK.SNOWY_GRASS)) this.spawnGroup('wolf', x, y + 1, z, biome === BIOME.FOREST ? 1 : 4);
+        else if (HORSE_BIOMES.has(biome) && this.random() < 0.15 && ground === BLOCK.GRASS) this.spawnGroup('horse', x, y + 1, z, 2 + Math.floor(this.random() * 5));
         else if (ground === BLOCK.GRASS) this.spawnGroup(PASSIVE[Math.floor(this.random() * PASSIVE.length)], x, y + 1, z, 2 + Math.floor(this.random() * 3));
       }
     }
@@ -2726,6 +2831,7 @@ export class GameHost {
   // Moves a player to another dimension: they get that dimension's world, and the
   // players on each side see them leave or arrive.
   changeDim(p, dim, pos) {
+    this.dismount(p);
     const from = p.dim;
     this.closeViewers(p.peerId);
     p.sleeping = false;
@@ -3044,7 +3150,7 @@ export class GameHost {
     for (const p of this.players.values()) {
       if (!p.moved) continue;
       p.moved = false;
-      (moved[p.dim] ??= []).push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0, p.invisible ? 1 : 0]);
+      (moved[p.dim] ??= []).push([p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(2), +p.pitch.toFixed(2), p.held || 0, (p.invisible ? 1 : 0) | (p.riding ? 2 : 0)]);
     }
     for (const p of this.players.values()) if (moved[p.dim]) this.send(p.peerId, { t: 'state', players: moved[p.dim] });
 
@@ -3056,7 +3162,7 @@ export class GameHost {
         // (and for ghasts and blazes, 2 = about to shoot)
         const flags = e.type === 'xp' ? e.value : e.type === 'tnt' ? (Math.floor(e.fuse * 4) % 2 ? 2 : 0)
           : e.type === 'bobber' ? (e.owner << 2) | (e.bite > 0 ? 2 : 0)
-          : (e.sheared ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
+          : (e.sheared || e.saddled ? 1 : 0) | (e.fuse > 0.2 || e.charge > 1 || e.swing > this.now() ? 2 : 0) | (e.fireTime > 0 ? 4 : 0) |
             (e.profession ? PROFESSIONS.indexOf(e.profession) << 4 : 0) | (e.baby > 0 ? 256 : 0) |
             (e.size ? SLIME_SIZES.indexOf(e.size) << 9 : 0) | (e.sitting || e.charged ? 2048 : 0) | (e.tamed ? 4096 : 0) | (e.type === 'wolf' && (e.angryAt || e.target) ? 8192 : 0) | ((e.color || 0) << 14);
         list.push([e.id, e.type === 'item' ? e.item : e.type, +e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), flags]);

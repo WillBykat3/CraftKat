@@ -443,3 +443,6 @@ RECIPES.push({ pattern: ['..S', '.ST', 'S.T'], keys: { S: [ITEM.STICK], T: [ITEM
 RECIPES.push({ pattern: ['PIP', 'PPP', '.P.'], keys: { P: PLANKS, I: [ITEM.IRON_INGOT] }, result: [ITEM.SHIELD, 1] });
 RECIPES.push({ pattern: ['.I.', 'IRI', '.I.'], keys: { I: [ITEM.IRON_INGOT], R: [ITEM.REDSTONE] }, result: [ITEM.COMPASS, 1] });
 RECIPES.push({ pattern: ['.G.', 'GRG', '.G.'], keys: { G: [ITEM.GOLD_INGOT], R: [ITEM.REDSTONE] }, result: [ITEM.CLOCK, 1] });
+// boats, and steering pigs
+RECIPES.push({ pattern: ['P.P', 'PPP'], keys: { P: PLANKS }, result: [ITEM.BOAT, 1] });
+RECIPES.push({ pattern: ['R.', '.C'], keys: { R: [ITEM.FISHING_ROD], C: [ITEM.CARROT] }, result: [ITEM.CARROT_ON_A_STICK, 1] });

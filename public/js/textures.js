@@ -1326,6 +1326,23 @@ function drawItem(p, icon) {
       }
       break;
     }
+    case 'boat':
+      for (let x = 2; x < 14; x++) { px(x, 9, [110, 80, 45]); px(x, 10, shade([150, 115, 70], 0.9 + rand() * 0.2)); px(x, 11, shade([150, 115, 70], 0.9 + rand() * 0.2)); }
+      for (let x = 4; x < 12; x++) px(x, 12, [110, 80, 45]);
+      px(1, 8, [150, 115, 70]); px(14, 8, [150, 115, 70]); px(2, 8, [150, 115, 70]); px(13, 8, [150, 115, 70]);
+      for (let i = 0; i < 6; i++) px(4 + i, 7 - Math.floor(i / 2), [110, 80, 45]);
+      break;
+    case 'carrot_on_a_stick':
+      for (let i = 0; i < 11; i++) { px(3 + i, 13 - i, shade([120, 80, 40], 0.9 + rand() * 0.2)); px(4 + i, 13 - i, [90, 60, 30]); }
+      for (let y = 3; y < 9; y++) px(14, y, [220, 220, 220]);
+      for (let i = 0; i < 4; i++) { px(13 - i, 9 + i, [240, 140, 40]); px(14 - i, 9 + i, [220, 120, 30]); }
+      px(14, 8, [90, 170, 60]); px(15, 7, [90, 170, 60]);
+      break;
+    case 'minecart':
+      for (let y = 6; y < 11; y++) for (let x = 2; x < 14; x++) px(x, y, y === 6 ? [170, 170, 175] : x === 2 || x === 13 ? [110, 110, 115] : shade([140, 140, 145], 0.9 + rand() * 0.15));
+      for (let x = 3; x < 13; x++) px(x, 7, [60, 60, 65]);
+      for (const cx of [4, 11]) { px(cx, 11, [40, 40, 40]); px(cx + 1, 11, [40, 40, 40]); px(cx, 12, [40, 40, 40]); px(cx + 1, 12, [40, 40, 40]); }
+      break;
     case 'fishing_rod':
       for (let i = 0; i < 11; i++) { px(3 + i, 13 - i, shade([120, 80, 40], 0.9 + rand() * 0.2)); px(4 + i, 13 - i, [90, 60, 30]); }
       for (let y = 3; y < 12; y++) px(14, y, [220, 220, 220]);

@@ -127,6 +127,7 @@ export const sound = {
     setTimeout(() => burst({ freq: 90, q: 0.4, duration: 3, gain: 0.35, type: 'lowpass' }), 600);
   },
   shieldBlock() { burst({ freq: 700, q: 2, duration: 0.15, gain: 0.4, type: 'lowpass' }); tone({ freq: 260, endFreq: 200, duration: 0.12, gain: 0.15, type: 'square' }); },
+  horseAngry() { tone({ freq: 700, endFreq: 300, duration: 0.5, gain: 0.25, type: 'sawtooth' }); burst({ freq: 900, q: 1, duration: 0.3, gain: 0.2 }); },
   cast() { burst({ freq: 1500, q: 1, duration: 0.2, gain: 0.15, type: 'highpass' }); },
   bow() { burst({ freq: 2200, q: 2, duration: 0.15, gain: 0.25 }); tone({ freq: 500, endFreq: 200, duration: 0.12, gain: 0.08, type: 'triangle' }); },
   // menu button: a short wooden "tock"

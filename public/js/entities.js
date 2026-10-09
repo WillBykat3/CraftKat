@@ -151,6 +151,9 @@ const PROFESSION_LOOK = [
   [0x8a5a30, 0x5a3a20], [0x2a4a6a, 0xd8c060], [0x6a2a8a, 0xd8c060],
 ];
 
+// horse coats: white, creamy, chestnut, brown, black, gray, dark brown
+const HORSE_COATS = [0xe8e4dc, 0xc8a070, 0x9a5a30, 0x7a4a24, 0x2a2420, 0x7a7470, 0x4a3020];
+
 const MOB_BUILDERS = {
   pig: () => quadruped(0xf0a5a2, 0xf0a5a2, [0.6, 0.55, 0.9, 0.35], {
     decorate: (head) => { const s = box(0.25, 0.18, 0.06, 0xd98580); s.position.set(0, -0.06, -0.44); head.add(s); },
@@ -537,6 +540,36 @@ const MOB_BUILDERS = {
     const sword = box(0.05, 0.7, 0.05, 0xf5cd3c); sword.position.set(0, -0.75, -0.25); sword.rotation.x = Math.PI / 2; m.armR.add(sword);
     return m;
   },
+  // rideable
+  boat: () => {
+    const g = new THREE.Group();
+    const wood = 0x9c7a48, dark = 0x7a5c34;
+    const bottom = box(1.3, 0.1, 1.3, dark); bottom.position.y = 0.08;
+    for (const [w, d, x, z] of [[1.3, 0.1, 0, -0.62], [1.3, 0.1, 0, 0.62], [0.1, 1.3, -0.62, 0], [0.1, 1.3, 0.62, 0]]) {
+      const side = box(w, 0.42, d, wood); side.position.set(x, 0.3, z); g.add(side);
+    }
+    const seat = box(1.2, 0.08, 0.3, wood); seat.position.set(0, 0.38, 0.15);
+    for (const sx of [-0.75, 0.75]) { const oar = box(0.06, 0.06, 1.0, 0x6a4a28); oar.position.set(sx, 0.45, 0); oar.rotation.z = sx * 0.4; g.add(oar); }
+    g.add(bottom, seat);
+    return { group: g, head: new THREE.Group(), legs: [], arms: [] };
+  },
+  horse: () => {
+    const m = quadruped(0x8a5a30, 0x8a5a30, [0.6, 0.7, 1.4, 0.85], {
+      decorate: (head) => {
+        const snout = box(0.3, 0.3, 0.45, 0x7a4e28); snout.position.set(0, -0.15, -0.55); head.add(snout);
+        for (const ex of [-0.12, 0.12]) { const ear = box(0.08, 0.18, 0.06, 0x7a4e28); ear.position.set(ex, 0.32, -0.12); head.add(ear); }
+        const mane = box(0.12, 0.6, 0.3, 0x3a2414); mane.position.set(0, 0.1, 0.15); head.add(mane);
+      },
+    });
+    m.head.position.y = 1.5;
+    m.head.rotation.x = -0.5;
+    const neck = box(0.35, 0.7, 0.35, 0x8a5a30); neck.position.set(0, 1.3, -0.62); neck.rotation.x = -0.45; m.group.add(neck);
+    const tail = box(0.15, 0.6, 0.15, 0x3a2414); tail.position.set(0, 1.0, 0.75); tail.rotation.x = 0.4; m.group.add(tail);
+    m.saddle = box(0.64, 0.12, 0.6, 0x5a3418); m.saddle.position.set(0, 1.62, 0.05); m.saddle.visible = false; m.group.add(m.saddle);
+    m.coat = [m.group.children.find((c) => c.geometry?.parameters?.depth === 1.4), neck];
+    m.horse = true;
+    return m;
+  },
   skeleton: (boneColor = 0xc8c8c0, clothes = null) => {
     const g = new THREE.Group();
     const bone = boneColor;
@@ -566,6 +599,7 @@ const HITBOX = {
   fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
   wolf: [0.35, 0.9], rabbit: [0.25, 0.55], witch: [0.35, 1.95], drowned: [0.35, 1.95], phantom: [0.5, 0.5],
   squid: [0.45, 0.95], bat: [0.3, 0.9], piglin: [0.35, 1.95], slime: [0.26, 0.52], magma_cube: [0.26, 0.52],
+  boat: [0.7, 0.6], horse: [0.7, 1.7],
 };
 
 function itemMesh(id, textures) {
@@ -673,6 +707,7 @@ export class EntityViews {
     const v = this.players.get(id);
     if (!v) return;
     v.model.group.visible = !(flags & 1);
+    v.sitting = (flags & 2) !== 0;
     v.target.set(p[0], p[1], p[2]);
     v.tYaw = r[0];
     v.tPitch = r[1];
@@ -707,6 +742,7 @@ export class EntityViews {
     g.rotation.y = p.yaw;
     v.model.head.rotation.x = p.pitch;
     animateLimbs(v, Math.hypot(p.x - v.last[0], p.z - v.last[1]), Math.max(dt, 1e-3));
+    if (this.selfSitting) sitPose(v.model);
     v.last = [p.x, p.z];
     const l = this.lightAt(p.x, p.y + 1.6, p.z);
     this.setMaterialTint(g, l, l, l);
@@ -873,6 +909,7 @@ export class EntityViews {
       g.rotation.y = v.yaw;
       v.model.head.rotation.x = v.pitch;
       animateLimbs(v, Math.hypot(g.position.x - bx, g.position.z - bz), dt);
+      if (v.sitting) sitPose(v.model);
       const lp = this.lightAt(g.position.x, g.position.y + 1.6, g.position.z);
       this.setMaterialTint(g, lp, lp, lp);
     }
@@ -997,6 +1034,14 @@ export class EntityViews {
         const t = performance.now() / 1000;
         for (const w of v.model.flap) w.rotation.z = Math.sin(t * v.model.flapSpeed) * 0.6 * w.userData.side;
       }
+      if (v.model.horse) {
+        v.model.saddle.visible = (v.flags & 1) !== 0;
+        const coat = (v.flags >> 14) & 7;
+        if (v.coat !== coat) { v.coat = coat; for (const part of v.model.coat) if (part) recolor(part, HORSE_COATS[coat] ?? HORSE_COATS[0]); }
+      }
+      if (v.mob === 'pig' && (v.flags & 1) && !v.pigSaddle) {
+        v.pigSaddle = box(0.5, 0.1, 0.5, 0x5a3418); v.pigSaddle.position.set(0, 0.92, 0); g.add(v.pigSaddle);
+      }
       if (v.model.wolf) {
         v.model.collar.visible = (v.flags & 4096) !== 0;
         const sitting = (v.flags & 2048) !== 0;
@@ -1071,6 +1116,12 @@ function animateLimbs(v, moved, dt) {
     v.model.arms[0].rotation.x = -swing;
     v.model.arms[1].rotation.x = swing;
   }
+}
+
+// Riding: legs forward, arms resting.
+function sitPose(model) {
+  for (const leg of model.legs) leg.rotation.x = -Math.PI / 2.4;
+  if (model.legL) { model.legL.rotation.z = 0.15; model.legR.rotation.z = -0.15; }
 }
 
 function angleDiff(a, b) {

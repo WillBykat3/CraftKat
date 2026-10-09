@@ -14,6 +14,7 @@ import { addItem, takeOne, foodValue, makeStack, INVENTORY_SIZE, HOTBAR_SIZE, co
 import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD, setDials } from './ui.js';
 import { Precipitation, lightningBolt } from './weather.js';
+import { stepVehicle, SIZES } from './riding.js';
 import { sound, setRain } from './sound.js';
 import { blockGeometry, hasBlockModel } from './textures.js';
 import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
@@ -157,7 +158,18 @@ export class Game {
         this.mode = msg.mode;
         if (msg.mode === 'survival') this.player.flying = false;
         return;
+      case 'mounted': {
+        const [halfW, height] = SIZES[msg.kind] || [0.5, 1];
+        this.ride = { id: msg.e, kind: msg.kind, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw || 0, vx: 0, vy: 0, vz: 0, halfW, height, onGround: false,
+          seat: msg.seat, speed: msg.kind === 'pig' ? 2.3 : msg.speed, jump: msg.kind === 'horse' ? msg.jump : 0, tamed: msg.tamed, saddled: msg.saddled, missing: 0 };
+        this.player.flying = false;
+        return;
+      }
+      case 'dismounted':
+        if (msg.thrown) this.addChat('The horse threw you off! (It trusts you a little more each time.)', 'sys');
+        return this.unmount(false);
       case 'teleport':
+        this.ride = null;
         this.player.x = msg.p[0]; this.player.y = msg.p[1]; this.player.z = msg.p[2];
         this.player.vx = this.player.vy = this.player.vz = 0;
         this.player.fallStart = null;
@@ -232,6 +244,7 @@ export class Game {
 
   welcome(msg) {
     this.myId = msg.id;
+    this.ride = null;
     this.entities.selfId = msg.id;
     this.name = msg.name;
     this.dim = msg.dim || 'overworld';
@@ -684,6 +697,21 @@ export class Game {
       return;
     }
     if (kind === 'wolf' && (flags & 4096)) { this.send({ t: 'interact', e: mob.id }); this.useCooldown = 0.25; return; } // sit / stand
+    if (kind === 'horse' && held && [ITEM.WHEAT, ITEM.SUGAR, ITEM.APPLE, ITEM.GOLDEN_CARROT, ITEM.GOLDEN_APPLE, BLOCK.HAY_BALE].includes(held.id)) {
+      this.send({ t: 'interact', e: mob.id, tool: held.id }); // feed it (the host replies 'consume' if it eats)
+      this.swing = 1; this.useCooldown = 0.25;
+      return;
+    }
+    if (((kind === 'horse' && (flags & 4096)) || kind === 'pig') && held?.id === ITEM.SADDLE && !(flags & 1) && !(flags & 256)) {
+      this.send({ t: 'interact', e: mob.id, tool: held.id }); // saddle it
+      this.useCooldown = 0.25;
+      return;
+    }
+    if (!this.ride && !this.player.sneaking && (kind === 'boat' || (kind === 'horse' && !(flags & 256)) || (kind === 'pig' && (flags & 1)))) {
+      this.send({ t: 'mount', e: mob.id });
+      this.useCooldown = 0.4;
+      return;
+    }
     if (kind === 'sheep' && held && ITEMS[held.id]?.dye !== undefined && ((flags >> 14) & 15) !== ITEMS[held.id].dye) {
       this.send({ t: 'interact', e: mob.id, tool: held.id }); // dye it (the host replies 'consume')
       this.swing = 1;
@@ -747,6 +775,18 @@ export class Game {
       return;
     }
     if (held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET)) { this.eating = 0.001; return; }
+    if (held && held.id === ITEM.BOAT) {
+      // boats go on water (or on the ground, where they're slow)
+      const w = this.raycast(REACH, true);
+      const spot = w && fluidOf(w.id) === 'water' ? [w.x + 0.5, w.y + 0.75, w.z + 0.5] : hit ? [hit.x + 0.5, hit.y + 1, hit.z + 0.5] : null;
+      if (spot) {
+        this.send({ t: 'place_vehicle', kind: 'boat', x: spot[0], y: spot[1], z: spot[2], yaw: this.player.yaw });
+        if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
+        this.swing = 1;
+        this.useCooldown = 0.4;
+      }
+      return;
+    }
     if (held && held.id === ITEM.FISHING_ROD) {
       // cast, or reel in (the host knows which)
       this.send({ t: 'fish', yaw: this.player.yaw, pitch: this.player.pitch, lure: enchLevel(held, 'lure'), luck: enchLevel(held, 'luck_of_the_sea') });
@@ -988,6 +1028,40 @@ export class Game {
       if (this.fromOffhand) { if (--this.offhand.count <= 0) this.offhand = null; }
       else takeOne(this.inv, this.selected);
       this.invDirty = true;
+    }
+  }
+
+  // ---------- riding ----------
+  // While riding, the keys steer the vehicle (a horse needs to be tame and saddled, a pig needs
+  // a carrot on a stick) and you sit on it; Shift gets off.
+  rideStep(dt) {
+    const p = this.player, v = this.ride, k = this.keys;
+    if (k.ShiftLeft || k.ShiftRight) return this.unmount(true);
+    let forward = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0), strafe = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+    if (v.kind === 'horse' && !(v.tamed && v.saddled)) forward = strafe = 0;
+    if (v.kind === 'pig') { forward = this.held()?.id === ITEM.CARROT_ON_A_STICK ? 1 : 0; strafe = 0; }
+    stepVehicle(this.world, v, { forward, strafe, jump: !!k.Space, lookYaw: p.yaw }, dt);
+    p.x = v.x; p.y = v.y + v.seat; p.z = v.z;
+    p.vx = p.vy = p.vz = 0;
+    p.onGround = true;
+    p.fallStart = null;
+    p.sprinting = p.sneaking = false;
+    p.height = HEIGHT_STAND;
+    if (v.y < -40) this.unmount(true);
+  }
+
+  unmount(tell) {
+    const v = this.ride;
+    if (!v) return;
+    this.ride = null;
+    if (tell) this.send({ t: 'dismount' });
+    // step off to the side, wherever there's room
+    const p = this.player;
+    for (const [dx, dz] of [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2], [0, 0]]) {
+      for (const dy of [0, 1, v.seat + 0.9]) {
+        const spot = { ...p, x: v.x + dx, y: v.y + dy, z: v.z + dz, height: HEIGHT_STAND };
+        if (!collides(this.world, spot)) { p.x = spot.x; p.y = spot.y; p.z = spot.z; p.vx = p.vy = p.vz = 0; return; }
+      }
     }
   }
 
@@ -1259,6 +1333,7 @@ export class Game {
 
   die(cause) {
     this.dead = true;
+    this.ride = null;
     this.effects = {};
     this.absorb = 0;
     const items = this.inv.concat(this.armor, [this.offhand]).filter(Boolean);
@@ -1465,6 +1540,7 @@ export class Game {
   physics(dt) {
     const p = this.player;
     if (p.sleeping) return;
+    if (this.ride) { this.rideStep(dt); return; }
     const k = this.keys;
     const creative = this.mode === 'creative';
     if (!creative) p.flying = false;
@@ -1851,6 +1927,12 @@ export class Game {
     this.lightBudget = 1;
     this.time += dt * 20;
     this.entities.lightAt = (x, y, z) => this.lightAt(x, y, z);
+    if (this.ride) {
+      const view = this.entities.entities.get(this.ride.id);
+      if (view) { view.target.set(this.ride.x, this.ride.y, this.ride.z); view.group.position.copy(view.target); view.tYaw = view.yaw = this.ride.yaw; this.ride.missing = 0; }
+      else if ((this.ride.missing += dt) > 1.5) this.unmount(false); // it was broken
+    }
+    this.entities.selfSitting = !!this.ride;
     this.entities.update(dt);
     this.particles.update(dt, this.world, (x, y, z) => this.lightAt(x, y, z));
     this.particles.setViewportHeight(window.innerHeight / Math.tan(this.r.camera.fov * Math.PI / 360) / 2);
@@ -1874,10 +1956,11 @@ export class Game {
       this.lastSent = now;
       const pos = [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)];
       const rot = [+p.yaw.toFixed(3), +p.pitch.toFixed(3)];
-      const state = JSON.stringify([pos, rot, this.heldId()]);
+      const ride = this.ride ? [+this.ride.x.toFixed(2), +this.ride.y.toFixed(2), +this.ride.z.toFixed(2), +this.ride.yaw.toFixed(3)] : undefined;
+      const state = JSON.stringify([pos, rot, this.heldId(), ride]);
       if (state !== this.lastSentState) {
         this.lastSentState = state;
-        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId(), inv: this.effects.invisibility ? 1 : 0 });
+        this.send({ t: 'pos', p: pos, r: rot, h: this.heldId(), inv: this.effects.invisibility ? 1 : 0, v: ride });
       }
     }
     this.unloadTimer = (this.unloadTimer || 0) + dt;

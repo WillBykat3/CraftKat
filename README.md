@@ -63,6 +63,11 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
   Absorption shows as golden hearts
 - **Compasses and clocks**: a compass points to the world spawn, a clock shows the time of day (both spin in the
   Nether and the End)
+- **Riding**: craft a boat (five planks), put it on water and right-click to get in: W/S paddle, A/D turn, Shift gets
+  out (boats fly along ice and crawl on land; hit one to break it). **Horses** roam plains and savannas in herds, each
+  with its own speed, jump and health: get on one and it'll buck you off until it trusts you (feeding it helps), then
+  put a saddle on it and ride wherever you look, jumping with Space. Saddled pigs can be ridden too, steered with a
+  carrot on a stick. Tame horses breed on golden carrots and golden apples
 - **Fishing**: craft a fishing rod, cast it into water and reel in when the bobber dips. Mostly cod, salmon,
   tropical fish and pufferfish (cook the cod and salmon; pufferfish poison you but brew Water Breathing), sometimes
   junk, and now and then treasure: enchanted bows, rods and books, name tags and saddles. Lure and Luck of the Sea
@@ -120,7 +125,7 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Multiplayer**: invite friends with a link and optional password; chat; commands
 - **Saving**: worlds save automatically in your browser; export and import them as files
 
-**Not included (yet):** horses, cats, foxes, bees, axolotls and many other mobs; boats, minecarts and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
+**Not included (yet):** cats, foxes, bees, axolotls and many other mobs; minecarts and maps. (Lapis, emeralds, quartz and ghast tears can be collected but don't do anything yet.)
 
 **Nether and End differences from Minecraft:** no hoglins, piglin brutes or striders, crimson and warped
 forests, nether wart, bastions, End cities or End gateways; strongholds are a portal room with corridors (no
@@ -148,6 +153,10 @@ see what's in it, and axes don't knock shields out of your hands; banners can't 
 
 **Weather differences from Minecraft:** snow doesn't pile up and water doesn't freeze, rain doesn't fill cauldrons,
 there are no lightning rods, and it rains everywhere at once (and stays dry in the Nether and the End, as in Minecraft).
+
+**Riding differences from Minecraft:** one boat for every kind of wood, no chest boats, donkeys, mules, llamas, horse
+armor or leads; a horse's jump is always full strength (no charging), horses don't take fall damage, saddled pigs stand
+still unless you hold a carrot on a stick (and can't be boosted), and saddles only come from fishing.
 
 **Fishing differences from Minecraft:** there are no fish swimming in the water and no fishing particles to watch
 for, the bobber can't hook mobs or items, rain doesn't speed up bites, and name tags and saddles don't do anything yet.
