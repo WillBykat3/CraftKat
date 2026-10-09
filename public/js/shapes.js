@@ -23,6 +23,12 @@ function fenceConnects(id) {
   return !!b && (b.shape === 'fence' || (b.solid && !b.transparent && b.render === 'cube'));
 }
 
+// What a glass pane joins up with: other panes, glass and full solid blocks.
+function paneConnects(id) {
+  const b = BLOCKS[id];
+  return !!b && (b.shape === 'pane' || /Glass$/.test(b.name || '') || (b.solid && !b.transparent && b.render === 'cube'));
+}
+
 // neighbor(dx, dy, dz) -> block id. collision: fences are 1.5 blocks tall to collide with.
 export function shapeBoxes(id, neighbor, collision = false) {
   const b = BLOCKS[id];
@@ -61,6 +67,16 @@ export function shapeBoxes(id, neighbor, collision = false) {
       return boxes;
     }
     case 'path': return [[0, 0, 0, 1, 15 * P, 1]];
+    case 'carpet': return [[0, 0, 0, 1, P, 1]];
+    case 'pane': {
+      // a thin post, with arms out to whatever it joins (a straight line if nothing)
+      const arms = [[0, -1, [7 * P, 0, 9 * P, 7 * P]], [1, 0, [9 * P, 7 * P, 1, 9 * P]], [0, 1, [7 * P, 9 * P, 9 * P, 1]], [-1, 0, [0, 7 * P, 7 * P, 9 * P]]];
+      const joined = arms.map(([dx, dz]) => !!neighbor && paneConnects(neighbor(dx, 0, dz)));
+      if (!joined.some(Boolean)) { joined[1] = joined[3] = true; } // alone: a little pane east-west
+      const boxes = [[7 * P, 0, 7 * P, 9 * P, 1, 9 * P]];
+      arms.forEach(([, , [x0, z0, x1, z1]], i) => { if (joined[i]) boxes.push([x0, 0, z0, x1, 1, z1]); });
+      return boxes;
+    }
     case 'rail': return [[0, 0, 0, 1, 2 * P, 1]];
     case 'brewing': return [[7 * P, 0, 7 * P, 9 * P, 14 * P, 9 * P, 'brewing_stand_rod'], [1 * P, 0, 1 * P, 15 * P, 2 * P, 15 * P]];
     case 'table12': return [[0, 0, 0, 1, 12 * P, 1]];

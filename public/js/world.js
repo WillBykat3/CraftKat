@@ -7,6 +7,7 @@ import { makeNoise2D, makeNoise3D, hash2, mulberry32 } from './noise.js';
 import { Terrain3, SEA, Y_OFFSET } from './terrain.js';
 import { BIOME } from './biomes.js';
 import { NetherTerrain, NETHER_LAVA } from './terrain-nether.js';
+import { applyDungeons, isDungeonChest } from './dungeons.js';
 import { EndTerrain } from './terrain-end.js';
 import { applyStrongholds, strongholdSpots } from './stronghold.js';
 import { Villages } from './village.js';
@@ -66,6 +67,12 @@ export class World {
   }
 
   // Nether biome (see terrain-nether.js), or -1 elsewhere.
+  // Whether (x, y, z) is a dungeon chest the world made (its loot is rolled when first opened).
+  isDungeonChest(x, y, z) {
+    return !!this.terrain && !this.edits.get(chunkKey(Math.floor(x / CHUNK), Math.floor(z / CHUNK)))?.has(blockIndex(((x % CHUNK) + CHUNK) % CHUNK, y, ((z % CHUNK) + CHUNK) % CHUNK)) &&
+      isDungeonChest(x, y, z, this.seed, (a, b) => this.terrain.column(a, b).h);
+  }
+
   netherBiome(x, z) {
     return this.dim === 'nether' ? this.other.biome(x, z) : -1;
   }
@@ -216,6 +223,7 @@ export class World {
       this.biomes.set(chunkKey(cx, cz), out.biomes);
       data = out.data;
       applyStrongholds(data, cx, cz, this.seed, this.strongholds());
+      applyDungeons(data, cx, cz, this.seed, (x, z) => this.terrain.column(x, z).h);
       this.villages.apply(data, cx, cz);
     } else {
       data = this.generateLegacy(cx, cz);

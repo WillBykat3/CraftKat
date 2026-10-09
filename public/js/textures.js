@@ -57,7 +57,7 @@ export function hasBlockModel(id) {
 export function iconBoxes(id) {
   const b = BLOCKS[id];
   if (!b.shape) return [[0, 0, 0, 1, 1, 1]];
-  if (b.shape === 'fence') return shapeBoxes(id, (dx) => (dx !== 0 ? id : 0));
+  if (b.shape === 'fence' || b.shape === 'pane') return shapeBoxes(id, (dx) => (dx !== 0 ? id : 0));
   const boxes = shapeBoxes(id, () => 0);
   if (b.shape === 'lever' || b.shape === 'button') {
     // small things are drawn bigger in icons so you can see them
@@ -282,6 +282,13 @@ function drawBlockTile(p, name) {
           const edge = y % 8 === 7 || (x + offset) % 16 === 15;
           px(x, y, edge ? [80, 80, 80] : shade([122, 122, 122], 0.9 + rand() * 0.15));
         }
+      }
+      break;
+    case 'mossy_cobble':
+      drawBlockTile(p, 'cobble');
+      for (let i = 0; i < 80; i++) {
+        const x = Math.floor(rand() * S), y = Math.floor(rand() * S);
+        if ((x * 3 + y) % 7 < 4) px(x, y, shade([84, 110, 52], 0.8 + rand() * 0.35));
       }
       break;
     case 'mossy_stone_bricks':
@@ -932,6 +939,16 @@ function drawBlockTile(p, name) {
           const bar = x % 5 === 0 || y % 5 === 0 || x === S - 1 || y === S - 1;
           if (bar) px(x, y, shade([45, 55, 70], 0.8 + rand() * 0.4));
         }
+        break;
+      }
+      if (name.startsWith('concrete_powder_')) {
+        const c = DYE_RGB[COLORS.indexOf(name.slice(16))];
+        p.noisy(shade(c, 1.05), 0.12);
+        break;
+      }
+      if (name.startsWith('concrete_')) {
+        const c = DYE_RGB[COLORS.indexOf(name.slice(9))];
+        p.noisy(shade(c, 0.9), 0.03);
         break;
       }
       if (name === 'terracotta' || name.startsWith('terracotta_')) {

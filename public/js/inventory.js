@@ -450,3 +450,11 @@ RECIPES.push({ pattern: ['R.', '.C'], keys: { R: [ITEM.FISHING_ROD], C: [ITEM.CA
 RECIPES.push({ pattern: ['I.I', 'ISI', 'I.I'], keys: { I: [ITEM.IRON_INGOT], S: [ITEM.STICK] }, result: [BLOCK.RAIL, 16] });
 RECIPES.push({ pattern: ['G.G', 'GSG', 'GRG'], keys: { G: [ITEM.GOLD_INGOT], S: [ITEM.STICK], R: [ITEM.REDSTONE] }, result: [BLOCK.POWERED_RAIL, 6] });
 RECIPES.push({ pattern: ['I.I', 'III'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.MINECART, 1] });
+// concrete powder, carpets and glass panes
+for (let c = 0; c < 16; c++) {
+  RECIPES.push({ pattern: ['DSSSS', 'GGGG'], keys: { D: [DYE(c)], S: [BLOCK.SAND], G: [BLOCK.GRAVEL] }, result: [BLOCK.CONCRETE_POWDER + c, 8], shapeless: true });
+  RECIPES.push({ pattern: ['WW'], keys: { W: [woolOf(c)] }, result: [BLOCK.CARPET + c, 3] });
+  RECIPES.push({ pattern: ['GGG', 'GGG'], keys: { G: [BLOCK.STAINED_GLASS + c] }, result: [BLOCK.STAINED_PANE + c, 16] });
+  RECIPES.push({ pattern: ['PPP', 'PDP', 'PPP'], keys: { P: [BLOCK.GLASS_PANE], D: [DYE(c)] }, result: [BLOCK.STAINED_PANE + c, 8] });
+}
+RECIPES.push({ pattern: ['GGG', 'GGG'], keys: { G: [BLOCK.GLASS] }, result: [BLOCK.GLASS_PANE, 16] });

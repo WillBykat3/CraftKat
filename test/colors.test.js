@@ -90,3 +90,18 @@ test('sheep come in natural colours, can be dyed, and grow wool of their colour'
   assert.ok(wool.length && wool.every((w) => w.item === woolOf(color('blue'))), 'blue wool');
   assert.ok(!(sheep.love > 0), "dye isn't food");
 });
+
+test('concrete powder sets into concrete in water; carpets and glass panes', () => {
+  const g = (...ids) => ids.map((id) => (id ? { id, count: 1 } : null));
+  const S = BLOCK.SAND, G = BLOCK.GRAVEL;
+  assert.deepEqual(findRecipe(g(DYE('lime'), S, S, S, S, G, G, G, G), 3), { id: BLOCK.CONCRETE_POWDER + color('lime'), count: 8 });
+  assert.deepEqual(findRecipe(g(woolOf(color('red')), woolOf(color('red')), 0, 0), 2), { id: BLOCK.CARPET + color('red'), count: 3 });
+  const GL = BLOCK.GLASS;
+  assert.deepEqual(findRecipe(g(GL, GL, GL, GL, GL, GL, 0, 0, 0), 3), { id: BLOCK.GLASS_PANE, count: 16 });
+  const host = new GameHost(newWorldSave({ name: 'C', seed: 3 }), () => {}, { random: mulberry32(2) });
+  host.setBlock(0, 199, 0, BLOCK.STONE);
+  host.setBlock(0, 200, 0, BLOCK.CONCRETE_POWDER + 4);
+  assert.equal(host.world.getBlock(0, 200, 0), BLOCK.CONCRETE_POWDER + 4);
+  host.setBlock(1, 200, 0, BLOCK.WATER);
+  assert.equal(host.world.getBlock(0, 200, 0), BLOCK.CONCRETE + 4, 'set into yellow concrete');
+});

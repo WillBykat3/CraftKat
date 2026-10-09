@@ -74,6 +74,10 @@ It's hosted for free on **GitHub Pages**, and friends join with a link, with **n
 - **Rails and minecarts**: rails (iron and a stick) join up by themselves into straight track, curves and slopes, like
   Minecraft's; powered rails (gold, a stick and redstone) push carts along when powered and brake when not. Put a
   minecart on a rail, get in, press W to push off, and ride: carts keep their speed, roll down slopes and slow going up
+- **Dungeons**: mossy cobblestone rooms deep underground with a zombie, skeleton or spider spawner and chests of
+  loot (saddles, name tags, golden apples, enchanted books, iron...)
+- **More building blocks**: concrete powder (sand, gravel and a dye) that falls like sand and sets into concrete in
+  water; carpets in every colour; glass panes and stained glass panes that join up with each other and with walls
 - **Fishing**: craft a fishing rod, cast it into water and reel in when the bobber dips. Mostly cod, salmon,
   tropical fish and pufferfish (cook the cod and salmon; pufferfish poison you but brew Water Breathing), sometimes
   junk, and now and then treasure: enchanted bows, rods and books, name tags and saddles. Lure and Luck of the Sea
@@ -153,8 +157,7 @@ cartography table, fletching table and composter are decoration for now.
 **Enchanting differences from Minecraft:** no curses, Frost Walker, Sweeping Edge or fishing and trident
 enchantments; anvils can't rename items.
 
-**Colour differences from Minecraft:** no concrete, carpets, banners, glazed terracotta, glass panes or coloured
-beds, candles or shulker boxes; cocoa beans drop from jungle leaves (there are no cocoa pods); lambs take a parent's
+**Colour differences from Minecraft:** no banners, glazed terracotta or coloured beds, candles or shulker boxes; cocoa beans drop from jungle leaves (there are no cocoa pods); lambs take a parent's
 colour rather than mixing; only the poppy, dandelion and cornflower exist among the flowers.
 
 **Offhand differences from Minecraft:** you can't eat, drink, throw or fish with your offhand, other players don't

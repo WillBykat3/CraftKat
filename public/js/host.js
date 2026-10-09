@@ -20,6 +20,7 @@ import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 import { validEnch, level as enchLevel, rollEnchants, randomBook } from './enchant.js';
 import { mobAI, BREED_FOOD, SLIME_SIZES } from './mob-ai.js';
 import { hash2 } from './noise.js';
+import { dungeonLoot } from './dungeons.js';
 import { isRail, railInfo, railId, computeShape, railConnected, UPHILL } from './rails.js';
 import { brewResult, validPotion, BREW_SECONDS, POTIONS, UNDEAD as POTION_UNDEAD, ATTACK_EFFECTS } from './effects.js';
 
@@ -508,6 +509,7 @@ export class GameHost {
     if (BLOCKS[id].crop || BLOCKS[id].wart !== undefined) this.crops.add(key); else this.crops.delete(key);
     this.redstone?.changed(x, y, z, id);
     this.fluids?.changed(x, y, z);
+    this.hardenConcrete(x, y, z);
     if (id === BLOCK.FIRE) this.fires.add(key); else this.fires?.delete(key);
     if (this.lightCache) {
       const cx = Math.floor(x / 16), cz = Math.floor(z / 16);
@@ -616,7 +618,7 @@ export class GameHost {
     }
     if (isContainer(id)) {
       const key = `${x},${y},${z}`;
-      const c = this.chests.get(key);
+      const c = this.chestData(key, x, y, z);
       if (c) for (const s of c.slots) if (s) this.spawnItem(x + 0.5, y + 0.5, z + 0.5, s.id, s.count, s.dur, undefined, extrasOf(s));
       for (const peer of this.chestViewers.get(key) || []) this.send(peer, { t: 'chest_gone' });
       this.chests.delete(key);
@@ -939,8 +941,16 @@ export class GameHost {
     if (!this.validCoords(msg) || !isContainer(this.world.getBlock(msg.x, msg.y, msg.z))) return null;
     if (!this.inReach(p, msg.x, msg.y, msg.z)) return null;
     const key = this.keyOf(msg);
-    if (!this.chests.has(key)) this.chests.set(key, { slots: new Array(27).fill(null) });
-    return [key, this.chests.get(key)];
+    return [key, this.chestData(key, msg.x, msg.y, msg.z)];
+  }
+
+  // A chest's contents; a dungeon chest the world made gets its loot the first time.
+  chestData(key, x, y, z) {
+    if (!this.chests.has(key)) {
+      const loot = this.world.isDungeonChest?.(x, y, z) ? dungeonLoot(x, y, z, this.save.seed | 0, randomBook) : null;
+      this.chests.set(key, { slots: loot || new Array(27).fill(null) });
+    }
+    return this.chests.get(key);
   }
 
   notifyChest(key, c) {
@@ -1374,6 +1384,17 @@ export class GameHost {
     if (isInt(msg.enchSeed)) p.enchSeed = msg.enchSeed;
     if (msg.offhand !== undefined && (msg.offhand === null || validStack(msg.offhand))) p.offhand = msg.offhand;
     this.storePlayer(p);
+  }
+
+  // Concrete powder touching water sets into concrete (checked around every change).
+  hardenConcrete(x, y, z) {
+    for (const [dx, dy, dz] of [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const bx = x + dx, by = y + dy, bz = z + dz;
+      const b = BLOCKS[this.world.getBlock(bx, by, bz)];
+      if (!b.concrete) continue;
+      const wet = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([ex, ey, ez]) => fluidOf(this.world.getBlock(bx + ex, by + ey, bz + ez)) === 'water');
+      if (wet) this.setBlock(bx, by, bz, b.concrete);
+    }
   }
 
   // ---------- riding ----------

@@ -41,7 +41,8 @@ export const BLOCK = {
   IRON_BLOCK: 1050, GOLD_BLOCK: 1051, DIAMOND_BLOCK: 1052, EMERALD_BLOCK: 1053, LAPIS_BLOCK: 1054, COAL_BLOCK: 1055,
   BREWING_STAND: 1056, NETHER_WART: 1060, BROWN_MUSHROOM: 1064, RED_MUSHROOM: 1065, MELON: 1066, SLIME_BLOCK: 1067,
   STAINED_GLASS: 1085, TERRACOTTA: 1101, RAIL: 1120, POWERED_RAIL: 1130, SPAWNER: 1142, // SPAWNER + 0 blaze, 1 zombie, 2 skeleton, 3 spider
-  BED_FOOT: 1150, // two-block beds: BED_FOOT + facing * 2 + (head ? 1 : 0); BED is the item (and old one-block beds) // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
+  MOSSY_COBBLESTONE: 1160, BED_FOOT: 1150,
+  CONCRETE: 1170, CONCRETE_POWDER: 1186, CARPET: 1202, GLASS_PANE: 1218, STAINED_PANE: 1219, // (+ colour) // two-block beds: BED_FOOT + facing * 2 + (head ? 1 : 0); BED is the item (and old one-block beds) // (coloured wool is 1069 + colour, stained glass and terracotta 1085 / 1102 + colour)
 };
 //   NETHER_PORTAL + axis (0: the portal runs along x, 1: along z);  END_PORTAL_FRAME + (has an eye ? 1 : 0)
 // Blocks with variants take a run of ids:
@@ -293,6 +294,14 @@ for (let i = 0; i < 10; i++) def(1120 + i, 'Rail', { tex: ['rail', 'rail_corner'
 for (let i = 0; i < 12; i++) def(1130 + i, 'Powered Rail', { tex: [i >= 6 ? 'powered_rail_on' : 'powered_rail'], render: 'rail', shape: 'rail', solid: false, transparent: true, hardness: 0.7, tool: 'pickaxe', needsSupport: true, hidden: i > 0, item: 1130, redstone: 'powered_rail', on: i >= 6 });
 ['blaze', 'zombie', 'skeleton', 'spider'].forEach((mob, i) => def(1142 + i, 'Monster Spawner', { tex: ['spawner'], hardness: 5, tool: 'pickaxe', needsTier: 0, transparent: true, spawner: mob, hidden: i > 0, item: 1142 }));
 for (let i = 0; i < 8; i++) def(1150 + i, 'Bed', { tex: ['bed_blanket', 'bed_side', 'planks'], hardness: 0.2, transparent: true, shape: 'bed2', facing: i >> 1, head: (i & 1) === 1, hidden: true, item: 49 });
+COLORS.forEach((c, i) => {
+  def(1170 + i, `${COLOR_NAMES[i]} Concrete`, { tex: ['concrete_' + c], hardness: 1.8, tool: 'pickaxe', needsTier: 0, color: i });
+  def(1186 + i, `${COLOR_NAMES[i]} Concrete Powder`, { tex: ['concrete_powder_' + c], hardness: 0.5, tool: 'shovel', gravity: true, color: i, concrete: 1170 + i });
+  def(1202 + i, `${COLOR_NAMES[i]} Carpet`, { tex: [i === 0 ? 'wool' : 'wool_' + c], hardness: 0.1, shape: 'carpet', solid: true, transparent: true, needsSupport: true, color: i });
+  def(1219 + i, `${COLOR_NAMES[i]} Stained Glass Pane`, { tex: ['stained_glass_' + c], hardness: 0.3, shape: 'pane', solid: true, transparent: true, translucent: true, color: i });
+});
+def(1218, 'Glass Pane', { tex: ['glass'], hardness: 0.3, shape: 'pane', solid: true, transparent: true });
+def(1160, 'Mossy Cobblestone', { tex: ['mossy_cobble'], hardness: 2, tool: 'pickaxe', needsTier: 0 });
 def(1101, 'Terracotta', { tex: ['terracotta'], hardness: 1.25, tool: 'pickaxe', needsTier: 0 });
 def(1067, 'Slime Block', { tex: ['slime_block'], hardness: 0, transparent: true, translucent: true, bouncy: true });
 def(1020, 'Fire', { tex: ['fire'], render: 'cross', solid: false, transparent: true, replaceable: true, emit: 15, hardness: 0, hidden: true, item: 0, fire: true });
@@ -657,7 +666,7 @@ function baseDrops(blockId, b, tool, rand) {
     case BLOCK.SPAWNER: case BLOCK.SPAWNER + 1: case BLOCK.SPAWNER + 2: case BLOCK.SPAWNER + 3: return []; // (even with Silk Touch)
     default: break;
   }
-  if (b.translucent && b.color !== undefined) return []; // stained glass breaks (unless Silk Touch)
+  if ((b.translucent && b.color !== undefined) || blockId === 1218) return []; // glass and panes break (unless Silk Touch)
   if (b.wart !== undefined) return [[ITEM.NETHER_WART, b.wart === 3 ? 2 + Math.floor(rand() * 3) : 1]];
   if (b.crop) {
     const { kind, stage, max } = b.crop;
@@ -676,7 +685,8 @@ for (const name of ['GRASS', 'SNOWY_GRASS', 'DIRT_PATH', 'STONE', 'DEEPSLATE', '
   'DEEPSLATE_REDSTONE_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE', 'EMERALD_ORE', 'GLASS', 'ICE', 'LEAVES', 'BIRCH_LEAVES', 'SPRUCE_LEAVES',
   'ACACIA_LEAVES', 'DARK_OAK_LEAVES', 'JUNGLE_LEAVES', 'CHERRY_LEAVES', 'BOOKSHELF', 'GLOWSTONE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE',
   'GRAVEL', 'TALL_GRASS', 'FERN', 'DEAD_BUSH', 'CLAY', 'SNOW']) if (BLOCK[name] !== undefined) SILK.add(BLOCK[name]);
-for (let c = 0; c < 16; c++) SILK.add(1085 + c);
+for (let c = 0; c < 16; c++) { SILK.add(1085 + c); SILK.add(1219 + c); }
+SILK.add(1218);
 for (const name of ['COAL_ORE', 'DEEPSLATE_COAL_ORE', 'DIAMOND_ORE', 'DEEPSLATE_DIAMOND_ORE', 'EMERALD_ORE', 'LAPIS_ORE', 'DEEPSLATE_LAPIS_ORE',
   'REDSTONE_ORE', 'DEEPSLATE_REDSTONE_ORE', 'COPPER_ORE', 'DEEPSLATE_COPPER_ORE', 'IRON_ORE', 'DEEPSLATE_IRON_ORE', 'GOLD_ORE',
   'DEEPSLATE_GOLD_ORE', 'NETHER_QUARTZ_ORE', 'NETHER_GOLD_ORE', 'GLOWSTONE']) FORTUNE.add(BLOCK[name]);

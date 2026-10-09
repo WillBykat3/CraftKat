@@ -102,3 +102,26 @@ test('you can build up to y 319 and mountains are no longer cut flat', async () 
   for (let x = -4000; x <= 4000; x += 41) for (let z = -4000; z <= 4000; z += 41) max = Math.max(max, w.terrain.column(x, z).h - w.yOffset);
   assert.ok(max > 182, `peaks reach ${max}`);
 });
+
+test('dungeons: mossy rooms underground with a spawner and loot chests', async () => {
+  const { dungeonIn } = await import('../public/js/dungeons.js');
+  const w = new World(2024, 3);
+  let d = null;
+  for (let gx = 0; gx < 20 && !d; gx++) for (let gz = 0; gz < 20 && !d; gz++) {
+    const c = dungeonIn(gx, gz, w.seed);
+    if (c && w.terrain.column(c.x, c.z).h >= c.y + 10) d = c;
+  }
+  assert.ok(d, 'a dungeon');
+  assert.equal(w.getBlock(d.x, d.y + 1, d.z), BLOCK.SPAWNER + d.mob);
+  assert.ok([BLOCK.COBBLE, BLOCK.MOSSY_COBBLESTONE].includes(w.getBlock(d.x, d.y, d.z)));
+  const [cx, cz] = d.chests[0];
+  assert.equal(w.getBlock(cx, d.y + 1, cz), BLOCK.CHEST);
+  // the host fills it with loot the first time it's opened
+  const { host, p } = setup(2024);
+  host.dims.overworld.world.getBlock(cx, d.y + 1, cz);
+  Object.assign(p, { x: cx + 0.5, y: d.y + 1, z: cz + 1.5 });
+  const [, chest] = host.chestAt(p, { x: cx, y: d.y + 1, z: cz });
+  const items = chest.slots.filter(Boolean);
+  assert.ok(items.length >= 5, `${items.length} stacks`);
+  assert.ok(items.some((s) => [ITEM.BONE, ITEM.GUNPOWDER, ITEM.ROTTEN_FLESH, ITEM.STRING].includes(s.id)));
+});
