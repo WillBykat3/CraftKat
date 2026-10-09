@@ -52,6 +52,7 @@ export function shapeBoxes(id, neighbor, collision = false) {
       return boxes;
     }
     case 'path': return [[0, 0, 0, 1, 15 * P, 1]];
+    case 'rail': return [[0, 0, 0, 1, 2 * P, 1]];
     case 'brewing': return [[7 * P, 0, 7 * P, 9 * P, 14 * P, 9 * P, 'brewing_stand_rod'], [1 * P, 0, 1 * P, 15 * P, 2 * P, 15 * P]];
     case 'table12': return [[0, 0, 0, 1, 12 * P, 1]];
     case 'anvil': return [[2 * P, 0, 2 * P, 14 * P, 4 * P, 14 * P], [4 * P, 4 * P, 3 * P, 12 * P, 5 * P, 13 * P], [6 * P, 5 * P, 4 * P, 10 * P, 10 * P, 12 * P], [3 * P, 10 * P, 0, 13 * P, 16 * P, 1]];

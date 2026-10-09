@@ -324,6 +324,13 @@ export class RedstoneSim {
           else this.pending.delete(k);
           break;
         }
+        case 'powered_rail': {
+          // powered rails switch on with power (each needs its own power: it doesn't run along the track)
+          const want = this.devicePowered(x, y, z);
+          if (want !== b.on) this.set(x, y, z, id + (want ? 6 : -6));
+          else this.pending.delete(k);
+          break;
+        }
         case 'tnt':
           if (this.devicePowered(x, y, z)) { this.host.setBlock(x, y, z, BLOCK.AIR); this.host.primeTnt(x, y, z, 4); }
           break;

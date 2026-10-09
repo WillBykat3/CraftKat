@@ -910,6 +910,7 @@ function drawBlockTile(p, name) {
         for (let i = 0; i < 4; i++) px(3 + i, 6 - i, shade(c, 1.4), 0.7);
         break;
       }
+      if (name === 'rail' || name === 'rail_corner' || name.startsWith('powered_rail')) { drawRail(p, name); break; }
       if (name === 'terracotta' || name.startsWith('terracotta_')) {
         p.noisy(name === 'terracotta' ? PLAIN_TERRACOTTA_RGB : TERRACOTTA_RGB[COLORS.indexOf(name.slice(11))], 0.05);
         break;
@@ -938,6 +939,30 @@ function drawDial(ctx, compass, frame) {
   ctx.fillStyle = '#e8e8f0'; ctx.fillRect(-3, 3, 6, 6);
   ctx.restore();
   ctx.fillStyle = '#202020'; ctx.fillRect(c - 1, 4, 2, 5); // the marker at the top
+}
+
+// Rails: wooden ties and two iron (or gold, with a redstone strip) rails running north-south;
+// the corner joins south and east.
+function drawRail(p, name) {
+  const { px, rand } = p;
+  const powered = name.startsWith('powered'), on = name.endsWith('_on');
+  const metal = powered ? [230, 190, 50] : [160, 160, 165];
+  const tie = [110, 80, 45];
+  if (name === 'rail_corner') {
+    // arcs round the bottom-right corner, meeting the straight rails at the south and east edges
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const dx = 16 - (x + 0.5), dy = 16 - (y + 0.5), r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      if (r > 2 && r < 14 && ((a / (Math.PI / 2)) * 13) % 3.2 < 1.4) px(x, y, shade(tie, 0.85 + rand() * 0.2));
+    }
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const r = Math.hypot(16 - (x + 0.5), 16 - (y + 0.5));
+      if (Math.abs(r - 12) < 0.8 || Math.abs(r - 4) < 0.8) px(x, y, r - Math.floor(r) > 0.5 ? shade(metal, 0.8) : metal);
+    }
+    return;
+  }
+  for (let y = 1; y < 16; y += 4) for (let x = 2; x < 14; x++) { px(x, y, shade(tie, 0.9 + rand() * 0.2)); px(x, y + 1, shade(tie, 0.75)); }
+  for (let y = 0; y < 16; y++) { px(3, y, metal); px(4, y, shade(metal, 0.8)); px(11, y, metal); px(12, y, shade(metal, 0.8)); }
+  if (powered) for (let y = 0; y < 16; y++) if (y % 4 !== 3) px(7, y, on ? [255, 60, 40] : [110, 20, 15]), px(8, y, on ? [230, 40, 30] : [90, 15, 10]);
 }
 
 // Wool: soft noise with a faint woven pattern.
@@ -1472,7 +1497,7 @@ export function createTextures() {
     ctx.imageSmoothingEnabled = false;
     if (isBlockId(id)) {
       const b = BLOCKS[id];
-      if (b.render === 'cross' || b.render === 'crop' || b.render === 'torch' || b.shape === 'ladder' || b.shape === 'door') {
+      if (b.render === 'cross' || b.render === 'crop' || b.render === 'torch' || b.render === 'rail' || b.shape === 'ladder' || b.shape === 'door') {
         const [sx, sy] = tileRect(b.tex[0]);
         ctx.drawImage(tintedCanvas, sx, sy, S, S, 0, 0, size, size);
       } else {

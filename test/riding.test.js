@@ -106,3 +106,44 @@ test('boats paddle along water and are slow on land; horses jump', () => {
   for (let i = 0; i < 40; i++) { stepVehicle(world, horse, { forward: 0, strafe: 0, jump: i === 0, lookYaw: 0 }, 0.05); top = Math.max(top, horse.y - 200); }
   assert.ok(top > 4, `a strong horse jumps about 5 blocks (${top.toFixed(1)})`);
 });
+
+test('rails join up into straights, curves and slopes; minecarts follow them', async () => {
+  const { computeShape, railInfo, RAIL, POWERED_RAIL } = await import('../public/js/rails.js');
+  const { host, p } = setup();
+  const lay = (x, y, z, id = RAIL) => host.message('a', { t: 'set', x, y, z, id });
+  Object.assign(p, { x: 0.5, y: 200, z: 4.5, mode: 'creative' });
+  p.canBuild = () => true;
+  // a line north-south, then a turn to the east at the north end
+  lay(0, 200, 3); lay(0, 200, 2); lay(0, 200, 1);
+  assert.equal(railInfo(host.world.getBlock(0, 200, 2)).shape, 0, 'north-south');
+  lay(1, 200, 1);
+  assert.equal(railInfo(host.world.getBlock(0, 200, 1)).shape, 6, 'the end turned into a curve joining south and east');
+  assert.equal(railInfo(host.world.getBlock(1, 200, 1)).shape, 1, 'east-west');
+  // a slope up onto a block
+  host.setBlock(3, 200, 1, BLOCK.STONE);
+  lay(3, 201, 1); lay(2, 200, 1);
+  assert.equal(railInfo(host.world.getBlock(2, 200, 1)).shape, 2, 'sloping up to the east');
+  const get = (x, y, z) => host.world.getBlock(x, y, z);
+  assert.equal(computeShape(get, 5, 200, 5, false, 0), 0, 'alone: along the way you face');
+  // a minecart rides the track round the curve and up the slope
+  const world = host.dims.overworld.world;
+  const cart = { kind: 'minecart', x: 0.5, y: 200.0625, z: 3.5, yaw: 0, vx: 0, vy: 0, vz: -6, halfW: 0.49, height: 0.7 };
+  let maxY = 0, maxX = 0;
+  for (let i = 0; i < 60; i++) { stepVehicle(world, cart, { forward: 0, strafe: 0, jump: false, lookYaw: 0 }, 0.02); maxY = Math.max(maxY, cart.y); maxX = Math.max(maxX, cart.x); }
+  assert.ok(maxX > 2, `went round the corner to the east (${maxX.toFixed(2)})`);
+  assert.ok(maxY > 200.5, `climbed the slope (${maxY.toFixed(2)})`);
+  // powered rails switch with redstone
+  lay(0, 200, 6, POWERED_RAIL);
+  assert.equal(railInfo(host.world.getBlock(0, 200, 6)).on, false);
+  host.setBlock(-1, 200, 6, BLOCK.REDSTONE_BLOCK);
+  for (let i = 0; i < 10; i++) host.tick(0.05);
+  assert.equal(railInfo(host.world.getBlock(0, 200, 6)).on, true, 'powered');
+  // minecarts go on rails only, and drop themselves when broken
+  host.message('a', { t: 'place_vehicle', kind: 'minecart', x: 5.5, y: 200, z: 5.5 });
+  assert.ok(![...host.entities.values()].some((e) => e.type === 'minecart'), 'not off the rails');
+  host.message('a', { t: 'place_vehicle', kind: 'minecart', x: 0.5, y: 200.06, z: 2.5 });
+  const m = [...host.entities.values()].find((e) => e.type === 'minecart');
+  assert.ok(m);
+  host.message('a', { t: 'mount', e: m.id });
+  assert.equal(m.rider, p.id);
+});

@@ -553,6 +553,17 @@ const MOB_BUILDERS = {
     g.add(bottom, seat);
     return { group: g, head: new THREE.Group(), legs: [], arms: [] };
   },
+  minecart: () => {
+    const g = new THREE.Group();
+    const iron = 0x8a8a90, dark = 0x55555a;
+    const floor = box(0.9, 0.08, 1.2, dark); floor.position.y = 0.18;
+    for (const [w, d, x, z] of [[0.9, 0.08, 0, -0.56], [0.9, 0.08, 0, 0.56], [0.08, 1.2, -0.42, 0], [0.08, 1.2, 0.42, 0]]) {
+      const side = box(w, 0.5, d, iron); side.position.set(x, 0.43, z); g.add(side);
+    }
+    for (const [x, z] of [[-0.45, -0.38], [0.45, -0.38], [-0.45, 0.38], [0.45, 0.38]]) { const wheel = box(0.06, 0.18, 0.18, 0x303030); wheel.position.set(x, 0.1, z); g.add(wheel); }
+    g.add(floor);
+    return { group: g, head: new THREE.Group(), legs: [], arms: [] };
+  },
   horse: () => {
     const m = quadruped(0x8a5a30, 0x8a5a30, [0.6, 0.7, 1.4, 0.85], {
       decorate: (head) => {
@@ -599,7 +610,7 @@ const HITBOX = {
   fireball: [0.5, 1], ender_dragon: [3.5, 3.5], end_crystal: [1, 2.2],
   wolf: [0.35, 0.9], rabbit: [0.25, 0.55], witch: [0.35, 1.95], drowned: [0.35, 1.95], phantom: [0.5, 0.5],
   squid: [0.45, 0.95], bat: [0.3, 0.9], piglin: [0.35, 1.95], slime: [0.26, 0.52], magma_cube: [0.26, 0.52],
-  boat: [0.7, 0.6], horse: [0.7, 1.7],
+  boat: [0.7, 0.6], horse: [0.7, 1.7], minecart: [0.5, 0.75],
 };
 
 function itemMesh(id, textures) {

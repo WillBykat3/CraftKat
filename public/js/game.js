@@ -15,6 +15,7 @@ import { EntityViews } from './entities.js';
 import { InventoryScreen, HUD, setDials } from './ui.js';
 import { Precipitation, lightningBolt } from './weather.js';
 import { stepVehicle, SIZES } from './riding.js';
+import { isRail, railInfo, railId, computeShape } from './rails.js';
 import { sound, setRain } from './sound.js';
 import { blockGeometry, hasBlockModel } from './textures.js';
 import { selectionBoxes, rayBox, boundsOf, facingFromYaw } from './shapes.js';
@@ -707,7 +708,7 @@ export class Game {
       this.useCooldown = 0.25;
       return;
     }
-    if (!this.ride && !this.player.sneaking && (kind === 'boat' || (kind === 'horse' && !(flags & 256)) || (kind === 'pig' && (flags & 1)))) {
+    if (!this.ride && !this.player.sneaking && (kind === 'boat' || kind === 'minecart' || (kind === 'horse' && !(flags & 256)) || (kind === 'pig' && (flags & 1)))) {
       this.send({ t: 'mount', e: mob.id });
       this.useCooldown = 0.4;
       return;
@@ -775,6 +776,15 @@ export class Game {
       return;
     }
     if (held && (held.id === ITEM.POTION || held.id === ITEM.MILK_BUCKET)) { this.eating = 0.001; return; }
+    if (held && held.id === ITEM.MINECART) {
+      if (hit && isRail(hit.id)) {
+        this.send({ t: 'place_vehicle', kind: 'minecart', x: hit.x + 0.5, y: hit.y + 0.0625, z: hit.z + 0.5, yaw: this.player.yaw });
+        if (this.mode === 'survival') { takeOne(this.inv, this.selected); this.invDirty = true; }
+        this.swing = 1;
+        this.useCooldown = 0.4;
+      }
+      return;
+    }
     if (held && held.id === ITEM.BOAT) {
       // boats go on water (or on the ground, where they're slow)
       const w = this.raycast(REACH, true);
@@ -1009,6 +1019,11 @@ export class Game {
     if (!BLOCKS[current].replaceable || current === id) return;
     if (BLOCKS[id].solid && boxOverlapsBlock(this.player, x, y, z)) return;
     if (!isSupported(id, this.world.getBlock(x, y - 1, z))) return;
+    if (isRail(id)) {
+      // rails join up with the rails around them (the host does the same, and turns the neighbours)
+      const info = railInfo(id);
+      id = railId({ powered: info.powered, on: false, shape: computeShape((a, b, c) => this.world.getBlock(a, b, c), x, y, z, info.powered, this.player.yaw) });
+    }
     for (const v of this.entities.entities.values()) {
       if (v.mob && BLOCKS[id].solid) {
         const p = v.group.position;

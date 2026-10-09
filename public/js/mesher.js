@@ -5,6 +5,7 @@ import { CHUNK, HEIGHT, BLOCK, BLOCKS, FACING, MAX_BLOCK } from './blocks.js';
 import { gatherRegion, computeLight, regionIndex, topY, SIZE } from './lighting.js';
 import { BIOMES } from './biomes.js';
 import { shapeBoxes } from './shapes.js';
+import { railInfo } from './rails.js';
 import { wireConnections, WIRE_COLORS } from './redstone.js';
 
 // slot: index into a block's tex array ([top, side, bottom, sideX])
@@ -200,6 +201,10 @@ export function buildChunkMesh(world, cx, cz, uvOf) {
           addShape(def.translucent ? water : solid, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint);
           continue;
         }
+        if (def.render === 'rail') {
+          addRail(solid, def, id, x, y, z, uvOf, skyAt(x, y, z), blockAt(x, y, z), tint);
+          continue;
+        }
         if (def.render === 'wire') {
           addWire(solid, x, y, z, get, uvOf, skyAt(x, y, z), blockAt(x, y, z), tint);
           continue;
@@ -323,6 +328,34 @@ function addShape(mesh, def, id, x, y, z, get, skyAt, blockAt, uvOf, tint) {
       mesh.quad(0, 1, 2, 2, 1, 3);
     }
   }
+}
+
+// Rails: one flat (or sloping) quad, the texture turned to the way the track runs.
+function addRail(mesh, def, id, x, y, z, uvOf, sky, block, tint) {
+  const { shape } = railInfo(id);
+  const curve = shape >= 6;
+  const [u0, v0, u1, v1] = uvOf(curve ? def.tex[1] : def.tex[0]);
+  // quarter turns of the texture: straight rails run north-south (turned for east-west),
+  // the corner texture joins south and east
+  const turn = curve ? shape - 6 : shape === 1 || shape === 2 || shape === 3 ? 1 : 0;
+  const lift = { 2: [0, 1, 0, 1], 3: [1, 0, 1, 0], 4: [1, 1, 0, 0], 5: [0, 0, 1, 1] }[shape] || [0, 0, 0, 0]; // y at corners (x0z0, x1z0, x0z1, x1z1)
+  const h = 1 / 16;
+  const uv = (fx, fz) => {
+    const [a, b] = turn === 0 ? [fx, fz] : turn === 1 ? [fz, 1 - fx] : turn === 2 ? [1 - fx, 1 - fz] : [1 - fz, fx];
+    return [u0 + (u1 - u0) * a, v0 + (v1 - v0) * (1 - b)];
+  };
+  const corners = [[0, 1, lift[2]], [1, 1, lift[3]], [0, 0, lift[0]], [1, 0, lift[1]]];
+  for (const [cx, cz, ly] of corners) {
+    const [u, v] = uv(cx, cz);
+    mesh.vertex(x + cx, y + h + ly, z + cz, u, v, 1, sky, block, tint);
+  }
+  mesh.quad(0, 1, 2, 2, 1, 3);
+  // and the underside, so slopes don't vanish from below
+  for (const [cx, cz, ly] of corners) {
+    const [u, v] = uv(cx, cz);
+    mesh.vertex(x + cx, y + h * 0.5 + ly, z + cz, u, v, 0.6, sky, block, tint);
+  }
+  mesh.quad(0, 2, 1, 1, 2, 3);
 }
 
 // Redstone dust: flat on the ground, a dot in the middle and lines to whatever it

@@ -446,3 +446,7 @@ RECIPES.push({ pattern: ['.G.', 'GRG', '.G.'], keys: { G: [ITEM.GOLD_INGOT], R: 
 // boats, and steering pigs
 RECIPES.push({ pattern: ['P.P', 'PPP'], keys: { P: PLANKS }, result: [ITEM.BOAT, 1] });
 RECIPES.push({ pattern: ['R.', '.C'], keys: { R: [ITEM.FISHING_ROD], C: [ITEM.CARROT] }, result: [ITEM.CARROT_ON_A_STICK, 1] });
+// rails and minecarts
+RECIPES.push({ pattern: ['I.I', 'ISI', 'I.I'], keys: { I: [ITEM.IRON_INGOT], S: [ITEM.STICK] }, result: [BLOCK.RAIL, 16] });
+RECIPES.push({ pattern: ['G.G', 'GSG', 'GRG'], keys: { G: [ITEM.GOLD_INGOT], S: [ITEM.STICK], R: [ITEM.REDSTONE] }, result: [BLOCK.POWERED_RAIL, 6] });
+RECIPES.push({ pattern: ['I.I', 'III'], keys: { I: [ITEM.IRON_INGOT] }, result: [ITEM.MINECART, 1] });

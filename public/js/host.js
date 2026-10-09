@@ -20,6 +20,7 @@ import { PROFESSION_OF, offersFor, LEVEL_XP, PROFESSIONS } from './trades.js';
 import { validEnch, level as enchLevel, rollEnchants, randomBook } from './enchant.js';
 import { mobAI, BREED_FOOD, SLIME_SIZES } from './mob-ai.js';
 import { hash2 } from './noise.js';
+import { isRail, railInfo, railId, computeShape, railConnected, UPHILL } from './rails.js';
 import { brewResult, validPotion, BREW_SECONDS, POTIONS, UNDEAD as POTION_UNDEAD, ATTACK_EFFECTS } from './effects.js';
 
 export const DAY_TICKS = 24000;     // one full day
@@ -59,6 +60,7 @@ const MOB_TYPES = {
   horse: { hp: 22, halfW: 0.7, height: 1.6, speed: 1.6, hostile: false, ai: 'horseMind' },
   // vehicles: hit them to break them (they drop themselves)
   boat: { hp: 4, halfW: 0.65, height: 0.56, speed: 0, hostile: false, vehicle: true, custom: 'vehicleTick' },
+  minecart: { hp: 6, halfW: 0.49, height: 0.7, speed: 0, hostile: false, vehicle: true, custom: 'vehicleTick' },
   // villages
   villager: { hp: 20, halfW: 0.3, height: 1.95, speed: 1.4, hostile: false, villager: true },
   iron_golem: { hp: 100, halfW: 0.7, height: 2.7, speed: 1.5, hostile: false, golem: true },
@@ -528,6 +530,7 @@ export class GameHost {
       !this.blockedByEntity(x, y, z, id) && p.canBuild();
     if (!ok) return this.correct(peerId, x, y, z);
     this.setBlock(x, y, z, id, peerId);
+    if (isRail(id)) this.shapeRails(x, y, z, p.yaw);
     if (isFurnace(id)) this.furnaces.set(`${x},${y},${z}`, { slots: [null, null, null], burn: 0, burnMax: 0, progress: 0 });
     if (isContainer(id)) this.chests.set(`${x},${y},${z}`, { slots: new Array(27).fill(null) });
     this.settle(x, y, z);
@@ -892,6 +895,7 @@ export class GameHost {
       rabbit: [[ITEM.RAW_RABBIT, Math.floor(r() * 2)], [ITEM.RABBIT_HIDE, Math.floor(r() * 2)], [ITEM.RABBIT_FOOT, r() < 0.1 ? 1 : 0]],
       squid: [[ITEM.INK_SAC, 1 + Math.floor(r() * 3)]],
       boat: [[ITEM.BOAT, 1]],
+      minecart: [[ITEM.MINECART, 1]],
       horse: [[ITEM.LEATHER, Math.floor(r() * 3)], [ITEM.SADDLE, e.saddled ? 1 : 0]],
       iron_golem: [[ITEM.IRON_INGOT, 3 + Math.floor(r() * 3)], [BLOCK.POPPY, Math.floor(r() * 3)]],
       villager: [],
@@ -1412,10 +1416,35 @@ export class GameHost {
     return this.animalMind(e, t, dt); // in love: find a mate; otherwise wander (riders move them)
   }
 
-  // Putting a boat on water.
+  // A new rail takes the shape that joins it to the rails around it, and turns neighbours
+  // with a loose end towards it (straight into curves and slopes), like Minecraft's.
+  shapeRails(x, y, z, yaw) {
+    const get = (a, b, c) => this.world.getBlock(a, b, c);
+    const fix = (bx, by, bz, yawHint) => {
+      const info = railInfo(get(bx, by, bz));
+      if (!info) return;
+      const shape = computeShape(get, bx, by, bz, info.powered, yawHint);
+      if (info.powered && shape >= 6) return; // powered rails don't curve
+      const id = railId({ ...info, shape });
+      if (id !== get(bx, by, bz)) this.setBlock(bx, by, bz, id);
+    };
+    fix(x, y, z, yaw);
+    for (const [dx, dz] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      for (const dy of [-1, 0, 1]) {
+        const info = railInfo(get(x + dx, y + dy, z + dz));
+        if (!info) continue;
+        // a loose end turns towards the new rail; a rail next to one placed a block higher slopes up to it
+        const slope = UPHILL[computeShape(get, x + dx, y + dy, z + dz, info.powered, yaw)];
+        if (!railConnected(get, x + dx, y + dy, z + dz, info.shape) || (slope && slope !== UPHILL[info.shape])) fix(x + dx, y + dy, z + dz, yaw);
+      }
+    }
+  }
+
+  // Putting a boat on water, or a minecart on a rail.
   onPlaceVehicle(p, msg) {
-    if (msg.kind !== 'boat' || ![msg.x, msg.y, msg.z].every(isNum) || Math.hypot(msg.x - p.x, msg.z - p.z) > 6) return;
-    const e = this.spawnMob('boat', msg.x, msg.y, msg.z);
+    if (!['boat', 'minecart'].includes(msg.kind) || ![msg.x, msg.y, msg.z].every(isNum) || Math.hypot(msg.x - p.x, msg.z - p.z) > 6) return;
+    if (msg.kind === 'minecart' && !isRail(this.world.getBlock(Math.floor(msg.x), Math.floor(msg.y), Math.floor(msg.z)))) return;
+    const e = this.spawnMob(msg.kind, msg.x, msg.y, msg.z);
     e.yaw = isNum(msg.yaw) ? msg.yaw : 0;
     e.persist = true;
   }
