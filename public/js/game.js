@@ -106,6 +106,8 @@ export class Game {
     this.caveTimer = 60;
     this.screen = new InventoryScreen(this);
     this.hud = new HUD(this.iconURL);
+    $('chat-log').replaceChildren(); // (nothing left over from the last world)
+    $('effects').replaceChildren();
     this.buildHand();
     this.bindInput();
 

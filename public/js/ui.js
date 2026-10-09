@@ -65,20 +65,26 @@ export class InventoryScreen {
     this.furnace = null;
     this.cursorEl = $('cursor-stack');
     this.tooltip = $('tooltip');
-    document.addEventListener('mousemove', (e) => {
-      this.cursorEl.style.left = e.clientX + 'px';
-      this.cursorEl.style.top = e.clientY + 'px';
-      // item name tooltip, like Minecraft's, when hovering a filled slot with nothing held
-      const slot = this.isOpen && !this.cursor && e.target.closest?.('#screen .slot');
-      const name = slot ? slot.dataset.name : '';
-      this.tooltip.classList.toggle('hidden', !name);
-      if (name) {
-        this.tooltip.textContent = name;
-        const right = e.clientX + 18 + this.tooltip.offsetWidth > window.innerWidth;
-        this.tooltip.style.left = (right ? e.clientX - 18 - this.tooltip.offsetWidth : e.clientX + 18) + 'px';
-        this.tooltip.style.top = Math.max(4, e.clientY - 30) + 'px';
-      }
-    });
+    // one screen per game joined: the listener is only added once, and follows the newest screen
+    InventoryScreen.current = this;
+    if (InventoryScreen.listening) return;
+    InventoryScreen.listening = true;
+    document.addEventListener('mousemove', (e) => InventoryScreen.current.onMouseMove(e));
+  }
+
+  onMouseMove(e) {
+    this.cursorEl.style.left = e.clientX + 'px';
+    this.cursorEl.style.top = e.clientY + 'px';
+    // item name tooltip, like Minecraft's, when hovering a filled slot with nothing held
+    const slot = this.isOpen && !this.cursor && e.target.closest?.('#screen .slot');
+    const name = slot ? slot.dataset.name : '';
+    this.tooltip.classList.toggle('hidden', !name);
+    if (name) {
+      this.tooltip.textContent = name;
+      const right = e.clientX + 18 + this.tooltip.offsetWidth > window.innerWidth;
+      this.tooltip.style.left = (right ? e.clientX - 18 - this.tooltip.offsetWidth : e.clientX + 18) + 'px';
+      this.tooltip.style.top = Math.max(4, e.clientY - 30) + 'px';
+    }
   }
 
   get isOpen() {
@@ -572,6 +578,8 @@ export class HUD {
   constructor(iconURL) {
     this.iconURL = iconURL;
     this.hotbarEl = $('hotbar');
+    // a HUD is made for every game joined, so clear what an earlier one left behind
+    for (const id of ['hotbar', 'hearts', 'food', 'air', 'armor']) $(id).replaceChildren();
     this.slots = [];
     for (let i = 0; i < HOTBAR_SIZE; i++) {
       const slot = el('div', 'slot', this.hotbarEl);
